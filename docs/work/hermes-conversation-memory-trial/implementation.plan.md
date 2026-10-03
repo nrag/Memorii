@@ -3,10 +3,19 @@
 - Work ID: `hermes-conversation-memory-trial-implementation`
 - Work type: implementation
 - Delivery fidelity: Level 2 early real-world testing
+<<<<<<< Updated upstream
 - Status: under-review
 - Coordinator: `/root`
 - Base revision: `d0c96305397f03c1e4a09e548f0fbd62602b3f95`
 - Candidate product revision: `a13f58ae4092f2e7ab5afaac2f0b08402e8dc1d7`
+=======
+- Status: `complete`
+- Coordinator: `/root`
+- Base branch: `semantic_ingestion_m5`
+- Base revision: `3cfc1efc521c98ba4c8dfa048af8546cf4ec0d3e`
+- Published implementation revision: `450eccd3`
+- Evidence-only descendant revision: `63658193b8a4c296b553bb6c3e7fd89392566b2a`
+>>>>>>> Stashed changes
 - Last updated: 2026-09-24
 - Parent: `docs/work/hermes-conversation-memory-trial/design.plan.md`
 - Governing design: `docs/design/hermes_conversation_memory_trial.md`
@@ -37,12 +46,21 @@ release certification.
 
 | Requirement | Current evidence | State |
 | --- | --- | --- |
+<<<<<<< Updated upstream
 | HCM-01 | one installed Hermes provider and service-factory entrypoint; installed resource validation | verified in the pinned candidate image |
 | HCM-02 | complete user/assistant pair admission, stable position identity, replay idempotence, incomplete-turn denial | verified locally |
 | HCM-03 | only model transport is faked in deterministic tests; typed candidates reach V3 materialization and commit | verified locally and once with live OpenAI on Windows |
 | HCM-04 | installation/user/agent scope isolation, later-session recall, reopen | verified locally; live same-volume Windows recall observed |
 | HCM-05 | durable admission, two-attempt retry, startup recovery, atomic commit, invalid-candidate terminalization | verified locally |
 | HCM-06 | `memorii-hermes` status and inspect expose authority and committed-state counts without runtime construction | verified locally and in Windows container |
+=======
+| HCM-01 | One first-party provider and service-factory entry point; strict installed resource and fresh local sidecar validation at ingress, egress, pre-publication, recovery, and read; development factory declaration removed | verified locally and in the Windows image |
+| HCM-02 | Complete Hermes user/assistant pair enters one governed two-child operation; transcript substitution and incomplete turn deny; replay is stable | locally verified |
+| HCM-03 | Fake only the OpenAI Responses edge; source-quoted free-form proposal reaches the canonical V3 materializer, validators, graph group commit, and ledger | verified locally and through live OpenAI in Windows Docker |
+| HCM-04 | One stable installation/resource task scope, sessionless reusable projections, exact user/agent grants, installation-bound raw-user consistency lock, absent/changed-author denial, later-session recall, cross-user/agent denial, and store reopen | locally verified |
+| HCM-05 | Callback returns after durable admission; one worker owns two durable provider attempts; startup reconstructs a missing handoff from sealed ingress before activation; atomic graph commit, duplicate idempotence, and reopen are proven | verified locally and by same-volume Windows restart and recall |
+| HCM-06 | `memorii-hermes status` reports authority; `memorii-hermes inspect` reports source, graph, ledger, terminal, projection, and retrieval-visible counts without constructing a runtime | verified locally and from the Windows container |
+>>>>>>> Stashed changes
 
 ## Production Boundary
 
@@ -94,6 +112,7 @@ product candidate.
   and test path outside `docs/work/`
 - Deletion coverage: `memorii/tests/unit/core/semantic_ingestion/test_bootstrap_text_preparation_producer.py`
 
+<<<<<<< Updated upstream
 ## Operational Evidence
 
 The prior Windows Docker run used the repository Dockerfile, a named volume at
@@ -104,6 +123,29 @@ fully committed operation, one retrieval-visible record, and one runtime-context
 projection. Materialized-store inspection confirmed a committed semantic
 `bootstrap_v3_claim_assertion`; raw transcript records remained internal
 control data.
+=======
+## Windows Operational Evidence
+
+The user built the repository `Dockerfile.memorii` on Windows from runtime
+revision `450eccd3`, used a named volume mounted at `/opt/data`, authorized the
+local Level 2 profile, and exercised the installed Hermes CLI with live OpenAI.
+The run first produced an evidence-only abstention for an unsupported project
+name statement and then fully committed the supported free-form assertion
+`Mars Venus 008 project owner is Ada.` After a same-volume container restart,
+a new Hermes session answered `Ada` to `Who owns Mars Venus 008`.
+
+Read-only inspection reported four captured sources, 73 graph records, three
+observation-ledger entries, one fully committed operation, one evidence-only
+operation, one retrieval-visible record, and one runtime-context projection.
+Materialized-store inspection identified the exact projection as committed
+semantic `memory_evolution` state with `visibility=runtime_context` and
+`runtime_context_projection_kind=bootstrap_v3_claim_assertion`. The raw turn
+and recall-query records remained `internal_control`. The successful 21:00
+runtime window contained provider registration and activation with no later
+initialization, synchronization, or semantic-worker failure. Earlier 18:41 to
+18:48 failures remain append-only diagnostic history and predate the successful
+run.
+>>>>>>> Stashed changes
 
 The final candidate pins Hermes `v2026.9.21` by RepoDigest
 `sha256:6bece0644e29a347e5ae17db43c36938c86f171c6f5e0cef18aa2075d331f3a3`.
@@ -119,13 +161,32 @@ that contains this WorkPlan and the regenerated manifest.
 
 ```yaml
 remaining_validated_p1_p2: []
+<<<<<<< Updated upstream
 remaining_blocks_approval:
   - final revision-bound spec/correctness/test delta review
   - current required GitHub checks
 level_2_candidate_disposition: under_review
+=======
+remaining_blocks_approval: []
+level_2_candidate_disposition: approved
+operational_evidence_pending: []
+>>>>>>> Stashed changes
 ```
 
 ## Next Action
 
+<<<<<<< Updated upstream
 Commit and push the frozen evidence head, run final independent delta review,
 and require green checks before merge.
+=======
+Create and complete the separate Level 2 pull-request review for evidence-only
+descendant `63658193b8a4c296b553bb6c3e7fd89392566b2a` plus this WorkPlan closure.
+
+## Outcome
+
+Level 2 is complete. The installed Windows Docker production path performed a
+live model-backed semantic commit and protected later-session recall across a
+same-volume restart. This is early real-world integration evidence; production
+signing, release certification, learned ontology support, and Level 3 rollout
+evidence remain separate work.
+>>>>>>> Stashed changes
