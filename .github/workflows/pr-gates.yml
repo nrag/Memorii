@@ -572,34 +572,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Resolve Homebrew ICU for PyICU (no macOS wheels)
-        run: |
-          brew install --quiet pkg-config icu4c@76 || brew install --quiet icu4c@76 || true
-          ICU_PREFIX="$(brew --prefix icu4c@76 2>/dev/null || brew --prefix icu4c)"
-          ICU_VERSION="$(PKG_CONFIG_PATH="${ICU_PREFIX}/lib/pkgconfig" pkg-config --modversion icu-i18n)"
-          echo "PKG_CONFIG_PATH=${ICU_PREFIX}/lib/pkgconfig" >> "$GITHUB_ENV"
-          echo "ICU_VERSION=${ICU_VERSION}" >> "$GITHUB_ENV"
-          echo "CFLAGS=-I${ICU_PREFIX}/include -std=c++17" >> "$GITHUB_ENV"
-          echo "CXXFLAGS=-I${ICU_PREFIX}/include -std=c++17" >> "$GITHUB_ENV"
-          echo "LDFLAGS=-L${ICU_PREFIX}/lib -Wl,-rpath,${ICU_PREFIX}/lib" >> "$GITHUB_ENV"
-          echo "DYLD_FALLBACK_LIBRARY_PATH=${ICU_PREFIX}/lib" >> "$GITHUB_ENV"
-          echo "resolved ICU ${ICU_VERSION} at ${ICU_PREFIX}"
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Miniforge (prebuilt PyICU from conda-forge)
+        uses: conda-incubator/setup-miniconda@v3
         with:
+          miniforge-version: latest
           python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
-
-      - name: Pre-build PyICU against the resolved ICU
-        # --no-cache-dir guarantees the rpath-linked wheel is built fresh;
-        # the pip cache would restore the earlier build without it.
-        run: pip install --no-cache-dir "PyICU>=2.13,<3"
 
       - name: Install package + test dependencies
         working-directory: memorii
-        run: pip install -e '.[local,dev]'
+        shell: bash -el {0}
+        run: |
+          conda install -y -c conda-forge "pyicu>=2.13,<3"
+          pip install -e '.[local,dev]'
 
       - name: Run platform-divergent suites (credentials, permissions, capacity)
         working-directory: memorii
