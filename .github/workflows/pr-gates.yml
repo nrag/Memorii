@@ -579,6 +579,8 @@ jobs:
           ICU_VERSION="$(PKG_CONFIG_PATH="${ICU_PREFIX}/lib/pkgconfig" pkg-config --modversion icu-i18n)"
           echo "PKG_CONFIG_PATH=${ICU_PREFIX}/lib/pkgconfig" >> "$GITHUB_ENV"
           echo "ICU_VERSION=${ICU_VERSION}" >> "$GITHUB_ENV"
+          echo "PYICU_CFLAGS=-I${ICU_PREFIX}/include" >> "$GITHUB_ENV"
+          echo "PYICU_LDFLAGS=-L${ICU_PREFIX}/lib" >> "$GITHUB_ENV"
           echo "resolved ICU ${ICU_VERSION} at ${ICU_PREFIX}"
 
       - name: Set up Python
