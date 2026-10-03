@@ -348,7 +348,7 @@ jobs:
           && test "$DURABLE_RUNTIME_RESULT" = success
           && test "$HOST_COMPATIBILITY_RESULT" = success
           && test "$HOST_CONTAINER_RESULT" = success
-          test "$MACOS_PLATFORM_RESULT" = success
+          && test "$MACOS_PLATFORM_RESULT" = success
           && test "$SDK_TYPESCRIPT_RESULT" = success
           && test "$OBSERVATION_ACTIVATION_RESULT" = success
           && test "$SHARD_RESULT" = success
