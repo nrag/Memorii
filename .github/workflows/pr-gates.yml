@@ -579,10 +579,9 @@ jobs:
           ICU_VERSION="$(PKG_CONFIG_PATH="${ICU_PREFIX}/lib/pkgconfig" pkg-config --modversion icu-i18n)"
           echo "PKG_CONFIG_PATH=${ICU_PREFIX}/lib/pkgconfig" >> "$GITHUB_ENV"
           echo "ICU_VERSION=${ICU_VERSION}" >> "$GITHUB_ENV"
-          ICU_CFLAGS="$(PKG_CONFIG_PATH="${ICU_PREFIX}/lib/pkgconfig" pkg-config --cflags icu-i18n)"
-          ICU_LIBS="$(PKG_CONFIG_PATH="${ICU_PREFIX}/lib/pkgconfig" pkg-config --libs icu-i18n)"
-          echo "PYICU_CFLAGS=${ICU_CFLAGS} -std=c++17" >> "$GITHUB_ENV"
-          echo "PYICU_LDFLAGS=${ICU_LIBS}" >> "$GITHUB_ENV"
+          echo "CFLAGS=-I${ICU_PREFIX}/include -std=c++17" >> "$GITHUB_ENV"
+          echo "CXXFLAGS=-I${ICU_PREFIX}/include -std=c++17" >> "$GITHUB_ENV"
+          echo "LDFLAGS=-L${ICU_PREFIX}/lib" >> "$GITHUB_ENV"
           echo "resolved ICU ${ICU_VERSION} at ${ICU_PREFIX}"
 
       - name: Set up Python
