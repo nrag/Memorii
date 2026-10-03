@@ -587,6 +587,7 @@ jobs:
 
       - name: Run platform-divergent suites (credentials, permissions, capacity)
         working-directory: memorii
+        shell: bash -el {0}
         run: >-
           python -W error -m pytest
           tests/unit/core/test_sidecar_credentials.py
