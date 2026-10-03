@@ -268,6 +268,7 @@ class GovernanceOperator:
                     )
                 ),
                 applied_at_unix=applied_at_unix,
+                control_journal_position=state.control_revision + 1,
             ),
         )
         # Control revision and a PENDING epoch increment advance under the
@@ -310,6 +311,187 @@ class GovernanceOperator:
             enforcement_publication_pending=True,
             applied_at_unix=applied_at_unix,
         )
+
+    def enforce_forget(
+        self,
+        *,
+        store,
+        policy_bundle=None,
+    ) -> tuple[str, ...]:
+        """Drain pending enforcements through the governance publication entry.
+
+        Each pending journal entry becomes one revocation directive appended
+        to the semantic event log (with tombstone rewrites for the closure's
+        evolution records) through the store's canonical commit; the
+        content-free directive index record written in the same publication
+        marks the enforcement present for the drain and the serving view.
+        """
+
+        from hashlib import sha256 as _sha256
+
+        from memorii.core.memory_evolution.graph_records import (
+            ClaimRevocationTarget,
+            EntityRevocationTarget,
+            RecordRevocationTarget,
+            RevocationDirectiveRecord,
+            SourceRevocationTarget,
+            canonical_graph_codec_manifest,
+            graph_digest,
+        )
+
+        service = self._operator._administration
+        enforced: list[str] = []
+        for record in service.pending_forget_enforcements():
+            targets = []
+            for coordinate in record.suppressed:
+                if coordinate.coordinate_kind == "entity":
+                    targets.append(
+                        EntityRevocationTarget(logical_entity_id=coordinate.coordinate_id)
+                    )
+                elif coordinate.coordinate_kind == "claim":
+                    targets.append(
+                        ClaimRevocationTarget(claim_assertion_id=coordinate.coordinate_id)
+                    )
+                elif coordinate.coordinate_kind == "source":
+                    targets.append(
+                        SourceRevocationTarget(source_id=coordinate.coordinate_id)
+                    )
+                elif coordinate.coordinate_kind == "record" and coordinate.record_kind in (
+                    "claim_state", "entity_link",
+                ):
+                    targets.append(
+                        RecordRevocationTarget(
+                            record_kind="reference_disposition",
+                            record_id=coordinate.coordinate_id,
+                        )
+                    )
+            targets = tuple(sorted(targets, key=lambda item: (
+                item.target_kind, item.model_dump_json()
+            )))
+            semantic_targets = tuple(
+                target
+                for target in targets
+                if target.target_kind in ("entity", "claim", "source")
+            )
+            if not semantic_targets:
+                # Nothing semantic to revoke (task-only legacy entries): mark
+                # presence with the index record alone via a no-target-free
+                # directive is impossible, so write the index record directly.
+                from memorii.core.memory_plane.models import CanonicalMemoryRecord
+                from memorii.domain.enums import CommitStatus, MemoryDomain
+
+                service.partition()  # composition check
+                index_record = CanonicalMemoryRecord(
+                    memory_id=(
+                        f"semantic_ingestion:revocation:{record.suppression_id}"
+                    ),
+                    domain=MemoryDomain.SEMANTIC,
+                    text=f"revoked:{record.suppression_id}",
+                    content={
+                        "suppression_id": record.suppression_id,
+                        "plan_digest": record.plan_digest,
+                        "revoked_targets": tuple(
+                            {
+                                "coordinate_kind": coordinate.coordinate_kind,
+                                "coordinate_id": coordinate.coordinate_id,
+                            }
+                            for coordinate in record.suppressed
+                        ),
+                    },
+                    status=CommitStatus.COMMITTED,
+                    source_kind="semantic_ingestion_revocation_directive",
+                )
+                from memorii.core.memory_plane.store import (
+                    RecordAbsentPrecondition,
+                )
+
+                store._memory_plane.conditionally_write_records(
+                    (index_record,),
+                    preconditions=(
+                        RecordAbsentPrecondition(memory_id=index_record.memory_id),
+                    ),
+                )
+                enforced.append(record.suppression_id)
+                continue
+            codec = {
+                item.record_kind: item
+                for item in canonical_graph_codec_manifest().entries
+            }["revocation_directive"]
+            directive = RevocationDirectiveRecord.create(
+                operation_id=f"governance:forget:{record.suppression_id}",
+                revocation_id=f"revocation:{record.suppression_id}",
+                suppression_id=record.suppression_id,
+                revoked_targets=semantic_targets,
+                closure_coordinates=(),
+                closure_digest=graph_digest(
+                    b"memorii.revocation-closure.v1\0", ()
+                ),
+                authority_capability_digest=_sha256(
+                    b"memorii.governance-capability.v1\0"
+                    + record.suppression_id.encode()
+                    + record.plan_digest.encode()
+                ).hexdigest(),
+                control_journal_position=record.control_journal_position,
+                applied_at=_from_unix(record.applied_at_unix),
+                scope_note_digest=_sha256(
+                    b"memorii.governance-scope-note.v1\0"
+                    + record.scope_note.encode()
+                ).hexdigest(),
+                codec_fingerprint=codec.codec_fingerprint,
+            )
+            tombstones, tombstone_preconditions = self._tombstones_for(record, store)
+            store.commit_governance_revocation(
+                directive=directive,
+                tombstones=tombstones,
+                tombstone_preconditions=tombstone_preconditions,
+                policy_bundle=policy_bundle,
+            )
+            enforced.append(record.suppression_id)
+        return tuple(enforced)
+
+    def _tombstones_for(self, record, store):
+        from memorii.core.memory_evolution.revocation_tombstones import (
+            tombstone_records_for,
+        )
+        from memorii.core.memory_plane.models import CanonicalMemoryRecord
+        from memorii.core.memory_plane.store import (
+            RecordDigestPrecondition,
+            record_digest,
+        )
+
+        partition = self._operator._administration.partition()
+        memory_ids = tuple(
+            coordinate.coordinate_id
+            for coordinate in record.suppressed
+            if coordinate.coordinate_kind == "record"
+            and coordinate.record_kind in ("claim_state", "entity_link")
+        )
+        if not memory_ids:
+            return (), ()
+        with partition.transaction(write=False) as connection:
+            rows = partition.read_current_record_rows(
+                connection, statuses=["committed"], domains=None, source_kinds=None
+            )
+        current = {
+            row["memory_id"]: CanonicalMemoryRecord.model_validate(
+                __import__("json").loads(str(row["record_json"]))
+            )
+            for row in rows
+            if row["memory_id"] in memory_ids
+        }
+        tombstones = tombstone_records_for(
+            tuple(current[memory_id] for memory_id in memory_ids if memory_id in current),
+            suppression_id=record.suppression_id,
+        )
+        preconditions = tuple(
+            RecordDigestPrecondition(
+                memory_id=record_item.memory_id,
+                expected_digest=record_digest(current[record_item.memory_id]),
+            )
+            for record_item in tombstones
+            if record_item.memory_id in current
+        )
+        return tombstones, preconditions
 
     # --- forget closure ------------------------------------------------
 
@@ -886,3 +1068,9 @@ __all__ = [
     "GovernanceOperator",
     "RetentionPlan",
 ]
+
+
+def _from_unix(applied_at_unix: int):
+    from datetime import UTC, datetime
+
+    return datetime.fromtimestamp(applied_at_unix, tz=UTC)

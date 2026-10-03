@@ -44,6 +44,7 @@ class SuppressionRecord(BaseModel):
     scope_note: str
     suppressed: tuple[SuppressionCoordinate, ...]
     applied_at_unix: int = Field(ge=0)
+    control_journal_position: int = Field(default=1, ge=1)
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
