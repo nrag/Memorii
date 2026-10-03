@@ -582,6 +582,7 @@ jobs:
           echo "CFLAGS=-I${ICU_PREFIX}/include -std=c++17" >> "$GITHUB_ENV"
           echo "CXXFLAGS=-I${ICU_PREFIX}/include -std=c++17" >> "$GITHUB_ENV"
           echo "LDFLAGS=-L${ICU_PREFIX}/lib -Wl,-rpath,${ICU_PREFIX}/lib" >> "$GITHUB_ENV"
+          echo "DYLD_FALLBACK_LIBRARY_PATH=${ICU_PREFIX}/lib" >> "$GITHUB_ENV"
           echo "resolved ICU ${ICU_VERSION} at ${ICU_PREFIX}"
 
       - name: Set up Python
