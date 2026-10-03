@@ -593,7 +593,9 @@ jobs:
           cache-dependency-path: memorii/pyproject.toml
 
       - name: Pre-build PyICU against the resolved ICU
-        run: pip install "PyICU>=2.13,<3"
+        # --no-cache-dir guarantees the rpath-linked wheel is built fresh;
+        # the pip cache would restore the earlier build without it.
+        run: pip install --no-cache-dir "PyICU>=2.13,<3"
 
       - name: Install package + test dependencies
         working-directory: memorii
