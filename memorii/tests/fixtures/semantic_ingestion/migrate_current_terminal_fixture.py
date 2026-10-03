@@ -82,7 +82,7 @@ def _lookup(name: str) -> object:
 
 
 def _unwrap(annotation: object) -> object:
-    if annotation.__class__ is Annotated:
+    if annotation.__class__ is Annotated or get_origin(annotation) is Annotated:
         return get_args(annotation)[0]
     return annotation
 
@@ -90,10 +90,12 @@ def _unwrap(annotation: object) -> object:
 def _resolve_forward_ref(annotation: object) -> object:
     if isinstance(annotation, str):
         return _lookup(annotation)
-    if annotation.__class__ is Annotated:
+    if annotation.__class__ is Annotated or get_origin(annotation) is Annotated:
         args = get_args(annotation)
         if args and isinstance(args[0], str):
             return Annotated[(_lookup(args[0]), *args[1:])]  # type: ignore[misc]
+        if args:
+            return Annotated[(args[0], *args[1:])]  # type: ignore[misc]
     return annotation
 
 
@@ -108,42 +110,56 @@ def _literal_accepts(candidate: type, data: dict) -> bool:
     return True
 
 
-def _class_for_dict(annotation: object, data: dict) -> type | None:
-    """Best-effort resolve of the model class a dict payload belongs to."""
+def _candidate_classes(annotation: object, data: dict) -> list[type]:
+    """Ordered union candidates for a dict payload; best first."""
 
     annotation = _unwrap(_resolve_forward_ref(annotation))
     if isinstance(annotation, type) and hasattr(annotation, "model_fields"):
-        return annotation
+        return [annotation]
     origin = get_origin(annotation)
     if origin in (list, tuple):
         args = get_args(annotation)
-        if args:
-            return _class_for_dict(args[0], data)
-        return None
+        return _candidate_classes(args[0], data) if args else []
     if origin is Union:
         candidates = [
-            arg
-            for arg in get_args(annotation)
-            if isinstance(arg, type) and hasattr(arg, "model_fields")
+            resolved
+            for resolved in (
+                _resolve_forward_ref(arg) for arg in get_args(annotation)
+            )
+            if isinstance(resolved, type) and hasattr(resolved, "model_fields")
         ]
         matches = [
-            candidate
-            for candidate in candidates
-            if set(data) <= set(candidate.model_fields)
-        ]
-        if not matches:
-            matches = candidates
+            c for c in candidates if set(data) <= set(c.model_fields)
+        ] or candidates
         exact = [c for c in matches if set(c.model_fields) == set(data)]
-        if len(exact) == 1:
-            return exact[0]
         discriminated = [c for c in (exact or matches) if _literal_accepts(c, data)]
         pool = discriminated or (exact or matches)
-        if len(pool) == 1:
-            return pool[0]
-        if pool:
-            return max(pool, key=lambda c: len(set(data) & set(c.model_fields)))
-        return None
-    return None
+        pool.sort(key=lambda c: -len(set(data) & set(c.model_fields)))
+        return pool
+    return []
+
+
+def _class_for_dict(annotation: object, data: dict) -> type | None:
+    pool = _candidate_classes(annotation, data)
+    return pool[0] if pool else None
+
+
+def _rebuild_first(node: dict, annotation: object):
+    """Rebuild with the first union candidate that validates."""
+
+    errors: list[Exception] = []
+    candidates = _candidate_classes(annotation, node)
+    for candidate in candidates:
+        try:
+            return rebuild(node, candidate)
+        except Exception as exc:  # noqa: BLE001 - try-next-variant
+            errors.append(exc)
+    if errors:
+        raise errors[0]
+    raise ValueError(
+        "no union candidate resolved for payload with keys: "
+        + ",".join(sorted(node))
+    )
 
 
 def _item_class(annotation: object, sample: dict) -> type | None:
@@ -328,18 +344,20 @@ def rebuild(node: dict, cls: type):
         value = node[name]
         annotation = _resolve_forward_ref(field.annotation)
         if isinstance(value, dict):
-            child_cls = _class_for_dict(annotation, value)
-            if child_cls is not None:
-                value = rebuild(value, child_cls)
+            if _candidate_classes(annotation, value):
+                value = _rebuild_first(value, annotation)
         elif (
             isinstance(value, (list, tuple))
             and value
             and isinstance(value[0], dict)
         ):
-            item_cls = _item_class(annotation, value[0])
-            if item_cls is not None:
+            item_annotation = _unwrap(_resolve_forward_ref(annotation))
+            origin = get_origin(item_annotation)
+            args = get_args(item_annotation)
+            if origin in (list, tuple) and args:
+                item_annotation = args[0]
                 value = type(value)(
-                    rebuild(item, item_cls) for item in value
+                    _rebuild_first(item, item_annotation) for item in value
                 )
         values[name] = value
 
