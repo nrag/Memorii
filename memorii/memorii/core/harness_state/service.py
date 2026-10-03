@@ -28,6 +28,9 @@ from memorii.core.harness_state.paging import (
     HarnessPageCodec,
 )
 from memorii.core.persistence.runtime_repository import RuntimeStateRepository
+from memorii.core.storage_administration.revoked_identity_view import (
+    RevokedIdentityServingGate,
+)
 
 _HEX_64 = r"^[0-9a-f]{64}$"
 
@@ -63,10 +66,12 @@ class HarnessStateService:
         *,
         codec: HarnessPageCodec | None = None,
         grant_registry: GrantEpochRegistry | None = None,
+        revoked_view: RevokedIdentityServingGate | None = None,
     ) -> None:
         self._repository = repository
         self._codec = codec
         self._grant_registry = grant_registry
+        self._revoked_view = revoked_view
 
     def _ensure_codec(self) -> HarnessPageCodec:
         if self._codec is None:
@@ -139,16 +144,27 @@ class HarnessStateService:
             for attempt in attempts
             if attempt.status in ("dispatched", "outcome_unknown")
         )
+        def _justification_served(item) -> bool:
+            return not (
+                self._revoked_view is not None
+                and self._revoked_view.is_revoked_justification(item.justification_id)
+            )
+
         candidate_hypotheses = tuple(
             HarnessOutputBlock(kind="work", label=item.justification_id, candidate=True)
             for item in justifications
-            if item.active
+            if item.active and _justification_served(item)
         )[:16]
         committed_hypotheses = tuple(
             HarnessOutputBlock(kind="work", label=item.justification_id, committed=True)
             for item in justifications
-            if not item.active
+            if not item.active and _justification_served(item)
         )[:16]
+        revoked_dependent = tuple(
+            item.justification_id
+            for item in justifications
+            if not _justification_served(item)
+        )
         frontier_all = tuple(
             HarnessOutputBlock(kind="frontier", label=binding.node_id, detail=None)
             for overlay in overlays
@@ -183,7 +199,7 @@ class HarnessStateService:
         omissions: list[str] = []
         if pending_actions:
             status = "reconcile_required"
-        elif unexplained:
+        elif unexplained or revoked_dependent:
             status = "revalidation_required"
         for name, items in (
             ("frontier", frontier_all[offset:]),

@@ -36,6 +36,9 @@ from memorii.core.harness_state.service import (
 )
 from memorii.core.persistence.runtime_contracts import RuntimeCommandRequest
 from memorii.core.persistence.runtime_repository import RuntimeStateRepository
+from memorii.core.storage_administration.revoked_identity_view import (
+    RevokedIdentityServingGate,
+)
 
 _MAXIMUM_INTAKE_BYTES = 1 << 20
 
@@ -119,6 +122,7 @@ class RuntimeSidecar:
         grant_factory: Callable[[str], RuntimeReadGrant],
         intake_factory: Callable[[str], HostIntakeBinding] | None = None,
         grant_registry: GrantEpochRegistry | None = None,
+        revoked_view: RevokedIdentityServingGate | None = None,
     ) -> None:
         self._repository = repository
         self._credentials = credentials
@@ -138,7 +142,26 @@ class RuntimeSidecar:
                 grant_registry = GrantEpochRegistry(registry_root)
             except OSError:
                 grant_registry = None
-        self._service = HarnessStateService(repository, grant_registry=grant_registry)
+        # The revoked-identity view composes by default from the same
+        # installation control state so revoked justifications never sponsor
+        # a served hypothesis on any host surface.
+        if revoked_view is None:
+            from pathlib import Path as _Path
+
+            from memorii.core.storage_administration.revoked_identity_view import (
+                view_from_control_root,
+            )
+
+            try:
+                revoked_view = view_from_control_root(
+                    _Path(repository._partition.database_path).parent.parent
+                    / "control"
+                )
+            except (OSError, ValueError):
+                revoked_view = None
+        self._service = HarnessStateService(
+            repository, grant_registry=grant_registry, revoked_view=revoked_view
+        )
 
     def _principal_for(self, secret: str) -> str | None:
         if isinstance(self._credentials, SidecarCredentialStore):

@@ -28,6 +28,9 @@ from memorii.core.persistence.runtime_contracts import (
     TaskRecord,
 )
 from memorii.core.persistence.runtime_repository import RuntimeStateRepository
+from memorii.core.storage_administration.revoked_identity_view import (
+    RevokedIdentityServingGate,
+)
 
 _HEX_64 = r"^[0-9a-f]{64}$"
 CHECKPOINT_SIGNATURE_PURPOSE = "memorii.runtime-checkpoint.v1"
@@ -238,6 +241,7 @@ def build_resume_envelope(
     task_id: str,
     now: datetime | None = None,
     checkpoint: RuntimeCheckpoint | None = None,
+    revoked_view: RevokedIdentityServingGate | None = None,
 ) -> HarnessResumeEnvelope:
     """Restore one consistent view; never rerun or auto-complete actions."""
     moment = now or datetime.now(UTC)
@@ -274,6 +278,15 @@ def build_resume_envelope(
             if expired or premature:
                 revalidation.append(
                     f"{node_id}:{'expired' if expired else 'not_yet_valid'}"
+                )
+    # Revocation revalidation: a justification whose evidence was revoked
+    # can no longer sponsor a served conclusion; it lists for revalidation
+    # exactly like an expired assumption.
+    if revoked_view is not None:
+        for justification in justifications:
+            if revoked_view.is_revoked_justification(justification.justification_id):
+                revalidation.append(
+                    f"{justification.justification_id}:revoked_evidence"
                 )
     del moment  # consumed by the temporal walk above
     if (
