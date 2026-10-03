@@ -574,8 +574,8 @@ jobs:
 
       - name: Resolve Homebrew ICU for PyICU (no macOS wheels)
         run: |
-          brew install --quiet pkg-config icu4c
-          ICU_PREFIX="$(brew --prefix icu4c)"
+          brew install --quiet pkg-config icu4c@76 || brew install --quiet icu4c@76 || true
+          ICU_PREFIX="$(brew --prefix icu4c@76 2>/dev/null || brew --prefix icu4c)"
           ICU_VERSION="$(PKG_CONFIG_PATH="${ICU_PREFIX}/lib/pkgconfig" pkg-config --modversion icu-i18n)"
           echo "PKG_CONFIG_PATH=${ICU_PREFIX}/lib/pkgconfig" >> "$GITHUB_ENV"
           echo "ICU_VERSION=${ICU_VERSION}" >> "$GITHUB_ENV"
