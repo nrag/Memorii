@@ -69,6 +69,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     forget_apply = forget_sub.add_parser("apply", help="Apply a reviewed plan")
     forget_apply.add_argument("--plan-json", required=True)
+    forget_sub.add_parser(
+        "enforce",
+        help="Drain pending forget enforcements (directive + tombstones)",
+    )
 
     erasure = commands.add_parser("erasure", help="Whole-partition erasure planning")
     erasure.add_argument("--offline-copies", default="")
@@ -208,6 +212,56 @@ def main(argv: list[str] | None = None) -> int:
                 capability=require_capability(), plan=plan
             )
             print(receipt.model_dump_json())
+            return 0
+        if arguments.command == "forget" and arguments.forget_command == "enforce":
+            # Drains every journal entry that lacks its directive through
+            # the governance publication entry (same path the mode-resume
+            # drain uses when a composed runtime is live).
+            from memorii.core.memory_evolution.atomic_store import (
+                SemanticIngestionAtomicStore,
+            )
+            from memorii.core.memory_evolution.graph_records import (
+                canonical_graph_codec_manifest,
+            )
+            from memorii.core.memory_evolution.writer_admission import (
+                SemanticWriterAdmissionStore,
+                bounded_preplanning_ownership_manifest,
+            )
+            from memorii.core.memory_plane.service import MemoryPlaneService
+            from memorii.core.memory_plane.sqlite_store import SqliteMemoryPlaneStore
+            from memorii.core.persistence.factory import PublishedMemoryPlaneStore
+            from memorii.core.storage_administration.operator_governance import (
+                GovernanceOperator,
+            )
+
+            governance = GovernanceOperator(operator)
+            plane = MemoryPlaneService(
+                record_store=PublishedMemoryPlaneStore(
+                    administration, SqliteMemoryPlaneStore(administration.partition())
+                )
+            )
+            fingerprint = canonical_graph_codec_manifest().manifest_fingerprint
+            writers = SemanticWriterAdmissionStore(
+                plane, bounded_preplanning_ownership_manifest()
+            )
+            from memorii.core.memory_evolution.writer_admission import (
+                writer_admission_memory_id,
+            )
+
+            if plane.get_record(writer_admission_memory_id()) is None:
+                writers.create_initial_evidence_only(
+                    admission_id="runtime-operator-enforce",
+                    writer_implementation_fingerprint=fingerprint,
+                    graph_schema_fingerprint=fingerprint,
+                )
+            store = SemanticIngestionAtomicStore(plane, writers)
+            enforced = governance.enforce_forget(store=store)
+            remaining = administration.drain_pending_forget_enforcement()
+            print(
+                json.dumps(
+                    {"enforced": list(enforced), "pending": remaining}
+                )
+            )
             return 0
         if arguments.command == "erasure":
             from memorii.core.storage_administration.operator_governance import (

@@ -133,6 +133,21 @@ class StorageAdministrationService:
         # are reported (never silently dropped) by the drain.
         self._forget_enforcement_emitter = None
 
+    def set_forget_enforcement_emitter(self, emitter) -> None:
+        """Wire the governance enforcement entry used by the drains.
+
+        The emitter publishes one journal entry's revocation directive;
+        the mode-resume and boot drains call it per pending entry with
+        retry. Composition roots call this once the semantic runtime and
+        its store exist.
+        """
+
+        if not callable(emitter):
+            raise StorageAdministrationError(
+                "invalid_request: enforcement emitter must be callable"
+            )
+        self._forget_enforcement_emitter = emitter
+
     # --- layout --------------------------------------------------------
 
     def pending_forget_enforcements(self) -> tuple[object, ...]:

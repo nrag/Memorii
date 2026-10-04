@@ -235,9 +235,94 @@ def view_from_control_root(
     return RevokedIdentityView(identities)
 
 
+def empty_revoked_view() -> RevokedIdentityView:
+    """The valid empty view: nothing is revoked.
+
+    For compositions with no control state at all (ephemeral test planes),
+    where an explicit empty gate is the honest value. Production roots
+    over real installations must derive from the control root instead.
+    """
+
+    return RevokedIdentityView(RevokedIdentities())
+
+
+def _journal_fingerprint(control_root: Path) -> tuple:
+    """Cheap change signal over the suppression journal directory."""
+
+    directory = control_root / "suppressions"
+    try:
+        entries = sorted(
+            (path.name, path.stat().st_mtime_ns, path.stat().st_size)
+            for path in directory.iterdir()
+            if path.is_file()
+        )
+    except (FileNotFoundError, NotADirectoryError, OSError):
+        return ()
+    return tuple(entries)
+
+
+class RefreshingRevokedIdentityView:
+    """Serving gate that re-derives from the suppression journal on change.
+
+    Derived once at construction and re-derived whenever the journal
+    directory changes — the design's journal-write refresh point. Apply
+    writes a new journal entry (and restore re-apply does too), so a
+    long-lived serving process observes new revocations without a
+    restart. Journal identities cover every coordinate class (the
+    journal is append-only and is the serving gate of record), so no
+    record scan is needed. A missing journal yields the valid empty view.
+    """
+
+    def __init__(self, control_root: Path) -> None:
+        self._control_root = Path(control_root)
+        self._fingerprint: tuple = ()
+        self._view = empty_revoked_view()
+        self._refresh()
+
+    def _refresh(self) -> None:
+        fingerprint = _journal_fingerprint(self._control_root)
+        if fingerprint != self._fingerprint:
+            self._view = view_from_control_root(self._control_root)
+            self._fingerprint = fingerprint
+
+    def is_revoked_entity(self, logical_entity_id: str) -> bool:
+        self._refresh()
+        return self._view.is_revoked_entity(logical_entity_id)
+
+    def is_revoked_claim(self, claim_id: str) -> bool:
+        self._refresh()
+        return self._view.is_revoked_claim(claim_id)
+
+    def is_revoked_source(self, source_id: str) -> bool:
+        self._refresh()
+        return self._view.is_revoked_source(source_id)
+
+    def is_revoked_record(self, memory_id: str) -> bool:
+        self._refresh()
+        return self._view.is_revoked_record(memory_id)
+
+    def is_revoked_task(self, task_id: str) -> bool:
+        self._refresh()
+        return self._view.is_revoked_task(task_id)
+
+    def is_revoked_justification(self, justification_id: str) -> bool:
+        self._refresh()
+        return self._view.is_revoked_justification(justification_id)
+
+    def keeps_record(self, record: object) -> bool:
+        self._refresh()
+        return self._view.keeps_record(record)
+
+    def filter_records(self, records: object) -> tuple:
+        self._refresh()
+        return self._view.filter_records(records)
+
+
 __all__ = [
+    "RefreshingRevokedIdentityView",
     "RevokedIdentities",
     "RevokedIdentityView",
+    "empty_revoked_view",
     "identities_from_directive_records",
     "identities_from_journal",
     "view_from_control_root",

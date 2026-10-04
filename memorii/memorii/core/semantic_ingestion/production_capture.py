@@ -187,8 +187,14 @@ def _build_root(
     authority: VerifiedProductionHostAuthority,
     monitoring_authorities: tuple[VerifiedCapabilityMonitoringAuthority, ...],
 ) -> ProviderMemoryService | HermesMemoryProvider | AuthenticatedSourceRuntime:
+    from memorii.core.storage_administration.revoked_identity_view import (
+        RefreshingRevokedIdentityView,
+        empty_revoked_view,
+    )
+
     if cell.backend == "memory":
         memory_plane = MemoryPlaneService()
+        revoked_view = empty_revoked_view()
     else:
         # Persistent capture cells select the same persistent memory plane as
         # every other composition root: a managed installation serves its
@@ -201,10 +207,12 @@ def _build_root(
         memory_plane = select_persistent_memory_plane(
             storage_root, allow_legacy_bootstrap=True
         ).memory_plane
+        revoked_view = RefreshingRevokedIdentityView(storage_root / "control")
     if cell.root == "direct":
         return build_authenticated_source_runtime(
             issue_ingress=lambda _submission: cell.authenticated_host_ingress,
             memory_plane=memory_plane,
+            revoked_view=revoked_view,
             verified_production_host_authority=authority,
             verified_capability_monitoring_authorities=monitoring_authorities,
             now_provider=lambda: cell.server_time,
@@ -212,6 +220,7 @@ def _build_root(
     if cell.root == "factory":
         return build_provider_memory_service_from_env(
             memory_plane=memory_plane,
+            revoked_view=revoked_view,
             verified_production_host_authority=authority,
             verified_capability_monitoring_authorities=monitoring_authorities,
             now_provider=lambda: cell.server_time,

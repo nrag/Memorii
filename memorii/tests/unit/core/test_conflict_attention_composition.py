@@ -19,6 +19,7 @@ from memorii.core.memory_evolution.conflict_attention_repository import (
     ConflictCursorKey,
 )
 from memorii.core.provider.factory import build_provider_memory_service_from_env
+from memorii.core.storage_administration.revoked_identity_view import empty_revoked_view
 
 NOW = datetime(2026, 9, 4, 12, 0, 0, tzinfo=UTC)
 
@@ -41,7 +42,8 @@ def _builder_kwargs(repository: _PageRepository):
         "conflict_attention_repository": repository,
         "conflict_attention_enabled": True,
         "now_provider": lambda: NOW,
-    }
+        "revoked_view": empty_revoked_view(),
+}
 
 
 @pytest.mark.parametrize(
@@ -71,7 +73,7 @@ def test_built_roots_expose_bounded_attention_through_one_owner(
 
 
 def test_factory_and_filesystem_defaults_remain_fail_closed(tmp_path) -> None:
-    factory_service = build_provider_memory_service_from_env()
+    factory_service = build_provider_memory_service_from_env(revoked_view=empty_revoked_view())
     assert factory_service._conflict_attention_enabled is False
     filesystem_service = build_filesystem_provider(tmp_path / "root")
     assert filesystem_service._conflict_attention_enabled is False
@@ -79,7 +81,7 @@ def test_factory_and_filesystem_defaults_remain_fail_closed(tmp_path) -> None:
 
 def test_enabled_attention_without_repository_fails_closed(tmp_path) -> None:
     with pytest.raises(ValueError, match="conflict attention"):
-        build_provider_memory_service_from_env(conflict_attention_enabled=True)
+        build_provider_memory_service_from_env(revoked_view=empty_revoked_view(), conflict_attention_enabled=True)
     with pytest.raises(ValueError, match="conflict attention"):
         build_filesystem_provider(
             tmp_path / "root", conflict_attention_enabled=True

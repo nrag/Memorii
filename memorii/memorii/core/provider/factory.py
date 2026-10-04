@@ -87,9 +87,16 @@ def build_provider_memory_service_from_env(
     installed_capability_monitoring_configuration: object | None = None,
     ontology_observer_capability: OntologyObserverCapability | None = None,
     ontology_observer_authorizer: Callable[[AuthenticatedIngressContext, ObserverBindingIdentity], bool] | None = None,
-    revoked_view: RevokedIdentityServingGate | None = None,
+    revoked_view: RevokedIdentityServingGate,
 ) -> ProviderMemoryService:
-    """Build the source-only governed-source admission provider composition without ambient model dependencies."""
+    """Build the source-only governed-source admission provider composition without ambient model dependencies.
+
+    The revoked-identity serving gate is required: composition roots must
+    derive it from the installation control root (RefreshingRevokedIdentityView)
+    or state an explicit empty view for ephemeral planes. Absence is a
+    composition error that fails closed; it never silently means
+    "nothing revoked".
+    """
 
     audit_values = (
         identity_lineage_atomic_store,

@@ -895,6 +895,30 @@ class ProviderMemoryService:
             raise ValueError("coverage observation is unavailable")
         setter(admitter)
 
+    def wire_forget_enforcement(self, administration) -> None:
+        """Connect the administration's enforcement drain to this runtime.
+
+        The design makes the mode-resume and boot drains the only
+        production trigger for the revocation publication: wiring the
+        governance enforcement entry here means a forget applied through
+        the operator CLI completes when the read-only barrier lifts, with
+        no separate publish step. Idempotent; safe to call once per
+        composition.
+        """
+
+        from memorii.core.storage_administration.operator import (
+            StorageAdministrationOperator,
+        )
+        from memorii.core.storage_administration.operator_governance import (
+            GovernanceOperator,
+        )
+
+        governance = GovernanceOperator(StorageAdministrationOperator(administration))
+        store = self._semantic_atomic_store
+        administration.set_forget_enforcement_emitter(
+            lambda _record: governance.enforce_forget(store=store)
+        )
+
     def activate_observation_ledger(self) -> SemanticWriterCommitBinding:
         """Explicit trusted-host cutover; never exposed as a provider tool."""
         if self._composed_semantic_runtime is None:

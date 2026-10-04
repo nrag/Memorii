@@ -149,11 +149,11 @@ class RuntimeSidecar:
             from pathlib import Path as _Path
 
             from memorii.core.storage_administration.revoked_identity_view import (
-                view_from_control_root,
+                RefreshingRevokedIdentityView,
             )
 
             try:
-                revoked_view = view_from_control_root(
+                revoked_view = RefreshingRevokedIdentityView(
                     _Path(repository._partition.database_path).parent.parent
                     / "control"
                 )

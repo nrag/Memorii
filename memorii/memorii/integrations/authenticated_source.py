@@ -10,6 +10,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedHostIngress
 from memorii.core.memory_plane.service import MemoryPlaneService
+from memorii.core.storage_administration.revoked_identity_view import (
+    RevokedIdentityServingGate,
+)
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.models import ProviderOperation, ProviderSyncResult
 from memorii.core.provider.service import ProviderMemoryService
@@ -150,6 +153,7 @@ def build_authenticated_source_runtime(
     verified_production_host_authority: VerifiedProductionHostAuthority | None = None,
     provider_service: ProviderMemoryService | None = None,
     memory_plane: MemoryPlaneService | None = None,
+    revoked_view: RevokedIdentityServingGate | None = None,
     now_provider: Callable[[], datetime] | None = None,
     verified_capability_monitoring_authorities: tuple[
         VerifiedCapabilityMonitoringAuthority, ...
@@ -165,8 +169,15 @@ def build_authenticated_source_runtime(
     else:
         if verified_production_host_authority is None:
             raise ValueError("authenticated source runtime requires verified host authority")
+        if revoked_view is None:
+            raise ValueError(
+                "revoked_view is required: derive it from the installation"
+                " control root (RefreshingRevokedIdentityView) or state an"
+                " explicit empty view for ephemeral planes"
+            )
         service = build_provider_memory_service_from_env(
             memory_plane=memory_plane,
+            revoked_view=revoked_view,
             verified_production_host_authority=verified_production_host_authority,
             verified_capability_monitoring_authorities=(
                 verified_capability_monitoring_authorities

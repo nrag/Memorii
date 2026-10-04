@@ -555,9 +555,18 @@ def _build_local_level2_runtime_binding(
         except (OSError, TypeError, ValueError):
             return False
 
-    memory_plane = select_persistent_memory_plane(
+    memory_selection = select_persistent_memory_plane(
         storage_root, allow_legacy_bootstrap=True
-    ).memory_plane
+    )
+    memory_plane = memory_selection.memory_plane
+    # Fail-closed serving composition: the revoked-identity gate derives
+    # from the installation control root and refreshes on journal writes;
+    # legacy layouts without control state carry the valid empty view.
+    from memorii.core.storage_administration.revoked_identity_view import (
+        RefreshingRevokedIdentityView,
+    )
+
+    revoked_view = RefreshingRevokedIdentityView(storage_root / "control")
 
     try:
         if context_kind != "primary":
@@ -596,6 +605,7 @@ def _build_local_level2_runtime_binding(
         memory_plane=memory_plane,
         host_bootstrap_capability=capability,
         host_bootstrap_material_verifier=verifier,
+        revoked_view=revoked_view,
         scoped_read_authority=scoped_read_authority,
         ontology_observer_capability=observer,
         ontology_observer_authorizer=(lambda ingress, binding: (
@@ -609,6 +619,11 @@ def _build_local_level2_runtime_binding(
         raise RuntimeError(
             "Hermes local Level 2 semantic runtime is unavailable: " + service._bootstrap_unavailable_reason
         )
+    if memory_selection.administration is not None:
+        # The mode-resume/boot enforcement drain is the production trigger
+        # for the revocation publication; connect it to this runtime's
+        # semantic store so an applied forget completes at barrier lift.
+        service.wire_forget_enforcement(memory_selection.administration)
     has_observation_ledger_activation = any(
         record.source_kind == "semantic_ingestion_observation_ledger_activation"
         for record in memory_plane.list_records()

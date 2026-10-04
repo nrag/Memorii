@@ -105,6 +105,11 @@ def provider_service(**kwargs) -> ProviderMemoryService:
 
 
 def build_provider_memory_service_from_env(**kwargs) -> ProviderMemoryService:
+    from memorii.core.storage_administration.revoked_identity_view import (
+        empty_revoked_view,
+    )
+
+    kwargs.setdefault("revoked_view", empty_revoked_view())
     graph_builder = kwargs.pop("bootstrap_graph_host_bundle_builder", None)
     if graph_builder is None:
         return _production_factory_provider(**kwargs)

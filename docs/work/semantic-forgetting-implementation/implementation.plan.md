@@ -341,6 +341,31 @@ RV6/RV7/RV8 serving gates, then RV10/RV11 durability and audit fidelity,
 then RV12 the full parity family. Test-reviewer finding "forensic suite
 absent from CI" already fixed (1c1feb13).
 
+RV1+RV2+RV9 LANDED (2026-10-04): the provider factory requires the
+revoked-identity gate (absence fails closed; empty_revoked_view() is the
+explicit ephemeral statement); every production root derives
+RefreshingRevokedIdentityView from its control root (hermes factory,
+filesystem bundle/builder, hermes provider bare-plane branch,
+authenticated source, production capture; managed-partition open and the
+harness sidecar switched to the refreshing gate, which re-derives on
+suppression-journal writes so long-lived processes observe revocations
+without restart); StorageAdministrationService gained
+set_forget_enforcement_emitter and ProviderMemoryService.
+wire_forget_enforcement connects the Hermes root's drain to its runtime
+store; the CLI gained `forget enforce`. Acceptance:
+tests/integration/test_forget_composition_gates.py (factory refusal,
+journal-write observation without restart, mode-resume drain publishing
+the directive), registered in both durable CI jobs.
+
+SEPARATE PRE-EXISTING DEFECT (recorded 2026-10-04, needs its own
+debugging operation): tests/unit/core/semantic_ingestion/
+test_bootstrap_graph_root_composition.py fails locally (24 tests; sample
+assertion: sync_event not blocked "source_only") at 3214def8 and every
+later commit — it predates this revision and is invisible to CI because
+the file is in unit-shards.json's ignore list and no dedicated job runs
+it. Not caused by the revision; do not fix by weakening; investigate
+under a separate debugging WorkPlan.
+
 ## Next Action
 
 The forensic lineage surface (R16) and the prefetch canonical-channel

@@ -132,6 +132,7 @@ class FilesystemStorageBundle:
         self,
         *,
         memory_plane: MemoryPlaneService | None = None,
+        revoked_view: object | None = None,
         semantic_integrity_lifecycle: PrivilegedSemanticIntegrityLifecycle
         | None = None,
         host_bootstrap_capability: HostBootstrapCapability | None = None,
@@ -150,8 +151,14 @@ class FilesystemStorageBundle:
         ] = (),
         installed_capability_monitoring_configuration: object | None = None,
     ) -> ProviderMemoryService:
+        from memorii.core.storage_administration.revoked_identity_view import (
+            RefreshingRevokedIdentityView,
+        )
+
         return build_provider_memory_service_from_env(
             memory_plane=memory_plane or self.build_memory_plane_service(),
+            revoked_view=revoked_view
+            or RefreshingRevokedIdentityView(self.storage_root / "control"),
             work_state_service=self.build_work_state_service(),
             decision_state_service=self.build_decision_state_service(),
             semantic_integrity_lifecycle=semantic_integrity_lifecycle,
@@ -204,11 +211,20 @@ def build_filesystem_provider(
     conflict_attention_composite: bool = False,
     now_provider: Callable[[], datetime] | None = None,
     scoped_read_authority: ScopedHostReadAuthority | None = None,
+    revoked_view: object | None = None,
     verified_capability_monitoring_authorities: tuple[
         VerifiedCapabilityMonitoringAuthority, ...
     ] = (),
     installed_capability_monitoring_configuration: object | None = None,
 ) -> ProviderMemoryService:
+    from memorii.core.storage_administration.revoked_identity_view import (
+        RefreshingRevokedIdentityView,
+    )
+
+    if revoked_view is None:
+        revoked_view = RefreshingRevokedIdentityView(
+            Path(storage_root) / "control"
+        )
     selection = select_persistent_memory_plane(storage_root, allow_legacy_bootstrap=True)
     if selection.managed:
         assert selection.administration is not None
@@ -221,6 +237,7 @@ def build_filesystem_provider(
         )
     return bundle.build_provider_memory_service(
         memory_plane=memory_plane,
+        revoked_view=revoked_view,
         semantic_integrity_lifecycle=semantic_integrity_lifecycle,
         host_bootstrap_capability=host_bootstrap_capability,
         host_bootstrap_material_verifier=host_bootstrap_material_verifier,

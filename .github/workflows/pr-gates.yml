@@ -440,6 +440,7 @@ jobs:
           tests/integration/test_forget_enforcement_publication.py
           tests/integration/test_forget_serving_parity.py
           tests/integration/test_forget_forensic_lineage.py
+          tests/integration/test_forget_composition_gates.py
           -p no:cacheprovider
 
   sdk-typescript:
@@ -628,6 +629,7 @@ jobs:
           tests/integration/test_forget_enforcement_publication.py
           tests/integration/test_forget_serving_parity.py
           tests/integration/test_forget_forensic_lineage.py
+          tests/integration/test_forget_composition_gates.py
           -p no:cacheprovider
 
   semantic-terminal-persistence:
