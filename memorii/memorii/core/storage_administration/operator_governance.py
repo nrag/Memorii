@@ -577,7 +577,7 @@ class GovernanceOperator:
             )
         current = {
             row["memory_id"]: CanonicalMemoryRecord.model_validate(
-                __import__("json").loads(str(row["record_json"]))
+                json.loads(str(row["record_json"]))
             )
             for row in rows
             if row["memory_id"] in memory_ids

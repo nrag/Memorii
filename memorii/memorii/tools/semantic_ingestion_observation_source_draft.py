@@ -177,6 +177,7 @@ _SELF_DIGEST_FIELDS = {
     "ObservedSourceTerminalOutcome": "record_digest",
     "SourceRetentionTimeAttestation": "attestation_digest",
     "TransactionGroupCommitTimeAttestation": "attestation_digest",
+    "RevocationDirectiveRecord": "record_digest",
 }
 _NORMATIVE_DOMAINS = {
     "BootstrapGraphNativeProjectionPublicationReceiptV3": "memorii.bootstrap-graph.native-projection-publication-receipt.v3",
@@ -199,6 +200,8 @@ _ORDINARY_ROOTS = frozenset({
     "CitationStreamRecord", "ProvenanceStreamRecord", "TemporalTransitionStreamRecord", "IdentityTransitionStreamRecord",
     "ReferenceDispositionStreamRecord", "SourceIntroductionStreamRecord", "OperationIntroductionStreamRecord",
     "OperationTerminalOutcomeStreamRecord", "SourceTerminalOutcomeStreamRecord",
+    "ClaimRevocationTarget", "EntityRevocationTarget", "SourceRevocationTarget",
+    "RecordRevocationTarget", "RevocationClosureCoordinate",
 })
 _REVIEWED_ORDINARY_TRANSITIVE = frozenset({
     "AcceptedClaimIdentity", "AcceptedTemporalEvidence", "ActionRevision", "ActiveTemporalProjectionPointer",

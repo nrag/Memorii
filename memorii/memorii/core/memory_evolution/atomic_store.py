@@ -18232,12 +18232,13 @@ class SemanticIngestionAtomicStore:
             prepared_records = ()
             prepared_preconditions = ()
             projection_bindings = prior_authority.projection_history_bindings
+            from memorii.core.memory_evolution.conflict_attention import (
+                SemanticConflictReplayBinding,
+            )
+
             conflict_binding = (
                 prior_authority.semantic_conflict_replay_binding
-                or __import__(
-                    "memorii.core.memory_evolution.conflict_attention",
-                    fromlist=["SemanticConflictReplayBinding"],
-                ).SemanticConflictReplayBinding.genesis(
+                or SemanticConflictReplayBinding.genesis(
                     _SEMANTIC_EVENT_REPOSITORY_ID
                 )
             )
