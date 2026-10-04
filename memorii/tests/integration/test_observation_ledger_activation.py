@@ -48,7 +48,7 @@ from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import (
     InMemoryMemoryPlaneStore,
     JsonlMemoryPlaneStore,
-    _PersistedBatch,
+    PersistedBatch,
 )
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.semantic_ingestion.production_authority import (
@@ -109,7 +109,7 @@ def _replace_jsonl_writer_manifest(
             "manifest_digest": manifest.manifest_digest,
         },
     }})
-    backing._replace_batches([_PersistedBatch.create(
+    backing._replace_batches([PersistedBatch.create(
         revision=revision,
         data_revision=persisted_batch.data_revision,
         records=tuple(replacement if record is writer else record for record in records),
@@ -575,7 +575,7 @@ def test_public_activation_rejects_tampered_completed_baseline_without_consuming
                 )
             records.append(record)
         rewritten_batches.append(
-            _PersistedBatch.create(
+            PersistedBatch.create(
                 revision=batch.revision,
                 data_revision=batch.data_revision,
                 records=tuple(records),
@@ -1298,7 +1298,7 @@ def test_demoted_activated_graph_lineage_reopens_and_rejects_tampered_controls(
                 )
             records.append(record)
         rewritten.append(
-            _PersistedBatch.create(
+            PersistedBatch.create(
                 revision=batch.revision,
                 data_revision=batch.data_revision,
                 records=tuple(records),
@@ -1479,7 +1479,7 @@ def test_exhausted_activated_control_rejects_terminal_attachment(
         records = batch.records
         if batch.revision == batches[-1].revision:
             records = (*records, replacement)
-        rewritten.append(_PersistedBatch.create(
+        rewritten.append(PersistedBatch.create(
             revision=batch.revision, data_revision=batch.data_revision, records=records,
         ))
     backing._replace_batches(rewritten)

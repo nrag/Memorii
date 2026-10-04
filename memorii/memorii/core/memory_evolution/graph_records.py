@@ -40,6 +40,7 @@ GraphRecordKind = Literal[
     "entity_revision", "alias_revision", "type_evidence", "claim_assertion",
     "claim_projection", "relation_revision", "action_revision", "citation",
     "provenance", "temporal_transition", "identity_lineage", "reference_disposition",
+    "revocation_directive",
 ]
 
 
@@ -252,9 +253,96 @@ class ReferenceDispositionRecord(_GraphRecord):
         return self
 
 
+class EntityRevocationTarget(BaseModel):
+    target_kind: Literal["entity"] = "entity"
+    logical_entity_id: str = Field(min_length=1)
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+
+class ClaimRevocationTarget(BaseModel):
+    target_kind: Literal["claim"] = "claim"
+    claim_assertion_id: str = Field(min_length=1)
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+
+class SourceRevocationTarget(BaseModel):
+    target_kind: Literal["source"] = "source"
+    source_id: str = Field(min_length=1)
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+
+class RecordRevocationTarget(BaseModel):
+    target_kind: Literal["record"] = "record"
+    record_kind: GraphRecordKind
+    record_id: str = Field(min_length=1)
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+
+RevocationTarget = Annotated[
+    EntityRevocationTarget | ClaimRevocationTarget | SourceRevocationTarget
+    | RecordRevocationTarget,
+    Field(discriminator="target_kind"),
+]
+
+
+class RevocationClosureCoordinate(BaseModel):
+    record_kind: GraphRecordKind
+    record_id: str = Field(min_length=1)
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+
+class RevocationDirectiveRecord(_GraphRecord):
+    """Content-free owner directive marking identities that must never be served.
+
+    Every field is an opaque coordinate or digest: the record never carries
+    statement text, aliases as written, evidence spans, or any servable
+    content. History stays append-only; serving exclusion is derived from
+    these identities by projection, never by record removal.
+    """
+
+    record_kind: Literal["revocation_directive"] = "revocation_directive"
+    revocation_id: str = Field(min_length=1)
+    suppression_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    revoked_targets: tuple[RevocationTarget, ...]
+    closure_coordinates: tuple[RevocationClosureCoordinate, ...] = ()
+    closure_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    authority_capability_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    control_journal_position: int = Field(ge=1)
+    applied_at: datetime
+    scope_note_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_directive(self) -> RevocationDirectiveRecord:
+        if self.applied_at.tzinfo is None or self.applied_at.utcoffset() is None:
+            raise ValueError("revocation_directive_applied_at_invalid")
+        if not self.revoked_targets:
+            raise ValueError("revocation_directive_targets_missing")
+        target_keys = tuple(
+            (target.target_kind, target.model_dump_json()) for target in self.revoked_targets
+        )
+        if target_keys != tuple(sorted(set(target_keys))):
+            raise ValueError("revocation_directive_targets_not_canonical")
+        if self.closure_coordinates != tuple(
+            sorted(
+                set(self.closure_coordinates),
+                key=lambda coordinate: (coordinate.record_kind, coordinate.record_id),
+            )
+        ):
+            raise ValueError("revocation_directive_closure_not_canonical")
+        if self.closure_digest != graph_digest(
+            b"memorii.revocation-closure.v1\0",
+            tuple(
+                coordinate.model_dump(mode="python")
+                for coordinate in self.closure_coordinates
+            ),
+        ):
+            raise ValueError("revocation_directive_closure_digest_mismatch")
+        return self
+
+
 NonOwningGraphRecord = Annotated[
     EntityRevision | AliasRevision | TypeEvidence | ClaimProjection | RelationRevision
-    | CitationRecord | ProvenanceRecord | ReferenceDispositionRecord,
+    | CitationRecord | ProvenanceRecord | ReferenceDispositionRecord | RevocationDirectiveRecord,
     Field(discriminator="record_kind"),
 ]
 
@@ -267,6 +355,7 @@ def graph_record_id(record: object) -> str:
         "action_revision": "action_revision_id", "citation": "citation_id",
         "provenance": "provenance_id", "temporal_transition": "transition_id",
         "identity_lineage": "identity_lineage_id", "reference_disposition": "reference_disposition_id",
+        "revocation_directive": "revocation_id",
     }
     kind = getattr(record, "record_kind", None)
     if not isinstance(kind, str):
@@ -329,6 +418,7 @@ def canonical_graph_codec_manifest() -> CanonicalGraphRecordCodecManifest:
         "provenance": ProvenanceRecord, "temporal_transition": TemporalTransitionRecord,
         "identity_lineage": IdentityLineageRecord,
         "reference_disposition": ReferenceDispositionRecord,
+        "revocation_directive": RevocationDirectiveRecord,
     }
     entries = tuple(
         CanonicalGraphRecordCodecEntry(
@@ -455,7 +545,8 @@ def canonical_graph_record_adapter() -> TypeAdapter:
     union = Annotated[
         EntityRevision | AliasRevision | TypeEvidence | ClaimAssertion | ClaimProjection
         | RelationRevision | ActionRevision | CitationRecord | ProvenanceRecord
-        | TemporalTransitionRecord | IdentityLineageRecord | ReferenceDispositionRecord,
+        | TemporalTransitionRecord | IdentityLineageRecord | ReferenceDispositionRecord
+        | RevocationDirectiveRecord,
         Field(discriminator="record_kind"),
     ]
     return TypeAdapter(union)
@@ -498,6 +589,7 @@ def graph_record_union_member(value: object) -> TypeGuard[CanonicalGraphRecord]:
             TemporalTransitionRecord,
             IdentityLineageRecord,
             ReferenceDispositionRecord,
+            RevocationDirectiveRecord,
         ),
     )
 
@@ -841,7 +933,8 @@ if TYPE_CHECKING:
     CanonicalGraphRecord: TypeAlias = Annotated[
         EntityRevision | AliasRevision | TypeEvidence | ClaimAssertion | ClaimProjection
         | RelationRevision | ActionRevision | CitationRecord | ProvenanceRecord
-        | TemporalTransitionRecord | IdentityLineageRecord | ReferenceDispositionRecord,
+        | TemporalTransitionRecord | IdentityLineageRecord | ReferenceDispositionRecord
+        | RevocationDirectiveRecord,
         Field(discriminator="record_kind"),
     ]
 
@@ -849,10 +942,13 @@ if TYPE_CHECKING:
 __all__ = [
     "AliasRevision", "CanonicalEntityRevisionRef", "CanonicalGraphRecordCodecManifest",
     "CitationRecord", "ClaimProjection",
-    "EntityRevision", "GraphPartitionVersion", "GraphReadSet", "GraphReadSetExtension", "GraphRecordKind",
+    "ClaimRevocationTarget", "EntityRevocationTarget", "EntityRevision",
+    "GraphPartitionVersion", "GraphReadSet", "GraphReadSetExtension", "GraphRecordKind",
     "GroundedMentionRef",
     "GraphStateSnapshot", "GraphWriteIntent", "NonOwningGraphRecord", "PlannedEntityIdentity",
-    "PlannedIdentityReservation", "ProvenanceRecord", "ReferenceDispositionRecord",
+    "PlannedIdentityReservation", "ProvenanceRecord", "RecordRevocationTarget",
+    "ReferenceDispositionRecord", "RevocationClosureCoordinate", "RevocationDirectiveRecord",
+    "RevocationTarget", "SourceRevocationTarget",
     "AcceptedIdentityOperationArtifact", "SourceGroundedAliasPayload",
     "TrustedAcceptedIdentityOperationDecision",
     "VerifiedIdentityDecisionAuthority",

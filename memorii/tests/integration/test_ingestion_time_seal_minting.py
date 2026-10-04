@@ -29,7 +29,7 @@ from memorii.core.memory_evolution.observation_activation_runtime import (
     validate_registered_artifact,
 )
 from memorii.core.memory_plane.service import MemoryPlaneService
-from memorii.core.memory_plane.store import JsonlMemoryPlaneStore, _PersistedBatch
+from memorii.core.memory_plane.store import JsonlMemoryPlaneStore, PersistedBatch
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.scoped_context.authority import (
     InProcessScopedReadAuthority,
@@ -336,12 +336,12 @@ def test_projection_era_claim_and_new_catalog_claim_share_protected_scope_after_
             shutil.copytree(path, variant_path)
             log = variant_path / "memory_records.jsonl"
             batches = [
-                _PersistedBatch.model_validate_json(line)
+                PersistedBatch.model_validate_json(line)
                 for line in log.read_text(encoding="utf-8").splitlines()
             ]
             assert sum(record.memory_id == seal_id for batch in batches for record in batch.records) == 1
             changed_batches = [
-                _PersistedBatch.create(
+                PersistedBatch.create(
                     revision=batch.revision,
                     data_revision=batch.data_revision,
                     records=tuple(

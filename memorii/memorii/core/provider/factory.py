@@ -45,6 +45,9 @@ from memorii.core.semantic_ingestion.production_authority import (
     build_installed_capability_monitoring_authorities,
 )
 from memorii.core.semantic_ingestion.source_normalization_host import SourceNormalizationHostBundleBuilder
+from memorii.core.storage_administration.revoked_identity_view import (
+    RevokedIdentityServingGate,
+)
 from memorii.core.work_state.service import WorkStateService
 
 _DEFAULT_DECISION_STATE_SERVICE = object()
@@ -84,6 +87,7 @@ def build_provider_memory_service_from_env(
     installed_capability_monitoring_configuration: object | None = None,
     ontology_observer_capability: OntologyObserverCapability | None = None,
     ontology_observer_authorizer: Callable[[AuthenticatedIngressContext, ObserverBindingIdentity], bool] | None = None,
+    revoked_view: RevokedIdentityServingGate | None = None,
 ) -> ProviderMemoryService:
     """Build the source-only governed-source admission provider composition without ambient model dependencies."""
 
@@ -163,6 +167,7 @@ def build_provider_memory_service_from_env(
         verified_capability_monitoring_authorities=verified_capability_monitoring_authorities,
         ontology_observer_capability=ontology_observer_capability,
         ontology_observer_authorizer=ontology_observer_authorizer,
+        revoked_view=revoked_view,
     )
 
 

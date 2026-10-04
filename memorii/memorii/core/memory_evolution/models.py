@@ -108,6 +108,7 @@ class ClaimLifecycleState(StrEnum):
     INVALIDATED = "invalidated"
     EXPIRED = "expired"
     ARCHIVED = "archived"
+    REVOKED = "revoked"
 
 
 class ClaimAssertionMode(StrEnum):
@@ -167,6 +168,7 @@ class EntityLinkLifecycleState(StrEnum):
     SPLIT = "split"
     RELINKED = "relinked"
     INVALIDATED = "invalidated"
+    REVOKED = "revoked"
 
 
 class RecordLifecycleState(StrEnum):
@@ -178,6 +180,7 @@ class RecordLifecycleState(StrEnum):
     INVALIDATED = "invalidated"
     EXPIRED = "expired"
     ARCHIVED = "archived"
+    REVOKED = "revoked"
     MERGED = "merged"
     SPLIT = "split"
     RELINKED = "relinked"

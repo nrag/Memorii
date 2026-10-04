@@ -17,7 +17,7 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     HostBootstrapMaterialVerifier,
 )
 from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedHostIngress
-from memorii.core.memory_plane import JsonlMemoryPlaneStore, MemoryPlaneService
+from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
@@ -190,10 +190,17 @@ def _build_root(
     if cell.backend == "memory":
         memory_plane = MemoryPlaneService()
     else:
+        # Persistent capture cells select the same persistent memory plane as
+        # every other composition root: a managed installation serves its
+        # verified published partition; a pre-cutover legacy root keeps its
+        # JSONL plane; ambiguous or empty roots fail closed instead of
+        # silently constructing a detached store.
+        from memorii.core.persistence.factory import select_persistent_memory_plane
+
         storage_root.mkdir(parents=True, exist_ok=True)
-        memory_plane = MemoryPlaneService(
-            record_store=JsonlMemoryPlaneStore(storage_root / "memory_plane")
-        )
+        memory_plane = select_persistent_memory_plane(
+            storage_root, allow_legacy_bootstrap=True
+        ).memory_plane
     if cell.root == "direct":
         return build_authenticated_source_runtime(
             issue_ingress=lambda _submission: cell.authenticated_host_ingress,

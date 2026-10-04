@@ -16,10 +16,12 @@ from memorii.core.memory_evolution.graph_records import (
     CitationRecord,
     ClaimProjection,
     EntityRevision,
+    EntityRevocationTarget,
     GraphRecordKind,
     ProvenanceRecord,
     ReferenceDispositionRecord,
     RelationRevision,
+    RevocationDirectiveRecord,
     TypeEvidence,
 )
 from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
@@ -307,6 +309,9 @@ def generated_reference_schema_manifest() -> ReferenceSchemaManifest:
             ("object_entity_revision_id", "entity_revision", "one", "current_revision_redirectable"),
             ("object_logical_entity_id", "logical_entity", "one", "logical_projection_key"),
         ),
+        "revocation_directive": (
+            ("revoked_targets[].logical_entity_id", "logical_entity", "many", "logical_projection_key"),
+        ),
         "temporal_transition": (),
         "type_evidence": (
             ("entity_reference.entity_revision_id", "entity_revision", "optional", "immutable_revision"),
@@ -325,6 +330,7 @@ def generated_reference_schema_manifest() -> ReferenceSchemaManifest:
         "provenance": ProvenanceRecord,
         "reference_disposition": ReferenceDispositionRecord,
         "relation_revision": RelationRevision,
+        "revocation_directive": RevocationDirectiveRecord,
         "temporal_transition": TemporalTransitionRecord,
         "type_evidence": TypeEvidence,
     }
@@ -441,6 +447,12 @@ def extract_reference_edges(record: object) -> tuple[tuple[str, ReferenceTarget]
         edges.extend(
             ("successor_logical_entity_ids[]", ReferenceTarget(kind="logical_entity", target_id=value))
             for value in record.successor_logical_entity_ids
+        )
+    elif isinstance(record, RevocationDirectiveRecord):
+        edges.extend(
+            ("revoked_targets[].logical_entity_id", ReferenceTarget(kind="logical_entity", target_id=target.logical_entity_id))
+            for target in record.revoked_targets
+            if isinstance(target, EntityRevocationTarget)
         )
     return tuple(sorted(edges, key=lambda item: (item[0], item[1].kind, item[1].target_id)))
 

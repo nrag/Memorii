@@ -53,7 +53,7 @@ from memorii.core.memory_evolution.writer_admission import (
 )
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
-from memorii.core.memory_plane.store import JsonlMemoryPlaneStore, _PersistedBatch
+from memorii.core.memory_plane.store import JsonlMemoryPlaneStore, PersistedBatch
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.semantic_ingestion.contracts import (
     SemanticGraphDelta,
@@ -977,7 +977,7 @@ def test_atomic_reader_uses_source_decoder_and_durably_freezes_corrupt_tail(
             (2, second_raw, second_source),
         )
     )
-    backend._replace_batches([_PersistedBatch.create(revision=1, data_revision=0, records=seeded_records)])
+    backend._replace_batches([PersistedBatch.create(revision=1, data_revision=0, records=seeded_records)])
     plane = MemoryPlaneService(record_store=backend)
     writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest(), now_provider=lambda: NOW)
     writers.create_initial_evidence_only(
@@ -2003,7 +2003,7 @@ def test_next_canonical_graph_record_versions_preserves_typed_nested_contracts()
         graph_revision_before="revision-all-kinds",
     )
 
-    assert len(records) == len(advanced) == 12
+    assert len(records) == len(advanced) == 13
     for original, current in zip(records, advanced, strict=True):
         assert type(current) is type(original)
         assert _nested_model_types(current) == _nested_model_types(original)
@@ -2190,7 +2190,7 @@ def test_all_graph_record_kinds_survive_signed_checkpoint_tail_and_genesis_repla
     assert encode_typed_value(from_checkpoint.model_dump(mode="python")) == (
         encode_typed_value(from_genesis.model_dump(mode="python"))
     )
-    assert len(from_checkpoint.materialized_records) == 13
+    assert len(from_checkpoint.materialized_records) == 14
     assert {item.record_kind for item in from_checkpoint.materialized_records} == {
         item.record_kind for item in records
     }

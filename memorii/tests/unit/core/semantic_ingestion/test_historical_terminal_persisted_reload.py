@@ -13,7 +13,7 @@ from memorii.core.memory_evolution.writer_admission import (
 )
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
-from memorii.core.memory_plane.store import JsonlMemoryPlaneStore, _PersistedBatch
+from memorii.core.memory_plane.store import JsonlMemoryPlaneStore, PersistedBatch
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.semantic_ingestion.bootstrap_graph_host import BootstrapGraphHostBundleBuilder
 from memorii.core.semantic_ingestion.contracts import (
@@ -56,7 +56,7 @@ def _rehydrated_historical_plane(tmp_path: Path) -> MemoryPlaneService:
     )
     backend = JsonlMemoryPlaneStore(tmp_path / "historical-terminal")
     backend._replace_batches([
-        _PersistedBatch.create(revision=1, data_revision=0, records=records),
+        PersistedBatch.create(revision=1, data_revision=0, records=records),
     ])
     return MemoryPlaneService(record_store=backend)
 

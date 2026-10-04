@@ -1,0 +1,23 @@
+{
+  "protocol_version": 1,
+  "task_id": "task:smoke",
+  "revision": 2,
+  "status": "ready",
+  "goal": "Installed smoke",
+  "ready_work": [],
+  "blocked_work": [],
+  "constraints": [],
+  "remaining_acceptance": [],
+  "candidate_hypotheses": [],
+  "committed_hypotheses": [],
+  "frontier": [],
+  "unresolved_questions": [],
+  "unexplained_evidence": [],
+  "reopenable_branches": [],
+  "recommendation_kind": "none",
+  "recommendation_evidence": [],
+  "pending_actions": [],
+  "source_refs": [],
+  "omissions": [],
+  "state_digest": "b3d9c7f2a1e84d5608b1c3e5f7a9d0b2c4e6f809a1b3c5d7e9f0a2b4c6d8e0f"
+}

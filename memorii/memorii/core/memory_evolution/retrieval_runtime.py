@@ -51,6 +51,16 @@ from memorii.core.memory_evolution.temporal_contracts import (
     TemporalAnchorCatalog,
     TemporalEntityCandidate,
 )
+from memorii.core.storage_administration.revoked_identity_view import (
+    RevokedIdentityServingGate,
+)
+
+# Entity links are served only in these lifecycles: an allowlist, never a
+# denylist, so a tombstoned (revoked) link can never slip through a
+# forgotten member the way an unknown value would under `!= "invalidated"`.
+_ELIGIBLE_LINK_LIFECYCLES = frozenset(
+    {"active", "merged", "split", "relinked"}
+)
 
 
 class MemoryEvolutionRetrievalRuntime:
@@ -66,6 +76,7 @@ class MemoryEvolutionRetrievalRuntime:
         temporal_anchor_catalog: TemporalAnchorCatalog,
         now_provider: Callable[[], datetime],
         predicate_registry: PredicateRegistry | None = None,
+        revoked_view: RevokedIdentityServingGate | None = None,
     ) -> None:
         self._claim_reader = claim_reader
         self._entity_link_reader = entity_link_reader
@@ -74,6 +85,21 @@ class MemoryEvolutionRetrievalRuntime:
         self._temporal_anchor_catalog = temporal_anchor_catalog
         self._now_provider = now_provider
         self._predicate_registry = predicate_registry or PredicateRegistry()
+        self._revoked_view = revoked_view
+
+    def _view_revoked(
+        self, *, entity_id: str | None = None, link_id: str | None = None,
+        claim_id: str | None = None,
+    ) -> bool:
+        """Serving-gate consult; an absent view suppresses nothing."""
+
+        if self._revoked_view is None:
+            return False
+        return bool(
+            (entity_id is not None and self._revoked_view.is_revoked_entity(entity_id))
+            or (link_id is not None and self._revoked_view.is_revoked_record(link_id))
+            or (claim_id is not None and self._revoked_view.is_revoked_claim(claim_id))
+        )
 
     def retrieve(self, request: MemoryQueryInput) -> ProductionRetrievalDecision:
         if request.reference_time is None:
@@ -82,7 +108,11 @@ class MemoryEvolutionRetrievalRuntime:
         readable_links = [
             link
             for link in self._entity_link_reader()
-            if link.lifecycle_state.value != "invalidated" and request_scope.can_read(link.scope)
+            if link.lifecycle_state.value in _ELIGIBLE_LINK_LIFECYCLES
+            and request_scope.can_read(link.scope)
+            and not self._view_revoked(
+                entity_id=link.canonical_entity_id, link_id=link.link_id
+            )
         ]
         most_specific_scope_by_identity: dict[tuple[str, str], int] = {}
         for link in readable_links:
@@ -192,6 +222,15 @@ class MemoryEvolutionRetrievalRuntime:
             subject_entity_id=None,
             request_scope=resolved_request.scope,
         )
+        if self._revoked_view is not None:
+            states = [
+                state
+                for state in states
+                if not self._view_revoked(
+                    claim_id=state.claim_id,
+                    entity_id=state.claim_key.subject_entity_id,
+                )
+            ]
         entity_names_by_id = {
             link.canonical_entity_id: {
                 link.mention_text,

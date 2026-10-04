@@ -961,8 +961,13 @@ def _scalar(value: str) -> None:
         raise CanonicalTypedValueError("canonical_unicode_scalar_invalid") from exc
 
 
+@lru_cache(maxsize=1 << 16)
 def _json_string(value: str) -> bytes:
-    """Encode one string under the fixed scalar policy in a single pass."""
+    """Encode one string under the fixed scalar policy in a single pass.
+
+    Canonical encoders are pure, so equal strings memoize to equal bytes and
+    the output stays byte-identical to the uncached encoding.
+    """
     if _JSON_ESCAPE_SCAN.search(value) is None:
         try:
             return b'"' + value.encode("utf-8") + b'"'

@@ -1,0 +1,96 @@
+"""Drive real ``hermes chat`` primary-CLI turns over a pseudo-terminal.
+
+The Memorii provider's local Level 2 authority admits only Hermes' primary
+CLI context (platform=cli, agent_context=primary, agent_workspace=hermes);
+one-shot -z turns skip MemoryManager entirely and ACP sessions are denied
+by that gate on purpose. A pseudo-terminal running the seeded interactive
+chat (``hermes chat --cli -q MESSAGE`` submits the first turn literally on
+a real TTY) is therefore the honest headless driver: the full session
+machinery runs, including the MemoryManager and the Memorii provider.
+"""
+from __future__ import annotations
+
+import contextlib
+import fcntl
+import os
+import pty
+import select
+import signal
+import struct
+import termios
+import time
+
+
+def seeded_chat_turn(
+    command: list[str],
+    environment: dict[str, str],
+    message: str,
+    *,
+    marker: str = "acknowledged and recorded.",
+    count_fn: callable[[], int] | None = None,
+    timeout: float = 300.0,
+) -> tuple[bool, str]:
+    """Run one seeded chat turn; returns (marker seen, transcript text).
+
+    ``count_fn``, when given, delays the clean /exit until the durable
+    count it returns GROWS past its value at marker time (bounded): Hermes
+    syncs the completed turn on a background worker AFTER the reply
+    renders, so exiting on the marker alone races the memory write.
+    """
+    pid, descriptor = pty.fork()
+    if pid == 0:
+        os.chdir("/tmp/hermes-journey-work")
+        argv = [*command, "--cli", "-q", message]
+        os.execve(command[0], argv, environment)
+        os._exit(127)
+    # A real window size keeps TUI input handling well-formed.
+    fcntl.ioctl(descriptor, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
+    output: list[bytes] = []
+    deadline = time.monotonic() + timeout
+    answered = False
+    exited = False
+    exit_code: int | None = None
+    try:
+        while time.monotonic() < deadline:
+            readable, _, _ = select.select([descriptor], [], [], 2.0)
+            if readable:
+                try:
+                    chunk = os.read(descriptor, 65536)
+                except OSError:
+                    break
+                if not chunk:
+                    break
+                output.append(chunk)
+                text = b"".join(output).decode("utf-8", "replace")
+                if marker in text:
+                    answered = True
+                    if not exited:
+                        if count_fn is None:
+                            time.sleep(1.0)
+                            os.write(descriptor, b"/exit\r")
+                            exited = True
+                        else:
+                            base = count_fn()
+                            settle_deadline = time.monotonic() + 150.0
+                            while time.monotonic() < settle_deadline:
+                                try:
+                                    if count_fn() > base:
+                                        break
+                                except OSError:
+                                    pass
+                                time.sleep(1.0)
+                            os.write(descriptor, b"/exit\r")
+                            exited = True
+            waited, status = os.waitpid(pid, os.WNOHANG)
+            if waited == pid:
+                exit_code = os.waitstatus_to_exitcode(status)
+                break
+    finally:
+        with contextlib.suppress(OSError):
+            os.close(descriptor)
+    if exit_code is None:
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGKILL)
+        with contextlib.suppress(ChildProcessError):
+            os.waitpid(pid, 0)
+    return answered, b"".join(output).decode("utf-8", "replace")

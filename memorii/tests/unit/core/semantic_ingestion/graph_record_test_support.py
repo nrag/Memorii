@@ -9,12 +9,15 @@ from memorii.core.memory_evolution.graph_records import (
     CitationRecord,
     ClaimProjection,
     EntityRevision,
+    EntityRevocationTarget,
     ProvenanceRecord,
     ReferenceDispositionRecord,
     RelationRevision,
+    RevocationDirectiveRecord,
     SourceAuthority,
     TypeEvidence,
     canonical_graph_codec_manifest,
+    graph_digest,
 )
 from memorii.core.memory_evolution.identity_lineage import (
     identity_lineage_genesis_digest,
@@ -249,6 +252,20 @@ def all_canonical_graph_records(
             codec_fingerprint=manifest[
                 "reference_disposition"
             ].codec_fingerprint,
+        ),
+        RevocationDirectiveRecord.create(
+            operation_id="complete-graph-records",
+            revocation_id="revocation:v1",
+            suppression_id="6" * 64,
+            revoked_targets=(EntityRevocationTarget(logical_entity_id="entity:alice"),),
+            closure_coordinates=(),
+            closure_digest=graph_digest(b"memorii.revocation-closure.v1\0", ()),
+            authority_capability_digest="7" * 64,
+            control_journal_position=1,
+            applied_at=NOW,
+            scope_note_digest="8" * 64,
+            record_version=1,
+            codec_fingerprint=manifest["revocation_directive"].codec_fingerprint,
         ),
     )
 

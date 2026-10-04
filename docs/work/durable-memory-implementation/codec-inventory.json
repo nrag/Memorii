@@ -1,0 +1,144 @@
+{
+  "bootstrap_graph_v3_atomic_member_kinds": {
+    "bootstrap_graph_canonical_source_result": "bootstrap_graph_v3/bootstrap_graph_canonical_source_result/native",
+    "bootstrap_graph_control_epoch": "bootstrap_graph_v3/bootstrap_graph_control_epoch/native",
+    "bootstrap_graph_coordinator_request": "bootstrap_graph_v3/bootstrap_graph_coordinator_request/native",
+    "bootstrap_graph_dependent_attempt": "bootstrap_graph_v3/bootstrap_graph_dependent_attempt/native",
+    "bootstrap_graph_final_stage_evidence": "bootstrap_graph_v3/bootstrap_graph_final_stage_evidence/native",
+    "bootstrap_graph_observed_counters": "bootstrap_graph_v3/bootstrap_graph_observed_counters/native",
+    "bootstrap_graph_pre_execution_group_evidence": "bootstrap_graph_v3/bootstrap_graph_pre_execution_group_evidence/native",
+    "bootstrap_graph_pre_execution_identity_closure": "bootstrap_graph_v3/bootstrap_graph_pre_execution_identity_closure/native",
+    "bootstrap_graph_pre_group_noncommit": "bootstrap_graph_v3/bootstrap_graph_pre_group_noncommit/native",
+    "bootstrap_graph_replay_bundle": "bootstrap_graph_v3/bootstrap_graph_replay_bundle/native",
+    "bootstrap_graph_retry_progress": "bootstrap_graph_v3/bootstrap_graph_retry_progress/native",
+    "bootstrap_graph_snapshot_authority": "bootstrap_graph_v3/bootstrap_graph_snapshot_authority/native",
+    "bootstrap_graph_source_finalization_observation_delta": "bootstrap_graph_v3/bootstrap_graph_source_finalization_observation_delta/native",
+    "bootstrap_graph_source_progress": "bootstrap_graph_v3/bootstrap_graph_source_progress/native",
+    "bootstrap_graph_successor_attempt_authority": "bootstrap_graph_v3/bootstrap_graph_successor_attempt_authority/native",
+    "bootstrap_graph_terminal_handoff": "bootstrap_graph_v3/bootstrap_graph_terminal_handoff/native",
+    "bootstrap_group_planning_authorization": "bootstrap_graph_v3/bootstrap_group_planning_authorization/native",
+    "bootstrap_source_plan_lineage": "bootstrap_graph_v3/bootstrap_source_plan_lineage/native",
+    "bootstrap_source_plan_lineage_entry": "bootstrap_graph_v3/bootstrap_source_plan_lineage_entry/native",
+    "bootstrap_transaction_group_plan": "bootstrap_graph_v3/bootstrap_transaction_group_plan/native",
+    "graph_base_read_set": "bootstrap_graph_v3/graph_base_read_set/native",
+    "graph_read_set_extension": "bootstrap_graph_v3/graph_read_set_extension/native",
+    "graph_reconciliation": "bootstrap_graph_v3/graph_reconciliation/native",
+    "group_compilation_artifact": "bootstrap_graph_v3/group_compilation_artifact/native",
+    "group_compilation_request": "bootstrap_graph_v3/group_compilation_request/native",
+    "group_independence_certificate": "bootstrap_graph_v3/group_independence_certificate/native",
+    "ingestion_execution_manifest": "bootstrap_graph_v3/ingestion_execution_manifest/native",
+    "reference_closure": "bootstrap_graph_v3/reference_closure/native",
+    "transaction_group_result": "bootstrap_graph_v3/transaction_group_result/native"
+  },
+  "generated_from": "actual installed registries at generation time",
+  "kind": "installed_codec_and_projector_inventory",
+  "manifest_covered_catalogs": [
+    "memory_batches",
+    "memory_current_records",
+    "memory_record_versions",
+    "ontology_activation_attempts",
+    "ontology_candidates",
+    "ontology_replay_receipts",
+    "ontology_selections",
+    "ontology_versions",
+    "semantic_claims",
+    "semantic_entities",
+    "semantic_evidence_links"
+  ],
+  "memory_plane_query": {
+    "default_page_size": 100,
+    "deferred_variants": [
+      "entity_neighborhood",
+      "evidence_links",
+      "catalog_history",
+      "bounded_time_filters"
+    ],
+    "kinds": [
+      "record_lookup",
+      "filtered_records"
+    ],
+    "max_page_size": 500
+  },
+  "ontology_index_row_schemas": {
+    "ontology_activation_attempts": [
+      "attempt_id",
+      "record_digest",
+      "record_id",
+      "status"
+    ],
+    "ontology_candidates": [
+      "lifecycle",
+      "proposal_id",
+      "record_digest",
+      "record_id"
+    ],
+    "ontology_replay_receipts": [
+      "operation_id",
+      "record_digest",
+      "record_id"
+    ],
+    "ontology_selections": [
+      "activation_sequence",
+      "record_digest",
+      "record_id",
+      "scope_key",
+      "selected_attempt_id",
+      "selected_version_digest"
+    ],
+    "ontology_versions": [
+      "record_digest",
+      "record_id",
+      "version_digest"
+    ]
+  },
+  "ontology_record_kinds": [
+    "learned_ontology_activation_attempt_v1",
+    "learned_ontology_catalog_pointer_v1",
+    "learned_ontology_catalog_version_v1",
+    "learned_ontology_change_proposal_v1",
+    "learned_ontology_replay_operation_v1"
+  ],
+  "partition_sql_catalogs": [
+    "memory_batches",
+    "memory_current_records",
+    "memory_record_versions",
+    "memory_revision_state",
+    "ontology_activation_attempts",
+    "ontology_candidates",
+    "ontology_replay_receipts",
+    "ontology_selections",
+    "ontology_versions",
+    "partition_publication",
+    "partition_schema",
+    "semantic_claims",
+    "semantic_entities",
+    "semantic_evidence_links",
+    "semantic_index_state"
+  ],
+  "semantic_index_row_schemas": {
+    "semantic_claims": [
+      "claim_assertion_id",
+      "object_entity_id",
+      "predicate_id",
+      "record_digest",
+      "record_id",
+      "subject_entity_id",
+      "valid_from",
+      "valid_to"
+    ],
+    "semantic_entities": [
+      "codec_fingerprint",
+      "entity_revision_id",
+      "lifecycle",
+      "logical_entity_id",
+      "record_digest",
+      "record_id"
+    ],
+    "semantic_evidence_links": [
+      "claim_assertion_id",
+      "evidence_digest",
+      "source_digest",
+      "source_id"
+    ]
+  }
+}

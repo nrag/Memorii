@@ -219,6 +219,10 @@ def record_from_claim_state(*, state: ClaimState, source_candidate_id: str) -> C
         ClaimLifecycleState.SUPERSEDED: TemporalValidityStatus.INVALIDATED,
         ClaimLifecycleState.INVALIDATED: TemporalValidityStatus.INVALIDATED,
         ClaimLifecycleState.ARCHIVED: TemporalValidityStatus.INVALIDATED,
+        # A revoked claim is a content-free tombstone: the projection maps
+        # to the never-eligible validity, and the payload carries no
+        # servable text for any downstream renderer.
+        ClaimLifecycleState.REVOKED: TemporalValidityStatus.INVALIDATED,
         ClaimLifecycleState.CANDIDATE: TemporalValidityStatus.UNKNOWN,
     }[state.lifecycle_state]
     return CanonicalMemoryRecord(

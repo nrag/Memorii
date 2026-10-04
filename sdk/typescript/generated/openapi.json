@@ -1,0 +1,1022 @@
+{
+  "components": {
+    "schemas": {
+      "HarnessStateEnvelope": {
+        "$defs": {
+          "HarnessOutputBlock": {
+            "additionalProperties": false,
+            "description": "One bounded work item, frontier entry or evidence reference.",
+            "properties": {
+              "candidate": {
+                "default": false,
+                "title": "Candidate",
+                "type": "boolean"
+              },
+              "committed": {
+                "default": false,
+                "title": "Committed",
+                "type": "boolean"
+              },
+              "detail": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Detail"
+              },
+              "kind": {
+                "default": "work",
+                "enum": [
+                  "work",
+                  "frontier",
+                  "evidence",
+                  "blocker"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "label": {
+                "minLength": 1,
+                "title": "Label",
+                "type": "string"
+              }
+            },
+            "required": [
+              "label"
+            ],
+            "title": "HarnessOutputBlock",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Bounded host view; errors use a separate closed envelope.",
+        "properties": {
+          "blocked_work": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/HarnessOutputBlock"
+            },
+            "title": "Blocked Work",
+            "type": "array"
+          },
+          "candidate_hypotheses": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/HarnessOutputBlock"
+            },
+            "title": "Candidate Hypotheses",
+            "type": "array"
+          },
+          "checkpoint_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Checkpoint Ref"
+          },
+          "committed_hypotheses": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/HarnessOutputBlock"
+            },
+            "title": "Committed Hypotheses",
+            "type": "array"
+          },
+          "constraints": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Constraints",
+            "type": "array"
+          },
+          "continuation_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Continuation Cursor"
+          },
+          "current_execution_node": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Current Execution Node"
+          },
+          "execution_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Execution Status"
+          },
+          "freshness_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Freshness Note"
+          },
+          "frontier": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/HarnessOutputBlock"
+            },
+            "title": "Frontier",
+            "type": "array"
+          },
+          "goal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Goal"
+          },
+          "omissions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Omissions",
+            "type": "array"
+          },
+          "pending_actions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Pending Actions",
+            "type": "array"
+          },
+          "protocol_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Protocol Version",
+            "type": "integer"
+          },
+          "ready_work": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/HarnessOutputBlock"
+            },
+            "title": "Ready Work",
+            "type": "array"
+          },
+          "recommendation_evidence": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Recommendation Evidence",
+            "type": "array"
+          },
+          "recommendation_kind": {
+            "default": "none",
+            "enum": [
+              "test",
+              "inspect",
+              "ask",
+              "revalidate",
+              "reconcile",
+              "wait",
+              "none"
+            ],
+            "title": "Recommendation Kind",
+            "type": "string"
+          },
+          "recommendation_revision": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Recommendation Revision"
+          },
+          "recommendation_target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Recommendation Target"
+          },
+          "remaining_acceptance": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Remaining Acceptance",
+            "type": "array"
+          },
+          "reopenable_branches": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/HarnessOutputBlock"
+            },
+            "title": "Reopenable Branches",
+            "type": "array"
+          },
+          "revision": {
+            "minimum": 0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "selected_overlay_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Selected Overlay Id"
+          },
+          "solver_category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Solver Category"
+          },
+          "solver_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Solver Id"
+          },
+          "source_refs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Refs",
+            "type": "array"
+          },
+          "state_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "State Digest",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "revalidation_required",
+              "reconcile_required",
+              "pending",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "minLength": 1,
+            "title": "Task Id",
+            "type": "string"
+          },
+          "unexplained_evidence": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/HarnessOutputBlock"
+            },
+            "title": "Unexplained Evidence",
+            "type": "array"
+          },
+          "unresolved_questions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Unresolved Questions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "task_id",
+          "revision",
+          "status",
+          "state_digest"
+        ],
+        "title": "HarnessStateEnvelope",
+        "type": "object"
+      },
+      "SidecarError": {
+        "additionalProperties": false,
+        "description": "Closed error envelope; no task-derived data.",
+        "properties": {
+          "code": {
+            "enum": [
+              "unauthenticated",
+              "denied",
+              "not_found",
+              "unsupported_version",
+              "unsupported_configuration",
+              "invalid_request",
+              "conflict",
+              "stale_cursor",
+              "resource_exhausted",
+              "unavailable",
+              "integrity_error",
+              "needs_reconciliation"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Detail"
+          },
+          "retryable": {
+            "title": "Retryable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "retryable"
+        ],
+        "title": "SidecarError",
+        "type": "object"
+      },
+      "SidecarIntakeRequest": {
+        "$defs": {
+          "BeliefUpdateProposal": {
+            "additionalProperties": false,
+            "description": "The durable carrier of the spec's update_belief: justification-bound.",
+            "properties": {
+              "epistemic_status": {
+                "enum": [
+                  "candidate",
+                  "committed",
+                  "weakened",
+                  "suspended",
+                  "retired"
+                ],
+                "title": "Epistemic Status",
+                "type": "string"
+              },
+              "justification_id": {
+                "minLength": 1,
+                "title": "Justification Id",
+                "type": "string"
+              },
+              "kind": {
+                "const": "belief_update",
+                "default": "belief_update",
+                "title": "Kind",
+                "type": "string"
+              },
+              "node_id": {
+                "minLength": 1,
+                "title": "Node Id",
+                "type": "string"
+              },
+              "solver_id": {
+                "minLength": 1,
+                "title": "Solver Id",
+                "type": "string"
+              },
+              "strength": {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "title": "Strength",
+                "type": "number"
+              }
+            },
+            "required": [
+              "solver_id",
+              "node_id",
+              "justification_id",
+              "epistemic_status",
+              "strength"
+            ],
+            "title": "BeliefUpdateProposal",
+            "type": "object"
+          },
+          "NodeEvidenceReference": {
+            "additionalProperties": false,
+            "properties": {
+              "source_digest": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Source Digest"
+              },
+              "source_id": {
+                "minLength": 1,
+                "title": "Source Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "source_id"
+            ],
+            "title": "NodeEvidenceReference",
+            "type": "object"
+          },
+          "NodeMergeProposal": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "node_merge",
+                "default": "node_merge",
+                "title": "Kind",
+                "type": "string"
+              },
+              "reason": {
+                "minLength": 1,
+                "title": "Reason",
+                "type": "string"
+              },
+              "solver_id": {
+                "minLength": 1,
+                "title": "Solver Id",
+                "type": "string"
+              },
+              "source_node_id": {
+                "minLength": 1,
+                "title": "Source Node Id",
+                "type": "string"
+              },
+              "target_node_id": {
+                "minLength": 1,
+                "title": "Target Node Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "solver_id",
+              "source_node_id",
+              "target_node_id",
+              "reason"
+            ],
+            "title": "NodeMergeProposal",
+            "type": "object"
+          },
+          "NodeReopenProposal": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "node_reopen",
+                "default": "node_reopen",
+                "title": "Kind",
+                "type": "string"
+              },
+              "node_id": {
+                "minLength": 1,
+                "title": "Node Id",
+                "type": "string"
+              },
+              "reason_refs": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "title": "Reason Refs",
+                "type": "array"
+              },
+              "solver_id": {
+                "minLength": 1,
+                "title": "Solver Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "solver_id",
+              "node_id"
+            ],
+            "title": "NodeReopenProposal",
+            "type": "object"
+          },
+          "RuntimeCommandRequest": {
+            "additionalProperties": false,
+            "description": "Closed version-1 runtime command union.",
+            "properties": {
+              "abort_reason": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Abort Reason"
+              },
+              "completion_evidence": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/TaskCompletionEvidence"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "expected_revision": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Expected Revision"
+              },
+              "goal": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Goal"
+              },
+              "kind": {
+                "enum": [
+                  "start_task",
+                  "resume_task",
+                  "record_observation",
+                  "propose_state_change",
+                  "record_action_dispatch",
+                  "record_action_result",
+                  "checkpoint_task",
+                  "replan_task",
+                  "complete_task",
+                  "pause_task",
+                  "abort_task"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "operation_id": {
+                "minLength": 1,
+                "title": "Operation Id",
+                "type": "string"
+              },
+              "pause_reason": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Pause Reason"
+              },
+              "proposal": {
+                "anyOf": [
+                  {
+                    "discriminator": {
+                      "mapping": {
+                        "belief_update": "#/$defs/BeliefUpdateProposal",
+                        "node_merge": "#/$defs/NodeMergeProposal",
+                        "node_reopen": "#/$defs/NodeReopenProposal",
+                        "status_update": "#/$defs/StatusUpdateProposal"
+                      },
+                      "propertyName": "kind"
+                    },
+                    "oneOf": [
+                      {
+                        "$ref": "#/$defs/BeliefUpdateProposal"
+                      },
+                      {
+                        "$ref": "#/$defs/StatusUpdateProposal"
+                      },
+                      {
+                        "$ref": "#/$defs/NodeReopenProposal"
+                      },
+                      {
+                        "$ref": "#/$defs/NodeMergeProposal"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Proposal"
+              },
+              "protocol_version": {
+                "const": 1,
+                "default": 1,
+                "title": "Protocol Version",
+                "type": "integer"
+              },
+              "source_digest": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Source Digest"
+              },
+              "task_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Task Id"
+              }
+            },
+            "required": [
+              "kind",
+              "operation_id"
+            ],
+            "title": "RuntimeCommandRequest",
+            "type": "object"
+          },
+          "StatusUpdateProposal": {
+            "additionalProperties": false,
+            "properties": {
+              "evidence": {
+                "default": [],
+                "items": {
+                  "$ref": "#/$defs/NodeEvidenceReference"
+                },
+                "title": "Evidence",
+                "type": "array"
+              },
+              "kind": {
+                "const": "status_update",
+                "default": "status_update",
+                "title": "Kind",
+                "type": "string"
+              },
+              "node_id": {
+                "minLength": 1,
+                "title": "Node Id",
+                "type": "string"
+              },
+              "reason": {
+                "minLength": 1,
+                "title": "Reason",
+                "type": "string"
+              },
+              "solver_id": {
+                "minLength": 1,
+                "title": "Solver Id",
+                "type": "string"
+              },
+              "status": {
+                "minLength": 1,
+                "title": "Status",
+                "type": "string"
+              }
+            },
+            "required": [
+              "solver_id",
+              "node_id",
+              "status",
+              "reason"
+            ],
+            "title": "StatusUpdateProposal",
+            "type": "object"
+          },
+          "TaskCompletionEvidence": {
+            "additionalProperties": false,
+            "description": "Typed completion evidence; acceptance validation applies before DONE.",
+            "properties": {
+              "acceptance_results": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "title": "Acceptance Results",
+                "type": "array"
+              },
+              "required_artifact_refs": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "title": "Required Artifact Refs",
+                "type": "array"
+              },
+              "unresolved_blocker_acknowledged": {
+                "default": false,
+                "title": "Unresolved Blocker Acknowledged",
+                "type": "boolean"
+              }
+            },
+            "title": "TaskCompletionEvidence",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Closed v1 intake body: one runtime command, authority stays server-side.",
+        "properties": {
+          "command": {
+            "$ref": "#/$defs/RuntimeCommandRequest"
+          },
+          "protocol_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Protocol Version",
+            "type": "integer"
+          },
+          "transport_message_id": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Transport Message Id"
+          }
+        },
+        "required": [
+          "command"
+        ],
+        "title": "SidecarIntakeRequest",
+        "type": "object"
+      },
+      "SidecarRequest": {
+        "additionalProperties": false,
+        "description": "Closed v1 state request body.",
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cursor"
+          },
+          "protocol_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Protocol Version",
+            "type": "integer"
+          },
+          "task_id": {
+            "minLength": 1,
+            "title": "Task Id",
+            "type": "string"
+          },
+          "view": {
+            "default": "summary",
+            "enum": [
+              "execution",
+              "solver",
+              "summary",
+              "history",
+              "neighborhood"
+            ],
+            "title": "View",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "title": "SidecarRequest",
+        "type": "object"
+      },
+      "SpoolRecord": {
+        "additionalProperties": false,
+        "description": "Durable intake record: one operation id, idempotent by digest.",
+        "properties": {
+          "operation_id": {
+            "minLength": 1,
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "producer_binding": {
+            "minLength": 1,
+            "title": "Producer Binding",
+            "type": "string"
+          },
+          "request_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Request Digest",
+            "type": "string"
+          },
+          "state": {
+            "default": "pending",
+            "enum": [
+              "pending",
+              "committed",
+              "dead_letter"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation_id",
+          "producer_binding",
+          "request_digest"
+        ],
+        "title": "SpoolRecord",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "Loopback runtime sidecar: closed v1 state requests over the verified partition. Transport posture: loopback bind, browser-origin rejection, installation-issued bearer credentials. The intake route admits closed runtime commands durably with server-derived producer authority.",
+    "title": "Memorii Runtime Sidecar",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/v1/runtime/intake": {
+      "post": {
+        "operationId": "submitRuntimeCommand",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SidecarIntakeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpoolRecord"
+                }
+              }
+            },
+            "description": "Durable idempotent intake record"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SidecarError"
+                }
+              }
+            },
+            "description": "Closed error envelope (no task-derived data)"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/runtime/state": {
+      "post": {
+        "operationId": "readRuntimeState",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SidecarRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HarnessStateEnvelope"
+                }
+              }
+            },
+            "description": "Authorized bounded envelope"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SidecarError"
+                }
+              }
+            },
+            "description": "Closed error envelope (no task-derived data)"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    }
+  },
+  "servers": [
+    {
+      "description": "loopback only",
+      "url": "http://127.0.0.1"
+    }
+  ]
+}

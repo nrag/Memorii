@@ -1,0 +1,29 @@
+# Pi coding-agent validation profile (additional-harnesses Docker validation).
+# Pinned host: @earendil-works/pi-coding-agent 0.99.2 on Node 24-26.
+ARG NODE_IMAGE=node:24-bookworm@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4
+FROM ${NODE_IMAGE}
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential python3 python3-dev python3-venv pkg-config libicu-dev git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Memorii runtime (sidecar host) installed into the system Python.
+COPY . /opt/memorii-src
+RUN python3 -m venv /opt/memorii-venv \
+    && /opt/memorii-venv/bin/python -m pip install --upgrade pip \
+    && /opt/memorii-venv/bin/python -m pip install \
+        --editable '/opt/memorii-src/memorii[local]'
+
+# Pi coding agent at the pinned version, with the Memorii extension and an
+# offline deterministic provider so certification journeys need no API keys.
+RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.99.2 \
+    && mkdir -p /opt/memorii-pi/.pi/extensions \
+    && cp /opt/memorii-src/memorii/memorii/integrations/pi/extension/* \
+        /opt/memorii-pi/.pi/extensions/ \
+    && cd /opt/memorii-pi/.pi/extensions \
+    && npm install --ignore-scripts \
+        @earendil-works/pi-coding-agent@0.99.2
+
+ENV MEMORII_SIDECAR_URL=http://127.0.0.1:8762
+ENV MEMORII_CREDENTIAL_PATH=/run/memorii/pi-extension.credential
+WORKDIR /opt/memorii-pi

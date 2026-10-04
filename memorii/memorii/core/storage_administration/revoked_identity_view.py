@@ -1,0 +1,244 @@
+"""The single derived revoked-identity view every serving gate consults.
+
+One owner derives the set of revoked identities from the two authorities:
+the typed suppression journal (available immediately at apply, before any
+publication) and the semantic revocation directives (once the enforcement
+publication lands, via their content-free index records). Serving roots
+receive one typed, injected view; none parses control files. The empty
+view is valid and means "nothing revoked"; internal integrity readers are
+never filtered — only host/operator-serving endpoints consult the view.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Protocol
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from memorii.core.storage_administration.suppression_journal import (
+    read_suppression_records,
+)
+
+_DIRECTIVE_RECORD_PREFIX = "semantic_ingestion:revocation:"
+_DIRECTIVE_RECORD_SOURCE_KIND = "semantic_ingestion_revocation_directive"
+
+
+class RevokedIdentityServingGate(Protocol):
+    """The serving-gate surface composition roots inject.
+
+    Serving components depend on this protocol, never on the concrete
+    view, so test harnesses can compose a minimal gate and the factory
+    composes the real derived view.
+    """
+
+    def is_revoked_entity(self, logical_entity_id: str) -> bool: ...
+
+    def is_revoked_claim(self, claim_id: str) -> bool: ...
+
+    def is_revoked_source(self, source_id: str) -> bool: ...
+
+    def is_revoked_record(self, memory_id: str) -> bool: ...
+
+    def is_revoked_task(self, task_id: str) -> bool: ...
+
+    def is_revoked_justification(self, justification_id: str) -> bool: ...
+
+    def keeps_record(self, record: object) -> bool: ...
+
+    def filter_records(self, records: object) -> tuple: ...
+
+
+class RevokedIdentities(BaseModel):
+    """Content-free identity sets; frozen and closed."""
+
+    entities: frozenset[str] = Field(default=frozenset())
+    claims: frozenset[str] = Field(default=frozenset())
+    sources: frozenset[str] = Field(default=frozenset())
+    records: frozenset[str] = Field(default=frozenset())
+    tasks: frozenset[str] = Field(default=frozenset())
+    justifications: frozenset[str] = Field(default=frozenset())
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    def __bool__(self) -> bool:
+        return bool(
+            self.entities
+            or self.claims
+            or self.sources
+            or self.records
+            or self.tasks
+            or self.justifications
+        )
+
+    def union(self, other: RevokedIdentities) -> RevokedIdentities:
+        return RevokedIdentities(
+            entities=self.entities | other.entities,
+            claims=self.claims | other.claims,
+            sources=self.sources | other.sources,
+            records=self.records | other.records,
+            tasks=self.tasks | other.tasks,
+            justifications=self.justifications | other.justifications,
+        )
+
+
+class RevokedIdentityView:
+    """Read-only serving gate; derived, never authoritatively stored."""
+
+    def __init__(self, identities: RevokedIdentities | None = None) -> None:
+        self._identities = identities or RevokedIdentities()
+
+    @classmethod
+    def empty(cls) -> RevokedIdentityView:
+        return cls(RevokedIdentities())
+
+    @property
+    def identities(self) -> RevokedIdentities:
+        return self._identities
+
+    def is_revoked_entity(self, logical_entity_id: str) -> bool:
+        return logical_entity_id in self._identities.entities
+
+    def is_revoked_claim(self, claim_id: str) -> bool:
+        return claim_id in self._identities.claims
+
+    def is_revoked_source(self, source_id: str) -> bool:
+        return source_id in self._identities.sources
+
+    def is_revoked_record(self, memory_id: str) -> bool:
+        return memory_id in self._identities.records
+
+    def is_revoked_task(self, task_id: str) -> bool:
+        return task_id in self._identities.tasks
+
+    def is_revoked_justification(self, justification_id: str) -> bool:
+        return justification_id in self._identities.justifications
+
+    def keeps_record(self, record) -> bool:
+        """Serving filter for one memory-plane record; True means serve."""
+
+        memory_evolution_kind = (
+            record.content.get("memory_evolution_kind")
+            if isinstance(getattr(record, "content", None), dict)
+            else None
+        )
+        if self.is_revoked_record(record.memory_id):
+            return False
+        if memory_evolution_kind == "claim_state":
+            claim = record.content.get("claim_state") or {}
+            claim_id = claim.get("claim_id")
+            if isinstance(claim_id, str) and self.is_revoked_claim(claim_id):
+                return False
+        elif memory_evolution_kind == "entity_link":
+            link = record.content.get("entity_link") or {}
+            entity_id = link.get("canonical_entity_id")
+            if isinstance(entity_id, str) and self.is_revoked_entity(entity_id):
+                return False
+        return True
+
+    def filter_records(self, records) -> tuple:
+        """Serving filter over a record sequence (tuple/list -> tuple)."""
+
+        return tuple(record for record in records if self.keeps_record(record))
+
+    def revoked_source_ids(self) -> frozenset[str]:
+        return self._identities.sources
+
+
+def identities_from_journal(control_root: Path) -> RevokedIdentities:
+    """Derive the revoked-identity sets from the typed journal only."""
+
+    records = read_suppression_records(control_root)
+    entities: set[str] = set()
+    claims: set[str] = set()
+    sources: set[str] = set()
+    plain_records: set[str] = set()
+    tasks: set[str] = set()
+    justifications: set[str] = set()
+    for record in records:
+        for coordinate in record.suppressed:
+            target = {
+                "entity": entities,
+                "claim": claims,
+                "source": sources,
+                "task": tasks,
+                "justification": justifications,
+            }.get(coordinate.coordinate_kind)
+            if coordinate.coordinate_kind == "record":
+                plain_records.add(coordinate.coordinate_id)
+            elif target is not None:
+                target.add(coordinate.coordinate_id)
+    return RevokedIdentities(
+        entities=frozenset(entities),
+        claims=frozenset(claims),
+        sources=frozenset(sources),
+        records=frozenset(plain_records),
+        tasks=frozenset(tasks),
+        justifications=frozenset(justifications),
+    )
+
+
+def identities_from_directive_records(records) -> RevokedIdentities:
+    """Derive the revoked-identity sets from directive index records.
+
+    Each enforcement publication writes one content-free index record per
+    suppression (memory_id ``semantic_ingestion:revocation:<id>``) whose
+    content repeats the directive's revoked target coordinates.
+    """
+
+    entities: set[str] = set()
+    claims: set[str] = set()
+    sources: set[str] = set()
+    plain_records: set[str] = set()
+    tasks: set[str] = set()
+    justifications: set[str] = set()
+    for record in records:
+        if not str(record.memory_id).startswith(_DIRECTIVE_RECORD_PREFIX):
+            continue
+        if str(getattr(record, "source_kind", "")) != _DIRECTIVE_RECORD_SOURCE_KIND:
+            continue
+        for coordinate in record.content.get("revoked_targets") or []:
+            kind = coordinate.get("coordinate_kind")
+            identifier = coordinate.get("coordinate_id")
+            if not isinstance(identifier, str) or not identifier:
+                continue
+            if kind == "entity":
+                entities.add(identifier)
+            elif kind == "claim":
+                claims.add(identifier)
+            elif kind == "source":
+                sources.add(identifier)
+            elif kind == "record":
+                plain_records.add(identifier)
+            elif kind == "task":
+                tasks.add(identifier)
+            elif kind == "justification":
+                justifications.add(identifier)
+    return RevokedIdentities(
+        entities=frozenset(entities),
+        claims=frozenset(claims),
+        sources=frozenset(sources),
+        records=frozenset(plain_records),
+        tasks=frozenset(tasks),
+        justifications=frozenset(justifications),
+    )
+
+
+def view_from_control_root(
+    control_root: Path, records: tuple = ()
+) -> RevokedIdentityView:
+    """Compose the serving view: journal identities plus directive identities."""
+
+    identities = identities_from_journal(control_root)
+    if records:
+        identities = identities.union(identities_from_directive_records(records))
+    return RevokedIdentityView(identities)
+
+
+__all__ = [
+    "RevokedIdentities",
+    "RevokedIdentityView",
+    "identities_from_directive_records",
+    "identities_from_journal",
+    "view_from_control_root",
+]

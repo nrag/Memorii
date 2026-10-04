@@ -7,7 +7,7 @@ from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import (
     JsonlMemoryPlaneStore,
     MemoryPlaneCorruptionError,
-    _PersistedBatch,
+    PersistedBatch,
 )
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.scoped_context.authority import InProcessScopedReadAuthority, ScopedNamespaceGrantRow
@@ -335,7 +335,7 @@ def test_schema2_catalog_read_releases_verified_persisted_version_after_jsonl_re
     store = JsonlMemoryPlaneStore(tmp_path / "valid")
     with store._locked(exclusive=True):
         store._replace_batches([
-            _PersistedBatch.create(
+            PersistedBatch.create(
                 revision=1, data_revision=1,
                 records=(projection, binding, *states, pin, version),
             ),
@@ -368,7 +368,7 @@ def test_schema2_catalog_read_denies_missing_or_substituted_persisted_version_af
     store = JsonlMemoryPlaneStore(tmp_path / version_mode)
     with store._locked(exclusive=True):
         store._replace_batches([
-            _PersistedBatch.create(revision=1, data_revision=1, records=tuple(records)),
+            PersistedBatch.create(revision=1, data_revision=1, records=tuple(records)),
         ])
     reopened = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / version_mode))
     authority = InProcessScopedReadAuthority(now_provider=lambda: now)

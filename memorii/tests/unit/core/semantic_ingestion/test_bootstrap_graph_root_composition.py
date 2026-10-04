@@ -16,7 +16,7 @@ from memorii.core.filesystem_storage.bundle import (
 from memorii.core.memory_evolution.ingestion_contracts import decode_typed_value
 from memorii.core.memory_plane import JsonlMemoryPlaneStore, MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
-from memorii.core.memory_plane.store import _PersistedBatch
+from memorii.core.memory_plane.store import PersistedBatch
 from memorii.core.provider.factory import (
     build_provider_memory_service_from_env as _production_factory_provider,
 )
@@ -776,7 +776,7 @@ def test_filesystem_root_rejects_persisted_source_observation_member_corruption(
         for record in plane.list_records()
     )
     backend._replace_batches([
-        _PersistedBatch.create(
+        PersistedBatch.create(
             revision=1,
             data_revision=int(any(
                 record.visibility.value == "runtime_context" for record in records

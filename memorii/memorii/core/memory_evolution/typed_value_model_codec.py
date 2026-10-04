@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from functools import cmp_to_key
+from functools import cmp_to_key, lru_cache
 from itertools import zip_longest
 from typing import cast
 
@@ -483,6 +484,43 @@ def _integer_text(value: int) -> str:
     return ("-" if negative else "") + "".join(reversed(chunks))
 
 
+_STRING_ESCAPE_SCAN = re.compile(r'["\\\x00-\x1f]')
+_STRING_ESCAPE_MAP = {
+    '"': b'\\"',
+    "\\": b"\\\\",
+    "\b": b"\\b",
+    "\f": b"\\f",
+    "\n": b"\\n",
+    "\r": b"\\r",
+    "\t": b"\\t",
+}
+
+
+@lru_cache(maxsize=1 << 16)
+def _json_string_bytes(value: str) -> bytes:
+    """Encode one JSON string under the fixed escape policy of ``string``.
+
+    The per-character escape mapping is identical to the writer's original
+    loop, so equal strings memoize to equal bytes and the encoding stays
+    byte-identical to the unbatched form.
+    """
+    if _STRING_ESCAPE_SCAN.search(value) is None:
+        return b'"' + value.encode("utf-8", "strict") + b'"'
+    parts = [b'"']
+    for character in value:
+        escaped = _STRING_ESCAPE_MAP.get(character)
+        if escaped is not None:
+            parts.append(escaped)
+            continue
+        codepoint = ord(character)
+        if codepoint < 0x20:
+            parts.append(f"\\u{codepoint:04x}".encode("ascii"))
+        else:
+            parts.append(character.encode("utf-8", "strict"))
+    parts.append(b'"')
+    return b"".join(parts)
+
+
 class _BoundedWriter:
     def __init__(self, maximum_bytes: int, maximum_nodes: int, maximum_depth: int) -> None:
         self._maximum_bytes = maximum_bytes
@@ -519,28 +557,10 @@ class _BoundedWriter:
     def string(self, value: str) -> None:
         if type(value) is not str:
             raise TypedValueModelCodecError("typed_value_model_codec_native_string_invalid")
-        self.write(b'"')
-        for character in value:
-            codepoint = ord(character)
-            if character == '"':
-                self.write(b'\\"')
-            elif character == "\\":
-                self.write(b"\\\\")
-            elif character == "\b":
-                self.write(b"\\b")
-            elif character == "\f":
-                self.write(b"\\f")
-            elif character == "\n":
-                self.write(b"\\n")
-            elif character == "\r":
-                self.write(b"\\r")
-            elif character == "\t":
-                self.write(b"\\t")
-            elif codepoint < 0x20:
-                self.write(f"\\u{codepoint:04x}".encode("ascii"))
-            else:
-                self.write(character.encode("utf-8", "strict"))
-        self.write(b'"')
+        # One whole-string write: the memoized encoder emits the same bytes
+        # the per-character loop produced, so byte capacity accounting keeps
+        # its terminal-boundary meaning with a single limit check.
+        self.write(_json_string_bytes(value))
 
     def finish(self) -> bytes:
         return b"".join(self._parts)

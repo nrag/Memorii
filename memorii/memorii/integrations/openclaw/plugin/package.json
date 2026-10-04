@@ -1,0 +1,10 @@
+{
+  "name": "openclaw-plugin-memorii",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "main": "index.js",
+  "description": "Memorii durable runtime state for OpenClaw sessions (pinned host contract openclaw-memory-plugin/v1).",
+  "engines": { "node": ">=24.0.0 <27.0.0" },
+  "openclaw": { "extensions": ["./index.js"] }
+}

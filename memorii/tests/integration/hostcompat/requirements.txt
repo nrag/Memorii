@@ -1,0 +1,7 @@
+# Exact runtime-certification pins for the LangGraph, AutoGen and OpenAI
+# Agents compatibility contracts. Consumed by the host-compatibility CI job
+# and by the isolated local certification venv; NOT part of the runtime
+# dependency manifest. Bump pins only with a fresh certification run.
+langgraph==1.0.10
+openai-agents==0.22.3
+ag2==1.1.1

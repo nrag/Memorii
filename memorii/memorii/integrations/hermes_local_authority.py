@@ -23,6 +23,7 @@ from typing import Final, NoReturn, cast
 
 from memorii.core.memory_plane import JsonlMemoryPlaneStore, MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
+from memorii.core.persistence.factory import open_managed_partition
 
 _SCHEMA_ID: Final = "memorii.semantic_ingestion.local_level2_sidecar"
 _AUTHORIZATION_SCHEMA_ID: Final = "memorii.semantic_ingestion.local_level2_profile_authorization"
@@ -235,7 +236,23 @@ def local_level2_status(*, hermes_home: Path, now: datetime | None = None) -> Lo
 
 def inspect_local_memory(*, hermes_home: Path) -> dict[str, object]:
     """Read the installed memory plane without constructing a runtime or calling a model."""
-    storage_root = _canonical_home(hermes_home) / "memorii" / "memory-plane"
+    installation_root = _canonical_home(hermes_home) / "memorii"
+    storage_root = installation_root / "memory-plane"
+    managed_control = installation_root / "control" / "control.sqlite3"
+    if managed_control.is_file():
+        # Managed installation: verified read-only inspection of the selected
+        # partition; missing or invalid state fails closed and never
+        # initializes anything.
+        administration, plane = open_managed_partition(installation_root)
+        try:
+            write_revision, records = plane.read_write_snapshot()
+            return _inspection_summary(
+                storage_root=administration.partition_path().parent,
+                write_revision=write_revision,
+                records=records,
+            )
+        finally:
+            administration.close()
     records_path = storage_root / "memory_records.jsonl"
     if not records_path.is_file():
         raise LocalLevel2AuthorityError(f"Memorii data was not found at {records_path}")

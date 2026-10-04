@@ -1367,6 +1367,8 @@ class SemanticGovernedWritePolicy:
                 return
             if _is_reference_integrity_bootstrap_write(governed):
                 return
+            if _is_governance_revocation_write(governed):
+                return
             if _is_accepted_identity_operation_write(governed):
                 return
             if _is_prepared_source_publication_write(governed):
@@ -2983,6 +2985,64 @@ def _is_semantic_integrity_incident_write(
         "semantic_ingestion_replay_integrity_attention",
         "semantic_ingestion_replay_integrity_control",
     ) and all(record.memory_id.startswith("semantic_ingestion:event-authority:integrity-") for record in records)
+
+
+def _is_governance_revocation_write(records: list[CanonicalMemoryRecord]) -> bool:
+    """The closed record shape of one owner revocation enforcement commit.
+
+    Exactly one of each replay-authority member, at least one revocation
+    directive index record, and only content-free tombstone rewrites of
+    already-governed evolution records as additional members.
+    """
+
+    from collections import Counter
+
+    counts = Counter(record.source_kind for record in records)
+    if counts.get("semantic_ingestion_event_batch") != 1:
+        return False
+    for required in (
+        "semantic_ingestion_replay_state",
+        "semantic_ingestion_reference_integrity",
+        "semantic_ingestion_replay_authority",
+        "semantic_ingestion_checkpoint_lifecycle",
+        "semantic_ingestion_event_schema_registry_history",
+    ):
+        if counts.get(required) != 1:
+            return False
+    if not counts.get("semantic_ingestion_revocation_directive"):
+        return False
+    index_records = [
+        record for record in records
+        if record.source_kind == "semantic_ingestion_revocation_directive"
+    ]
+    if not all(
+        record.memory_id.startswith("semantic_ingestion:revocation:")
+        for record in index_records
+    ):
+        return False
+    tombstones = [
+        record for record in records
+        if record.source_kind == "memory_evolution"
+    ]
+    if len(tombstones) + sum(counts[kind] for kind in (
+        "semantic_ingestion_event_batch",
+        "semantic_ingestion_replay_state",
+        "semantic_ingestion_reference_integrity",
+        "semantic_ingestion_replay_authority",
+        "semantic_ingestion_checkpoint_lifecycle",
+        "semantic_ingestion_event_schema_registry_history",
+        "semantic_ingestion_revocation_directive",
+    )) != len(records):
+        return False
+    return all(
+        record.content.get("memory_evolution_kind") in {"claim_state", "entity_link"}
+        and (
+            record.content.get("claim_state", {}).get("lifecycle_state") == "revoked"
+            if record.content.get("memory_evolution_kind") == "claim_state"
+            else record.content.get("entity_link", {}).get("lifecycle_state") == "revoked"
+        )
+        for record in tombstones
+    )
 
 
 def _is_reference_integrity_bootstrap_write(records: list[CanonicalMemoryRecord]) -> bool:

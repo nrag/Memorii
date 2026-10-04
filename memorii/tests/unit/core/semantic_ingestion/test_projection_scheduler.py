@@ -33,7 +33,7 @@ from memorii.core.memory_evolution.writer_admission import (
     bounded_preplanning_ownership_manifest,
 )
 from memorii.core.memory_plane.service import MemoryPlaneService
-from memorii.core.memory_plane.store import JsonlMemoryPlaneStore, _PersistedBatch
+from memorii.core.memory_plane.store import JsonlMemoryPlaneStore, PersistedBatch
 from memorii.core.semantic_ingestion.contracts import (
     PredicateTrustRule,
     TimeInterval,
@@ -272,7 +272,7 @@ def _harness(
     current = tuple(plane.list_records())
     backend._replace_batches(
         [
-            _PersistedBatch.create(
+            PersistedBatch.create(
                 revision=1,
                 data_revision=0,
                 records=(*current, *prepared.records, *replay_records),

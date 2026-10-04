@@ -315,7 +315,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: always()
-    needs: [semantic-ingestion-history-reconciliation, equal-version-replay-decision, static-analysis, package-smoke, provider-compatibility, scoped-context-integration, observation-ledger-activation, unit-test-shards, unit-timing-inventory, semantic-terminal-persistence, semantic-terminal-persistence-timing-inventory]
+    needs: [semantic-ingestion-history-reconciliation, equal-version-replay-decision, static-analysis, package-smoke, provider-compatibility, scoped-context-integration, durable-storage-integration, durable-runtime-integration, sdk-typescript, host-compatibility-certification, host-container-certification, macos-platform-conformance, observation-ledger-activation, unit-test-shards, unit-timing-inventory, semantic-terminal-persistence, semantic-terminal-persistence-timing-inventory]
 
     steps:
       - name: Require every unit-test dependency
@@ -326,6 +326,12 @@ jobs:
           PACKAGE_RESULT: ${{ needs.package-smoke.result }}
           COMPATIBILITY_RESULT: ${{ needs.provider-compatibility.result }}
           SCOPED_CONTEXT_RESULT: ${{ needs.scoped-context-integration.result }}
+          DURABLE_STORAGE_RESULT: ${{ needs.durable-storage-integration.result }}
+          DURABLE_RUNTIME_RESULT: ${{ needs.durable-runtime-integration.result }}
+          HOST_COMPATIBILITY_RESULT: ${{ needs.host-compatibility-certification.result }}
+          HOST_CONTAINER_RESULT: ${{ needs.host-container-certification.result }}
+          MACOS_PLATFORM_RESULT: ${{ needs.macos-platform-conformance.result }}
+          SDK_TYPESCRIPT_RESULT: ${{ needs.sdk-typescript.result }}
           OBSERVATION_ACTIVATION_RESULT: ${{ needs.observation-ledger-activation.result }}
           SHARD_RESULT: ${{ needs.unit-test-shards.result }}
           TIMING_RESULT: ${{ needs.unit-timing-inventory.result }}
@@ -338,6 +344,12 @@ jobs:
           && test "$PACKAGE_RESULT" = success
           && test "$COMPATIBILITY_RESULT" = success
           && test "$SCOPED_CONTEXT_RESULT" = success
+          && test "$DURABLE_STORAGE_RESULT" = success
+          && test "$DURABLE_RUNTIME_RESULT" = success
+          && test "$HOST_COMPATIBILITY_RESULT" = success
+          && test "$HOST_CONTAINER_RESULT" = success
+          && test "$MACOS_PLATFORM_RESULT" = success
+          && test "$SDK_TYPESCRIPT_RESULT" = success
           && test "$OBSERVATION_ACTIVATION_RESULT" = success
           && test "$SHARD_RESULT" = success
           && test "$TIMING_RESULT" = success
@@ -395,6 +407,225 @@ jobs:
         run: >-
           pytest -W error
           tests/integration/test_scoped_context_production_binding.py
+          -p no:cacheprovider
+
+  durable-storage-integration:
+    name: Durable Storage Integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package and test dependencies
+        working-directory: memorii
+        run: pip install -e '.[local,dev]'
+
+      - name: Run durable storage and migration integration journeys
+        working-directory: memorii
+        run: >-
+          pytest -W error
+          tests/integration/test_partition_storage_recovery.py
+          tests/integration/test_shared_sqlite_provider_paths.py
+          tests/integration/test_shared_sqlite_semantic_owners.py
+          tests/integration/test_memory_plane_migration_recovery.py
+          tests/integration/test_forget_enforcement_publication.py
+          tests/integration/test_forget_serving_parity.py
+          -p no:cacheprovider
+
+  sdk-typescript:
+    name: TypeScript SDK (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [24, 26]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: sdk/typescript/package-lock.json
+
+      - name: Set up Python for schema regeneration
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package for the schema generator
+        working-directory: memorii
+        run: pip install -e '.[local]'
+
+      - name: Check generated schema parity
+        working-directory: sdk/typescript
+        env:
+          MEMORII_SCHEMA_CMD: python3
+        run: npm run check:generated
+
+      - name: Clean install from lockfile
+        working-directory: sdk/typescript
+        run: npm ci
+
+      - name: Generated-schema parity
+        working-directory: sdk/typescript
+        run: npm run check:generated
+
+      - name: Typecheck
+        working-directory: sdk/typescript
+        run: npm run typecheck
+
+      - name: Tests
+        working-directory: sdk/typescript
+        run: npm test
+
+      - name: Build
+        working-directory: sdk/typescript
+        run: npm run build
+
+      - name: Package inventory
+        working-directory: sdk/typescript
+        run: npm pack --dry-run
+
+      - name: Installed-client smoke
+        working-directory: sdk/typescript
+        run: npm run test:installed
+
+  host-compatibility-certification:
+    name: Host Compatibility Certification
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package, test dependencies and pinned host frameworks
+        working-directory: memorii
+        run: |
+          pip install -e '.[local,dev]'
+          pip install -r tests/integration/hostcompat/requirements.txt
+
+      - name: Run runtime certification against pinned frameworks
+        working-directory: memorii
+        env:
+          MEMORII_HOSTCERT: '1'
+        run: >-
+          pytest -W error
+          tests/integration/hostcompat/test_framework_certification.py
+          -p no:cacheprovider
+          -ra
+
+  host-container-certification:
+    name: Host Container Certification
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package + test dependencies
+        working-directory: memorii
+        run: pip install -e '.[local,dev]'
+
+      - name: Run the container-driven certification journeys
+        working-directory: memorii
+        run: >-
+          python -W error -m pytest
+          tests/integration/hostcompat/test_container_certification_journeys.py
+          -p no:cacheprovider -v
+
+  macos-platform-conformance:
+    name: macOS Platform Conformance
+    runs-on: macos-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Miniforge (prebuilt PyICU from conda-forge)
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          python-version: '3.12'
+
+      - name: Install package + test dependencies
+        working-directory: memorii
+        shell: bash -el {0}
+        run: |
+          conda install -y -c conda-forge "pyicu>=2.13,<3"
+          pip install -e '.[local,dev]'
+
+      - name: Run platform-divergent suites (credentials, permissions, capacity)
+        working-directory: memorii
+        shell: bash -el {0}
+        run: >-
+          python -W error -m pytest
+          tests/unit/core/test_sidecar_credentials.py
+          tests/unit/core/test_storage_administration_operator.py
+          tests/integration/test_measured_capacity_envelope.py
+          -p no:cacheprovider -v
+
+  durable-runtime-integration:
+    name: Durable Runtime Integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package and test dependencies
+        working-directory: memorii
+        run: pip install -e '.[local,dev]'
+
+      - name: Run durable runtime, sidecar and consumer journeys
+        working-directory: memorii
+        run: >-
+          pytest -W error
+          tests/integration/test_runtime_process_recovery.py
+          tests/integration/test_runtime_resume_checkpoint.py
+          tests/integration/test_runtime_sidecar.py
+          tests/integration/test_forget_enforcement_publication.py
+          tests/integration/test_forget_serving_parity.py
           -p no:cacheprovider
 
   semantic-terminal-persistence:

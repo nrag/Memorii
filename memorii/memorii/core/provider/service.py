@@ -254,6 +254,9 @@ from memorii.core.semantic_ingestion.structured_fact_read import (
     read_structured_facts_from_snapshot,
 )
 from memorii.core.solver.frontier import SolverFrontierPlanner
+from memorii.core.storage_administration.revoked_identity_view import (
+    RevokedIdentityServingGate,
+)
 from memorii.core.work_state.models import WorkStateKind, WorkStateRecord, WorkStateStatus
 from memorii.core.work_state.selector import WorkStateSelector
 from memorii.core.work_state.service import WorkStateService
@@ -378,6 +381,7 @@ class ProviderMemoryService:
             VerifiedCapabilityMonitoringAuthority, ...
         ] = (),
         structured_submission_authority_resolver: StructuredSubmissionAuthorityResolver | None = None,
+        revoked_view: RevokedIdentityServingGate | None = None,
         ontology_observer_capability: OntologyObserverCapability | None = None,
         ontology_observer_authorizer: Callable[
             [AuthenticatedIngressContext, ObserverBindingIdentity], bool
@@ -387,6 +391,7 @@ class ProviderMemoryService:
     ) -> None:
         self._memory_plane = memory_plane or MemoryPlaneService()
         self._bootstrap_release_evidence = None
+        self._revoked_view = revoked_view
         self._scoped_read_authority = scoped_read_authority
         self._structured_submission_authority_resolver = structured_submission_authority_resolver
         self._canonical_evidence_requested = canonical_evidence_enabled
@@ -1085,6 +1090,8 @@ class ProviderMemoryService:
             return _scoped_empty(ScopedContextStatus.DENIED)
         try:
             revision, records = self._memory_plane.read_snapshot()
+            if self._revoked_view is not None:
+                records = self._revoked_view.filter_records(records)
             activation = ScopedContextAssembler(
                 legacy_bootstrap_v3_projection_verifier=self._semantic_atomic_store,
                 catalog_bundle_locator=self._catalog_bundle_locator,
@@ -1688,7 +1695,12 @@ class ProviderMemoryService:
         try:
             result = self._memory_plane.read_snapshot_linearized(
                 lambda _revision, records: read_structured_facts_from_snapshot(
-                    records=records, request=request, authority=read_authority,
+                    records=(
+                        self._revoked_view.filter_records(records)
+                        if self._revoked_view is not None
+                        else records
+                    ),
+                    request=request, authority=read_authority,
                     now=self._now_provider(),
                 )
             )
@@ -1889,6 +1901,10 @@ class ProviderMemoryService:
         expected_fact_scope: str,
     ) -> bool:
         """Verify one active typed entity and alias in canonical graph state."""
+        if self._revoked_view is not None and (
+            self._revoked_view.is_revoked_entity(canonical_entity_id)
+        ):
+            return False
         snapshot = self._semantic_atomic_store.graph_state_snapshot()
         entities = [
             record.payload
@@ -1916,7 +1932,15 @@ class ProviderMemoryService:
             }
         ]
         expected_type_key = asserted_type.replace("_", "").casefold()
-        records = tuple(self._memory_plane.list_records())
+        # Bounded candidate selection: only retained structured submissions can
+        # match; the store-level filter keeps the scan bounded on the shared
+        # partition while the source/digest eligibility checks below are
+        # unchanged.
+        records = tuple(
+            self._memory_plane.list_records(
+                source_kind="semantic_ingestion_retained_structured_submission"
+            )
+        )
         for claim in claims:
             identity = claim.claim_identity
             source_authority = claim.source_authority_evidence

@@ -1059,7 +1059,11 @@ def test_installed_preference_valid_until_expires_durably_on_read(
 
 
 def test_structured_tool_artifact_rejects_unknown_field_and_sidecar_refresh(tmp_path: Path) -> None:
-    issued = datetime(2026, 9, 26, tzinfo=UTC)
+    # Issued "now" relative to the real clock: the authority has a bounded
+    # validity window, so a fixed date becomes an expired authorization
+    # once the window passes — the load below then fails with the expiry
+    # reason instead of the field-validation reason under test.
+    issued = datetime.now(UTC)
     authorize_local_level2(hermes_home=tmp_path, now=issued)
     authorize_local_structured_tool(hermes_home=tmp_path, now=issued)
     path = tmp_path / "memorii" / "local-structured-tool.json"
