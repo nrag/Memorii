@@ -102,6 +102,23 @@ class RetentionPlan(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class RetainedLineageEntry(BaseModel):
+    """One retained-bytes lineage row for an explicitly named coordinate.
+
+    Owner-forensic only (R16): the entry carries the retained historical
+    record verbatim, including records whose serving lifecycle is revoked.
+    """
+
+    coordinate_kind: str = Field(min_length=1)
+    coordinate_id: str = Field(min_length=1)
+    memory_id: str = Field(min_length=1)
+    batch_revision: int = Field(ge=0)
+    revoked: bool
+    record: dict[str, object]
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
 class DoctorFinding(BaseModel):
     """One read-only diagnostic finding."""
 
@@ -449,6 +466,92 @@ class GovernanceOperator:
             enforced.append(record.suppression_id)
         return tuple(enforced)
 
+    def read_retained_lineage(
+        self,
+        *,
+        capability: OwnerCapability,
+        coordinates: tuple[str, ...],
+    ) -> dict[str, object]:
+        """Serve the complete retained lineage for explicitly named coordinates.
+
+        The owner-forensic counterpart to revoked-excluded host reads (R16):
+        requires the owner capability, scans the retained version history
+        plus current records, and returns every retained row whose content
+        references a named coordinate -- including rows whose identities the
+        revoked-identity view suppresses from every serving path.
+        """
+        import json as _json
+
+        from memorii.core.storage_administration.revoked_identity_view import (
+            view_from_control_root,
+        )
+
+        service = self._operator._administration
+        require_owner_capability(service, capability)
+        if not coordinates:
+            raise OperatorError(
+                "invalid_request: retained lineage requires at least one"
+                " named coordinate"
+            )
+        named: list[tuple[str, str, str | None]] = []
+        for coordinate in coordinates:
+            kind, coordinate_id, _scope = _split_coordinate(coordinate)
+            if not kind or not coordinate_id:
+                raise OperatorError(
+                    "invalid_request: coordinate must be 'kind|id': "
+                    + coordinate
+                )
+            named.append((kind, coordinate_id, None))
+        identifiers = {coordinate_id for _, coordinate_id, _ in named}
+        view = view_from_control_root(service.installation_root / "control")
+        entries: list[RetainedLineageEntry] = []
+        repository = service.partition()
+        with repository.transaction(write=False) as connection:
+            version_rows = connection.execute(
+                "SELECT memory_id, batch_revision, record_json"
+                " FROM memory_record_versions"
+                " ORDER BY memory_id, batch_revision"
+            ).fetchall()
+            current_ids = {
+                row["memory_id"]
+                for row in repository.read_current_record_rows(connection)
+            }
+        for row in version_rows:
+            try:
+                record = _json.loads(row["record_json"])
+            except ValueError:
+                continue
+            memory_id = str(record.get("memory_id", row["memory_id"]))
+            if memory_id not in current_ids and not _content_references(
+                record.get("content") or {}, identifiers
+            ) and memory_id not in identifiers:
+                continue
+            for kind, coordinate_id, _ in named:
+                references = (
+                    memory_id == coordinate_id
+                    or coordinate_id == record.get("task_id")
+                    or _content_references(
+                        record.get("content") or {}, {coordinate_id}
+                    )
+                )
+                if references:
+                    entries.append(
+                        RetainedLineageEntry(
+                            coordinate_kind=kind,
+                            coordinate_id=coordinate_id,
+                            memory_id=memory_id,
+                            batch_revision=int(row["batch_revision"]),
+                            revoked=view.is_revoked_record(memory_id)
+                            or view.is_revoked_entity(coordinate_id)
+                            or view.is_revoked_claim(coordinate_id)
+                            or view.is_revoked_source(coordinate_id)
+                            or view.is_revoked_task(coordinate_id)
+                            or view.is_revoked_justification(coordinate_id),
+                            record=record,
+                        )
+                    )
+        return {"coordinates": tuple(coordinates), "entries": tuple(entries)}
+
     def _tombstones_for(self, record, store):
         from memorii.core.memory_evolution.revocation_tombstones import (
             tombstone_records_for,
@@ -581,6 +684,9 @@ class GovernanceOperator:
         }
         known_record_ids = {memory_id for memory_id, _ in claim_states}
         known_record_ids.update(memory_id for memory_id, _ in link_states)
+        # A record selector names any committed plane record directly, not
+        # only evolution-owned claim/link states.
+        known_record_ids.update(str(row["memory_id"]) for row in record_rows)
         unresolved: list[str] = []
         for selector in selectors:
             if selector.selector_kind == "entity":

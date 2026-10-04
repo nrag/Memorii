@@ -264,8 +264,14 @@ milestone before blocking.
 
 ## Next Action
 
-Commit the migrated golden fixtures plus the migration engine, push, and
-re-run the observation-ledger-activation CI job on the release branch;
-then continue the recorded release chain (forensic lineage surface,
-prefetch canonical-channel filter, milestone review with the M1b
-registry-v2 deviation decision).
+The forensic lineage surface (R16) and the prefetch canonical-channel
+filter landed with their acceptance tests
+(tests/integration/test_forget_forensic_lineage.py: owner-capability
+forensic retained lineage for named coordinates + refusal without
+capability; canonical prefetch assembly excludes revoked records under
+the injected view; record selectors now resolve any committed record,
+matching the design's direct-selector scope). Watch the PR-gates run for
+the fixture migration (82f31c0e) and fix any red checks; then run the
+milestone review round — the M1b registry-v2 deviation decision is the
+recorded open item and needs the owner because it changes a persisted
+schema-version boundary.

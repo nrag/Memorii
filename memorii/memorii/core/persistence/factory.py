@@ -318,7 +318,14 @@ def open_managed_partition(
     partition = administration.partition()
     inner = SqliteMemoryPlaneStore(partition)
     published = PublishedMemoryPlaneStore(administration, inner)
-    return administration, MemoryPlaneService(record_store=published)
+    from memorii.core.storage_administration.revoked_identity_view import (
+        view_from_control_root,
+    )
+
+    revoked_view = view_from_control_root(root / "control")
+    return administration, MemoryPlaneService(
+        record_store=published, revoked_view=revoked_view
+    )
 
 
 __all__ = [

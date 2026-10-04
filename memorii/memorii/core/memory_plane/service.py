@@ -66,7 +66,15 @@ class RuntimeEventRouter(Protocol):
 class MemoryPlaneService:
     """Canonical behavior engine for ingestion, staging, and retrieval/reranking."""
 
-    def __init__(self, *, record_store: MemoryPlaneStore | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        record_store: MemoryPlaneStore | None = None,
+        revoked_view: object | None = None,
+    ) -> None:
+        # The revoked-identity serving gate (protocol-typed); the canonical
+        # prefetch channel excludes revoked records at assembly time.
+        self._revoked_view = revoked_view
         self._planner = RetrievalPlanner()
         self._reranker = ProviderReranker()
         self._records = record_store if record_store is not None else InMemoryMemoryPlaneStore()
@@ -409,6 +417,7 @@ class MemoryPlaneService:
             and item.domain in planned_domains
             and not item.source_kind.startswith("memory_evolution")
             and self._matches_scope(item, RetrievalScope(session_id=session_id, task_id=task_id, user_id=user_id))
+            and (self._revoked_view is None or self._revoked_view.keeps_record(item))
         }
         provider_candidates = [to_provider_stored_record(item) for item in pool.values()]
         reranked = self._reranker.rerank(
