@@ -27,6 +27,9 @@ from memorii.core.memory_plane.store import (
     MemoryPlaneWriteAuthorization,
 )
 from memorii.core.memory_plane.unit_of_work import MemoryPlaneUnitOfWork
+from memorii.core.storage_administration.revoked_identity_view import (
+    RevokedIdentityServingGate,
+)
 from memorii.core.provider.blocking_policy import evaluate_operation_policy
 from memorii.core.provider.models import (
     ProviderEvent,
@@ -70,7 +73,7 @@ class MemoryPlaneService:
         self,
         *,
         record_store: MemoryPlaneStore | None = None,
-        revoked_view: object | None = None,
+        revoked_view: RevokedIdentityServingGate | None = None,
     ) -> None:
         # The revoked-identity serving gate (protocol-typed); the canonical
         # prefetch channel excludes revoked records at assembly time.

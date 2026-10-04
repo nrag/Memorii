@@ -10,15 +10,6 @@ injected.
 
 from pathlib import Path
 
-from tests.integration.test_forget_serving_parity import (
-    CLAIM_MEMORY_ID,
-    _seed_records,
-)
-from tests.unit.core.test_storage_administration_operator import (
-    _capability,
-    _operator,
-)
-
 from memorii.core.memory_plane.models import (
     CanonicalMemoryRecord,
     MemoryRecordVisibility,
@@ -38,6 +29,14 @@ from memorii.core.storage_administration.revoked_identity_view import (
     view_from_control_root,
 )
 from memorii.domain.enums import MemoryDomain
+from tests.integration.test_forget_serving_parity import (
+    CLAIM_MEMORY_ID,
+    _seed_records,
+)
+from tests.unit.core.test_storage_administration_operator import (
+    _capability,
+    _operator,
+)
 
 
 def _forget_entity(operator, governance, capability) -> None:
@@ -76,11 +75,6 @@ def test_owner_forensic_surface_serves_retained_lineage_for_named_coordinates(
     operator, service = _operator(tmp_path)
     capability = _capability(service)
     try:
-        plane = MemoryPlaneService(
-            record_store=PublishedMemoryPlaneStore(
-                service, SqliteMemoryPlaneStore(service.partition())
-            )
-        )
         service.publish_memory_plane_batch(
             _seed_records(), operation_binding="forensic_seed"
         )

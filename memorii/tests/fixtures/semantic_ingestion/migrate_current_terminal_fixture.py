@@ -32,6 +32,7 @@ capture made under the current grammar.
 
 from __future__ import annotations
 
+import contextlib
 import gzip
 import hashlib
 import json
@@ -117,9 +118,8 @@ def _literal_accepts(candidate: type, data: dict) -> bool:
         if name not in data:
             continue
         annotation = _unwrap(_resolve_forward_ref(field.annotation))
-        if get_origin(annotation) is Literal:
-            if data[name] not in get_args(annotation):
-                return False
+        if get_origin(annotation) is Literal and data[name] not in get_args(annotation):
+            return False
     return True
 
 
@@ -785,9 +785,13 @@ def _coerce_value(annotation: object, value: object) -> object:
     if origin is Union:
         for candidate in args:
             resolved = _unwrap(_resolve_forward_ref(candidate))
-            if isinstance(value, dict) and isinstance(resolved, type) and hasattr(resolved, "model_fields"):
-                if set(value) <= set(resolved.model_fields):
-                    return _coerce_for_model(resolved, value)
+            if (
+                isinstance(value, dict)
+                and isinstance(resolved, type)
+                and hasattr(resolved, "model_fields")
+                and set(value) <= set(resolved.model_fields)
+            ):
+                return _coerce_for_model(resolved, value)
         return value
     if isinstance(annotation, type) and hasattr(annotation, "model_fields"):
         if isinstance(value, dict):
@@ -1232,12 +1236,10 @@ def migrate(name: str, class_name: str) -> bool:
                 delta_node,
             )
             if delta_cls is not None:
-                try:
+                with contextlib.suppress(Exception):
                     patched["source_finalization_observation_delta"] = (
                         rebuild(delta_node, delta_cls)
                     )
-                except Exception:
-                    pass
     _rebind_publication_intent(patched, root_class, rebuilt_children)
 
     # The coordinator model was built during scattering; restore it for the
@@ -1268,12 +1270,10 @@ def migrate(name: str, class_name: str) -> bool:
             handoff_core_node,
         )
         if handoff_core_cls is not None:
-            try:
+            with contextlib.suppress(Exception):
                 patched["handoff_core"] = rebuild(
                     handoff_core_node, handoff_core_cls
                 )
-            except Exception:
-                pass
     handoff_node = patched.get("handoff")
     if isinstance(handoff_node, dict):
         embedded = handoff_node.get("core")
@@ -1296,10 +1296,9 @@ def migrate(name: str, class_name: str) -> bool:
             handoff_node,
         )
         if handoff_cls is not None:
-            try:
+            with contextlib.suppress(Exception):
+
                 patched["handoff"] = rebuild(handoff_node, handoff_cls)
-            except Exception:
-                pass
 
     root = rebuild(patched, root_class)
     from memorii.core.semantic_ingestion.contracts import (
@@ -1358,7 +1357,6 @@ def migrate_memory_records() -> bool:
 
     from memorii.core.memory_evolution.ingestion_contracts import (
         decode_typed_value,
-        encode_typed_value,
     )
     from memorii.core.semantic_ingestion.contracts import (
         restore_closed_wire_enums,
@@ -1626,6 +1624,8 @@ def migrate_memory_records() -> bool:
         # synthetic codec_key) fails the store's native-payload decode.
         from memorii.core.semantic_ingestion.contracts import (
             encode_bootstrap_graph_atomic_member_payload_v3 as _encode_atomic,
+        )
+        from memorii.core.semantic_ingestion.contracts import (
             encode_semantic_contract as _encode_contract,
         )
 
@@ -2009,11 +2009,6 @@ def migrate_memory_records() -> bool:
                 if _RECORDS_RELOAD["model"] is None:
                     _RECORDS_RELOAD["model"] = reload_model
             except Exception:
-                import traceback as _tb
-
-                print("reload rebuild failed:",
-                      [l.strip() for l in _tb.format_exc().splitlines()
-                       if "Value error" in l or "instance of" in l][:2])
                 continue
             import warnings as _warnings3
 

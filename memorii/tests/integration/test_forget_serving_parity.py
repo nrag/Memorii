@@ -10,14 +10,8 @@ integrity (replay equality, Tier A) stays green.
 """
 
 import json
-import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-
-from tests.unit.core.test_storage_administration_operator import (
-    _capability,
-    _operator,
-)
 
 from memorii.core.harness_state.service import HarnessStateService, RuntimeReadGrant
 from memorii.core.memory_evolution.atomic_store import SemanticIngestionAtomicStore
@@ -49,6 +43,10 @@ from memorii.core.storage_administration.revoked_identity_view import (
     view_from_control_root,
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain
+from tests.unit.core.test_storage_administration_operator import (
+    _capability,
+    _operator,
+)
 
 NOW = datetime.now(UTC)
 CLAIM_MEMORY_ID = "mem:evolution:claim:claim:parity"
