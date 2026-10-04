@@ -687,7 +687,59 @@ def rebuild(node: dict, cls: type):
             if name != digest_field and name not in excluded
         }
         values[digest_field] = _contract_digest(digest_domain, body)
-    return cls.model_validate(values)
+    try:
+        return cls.model_validate(values)
+    except Exception:
+        # Wire dicts carry JSON lists where strict models want tuples and
+        # base64 text where they want bytes; the digest bodies are already
+        # computed, so retry after coercing both.
+        return cls.model_validate(
+            _coerce_bytes(cls, _coerce_declared_tuples(cls, values))
+        )
+
+
+def _coerce_declared_tuples(cls: type, values: dict) -> dict:
+    coerced = dict(values)
+    for name, field in cls.model_fields.items():
+        if name not in coerced:
+            continue
+        annotation = _unwrap(_resolve_forward_ref(field.annotation))
+        if get_origin(annotation) is not tuple:
+            continue
+        value = coerced[name]
+        if isinstance(value, list):
+            value = tuple(value)
+        if isinstance(value, tuple):
+            coerced[name] = tuple(
+                _coerce_declared_tuples_for_item(item) for item in value
+            )
+    return coerced
+
+
+def _coerce_declared_tuples_for_item(item: object) -> object:
+    if isinstance(item, dict):
+        item_cls = _owner_by_field_set(item)
+        if item_cls is not None:
+            return _coerce_declared_tuples(item_cls, item)
+        return {
+            key: _coerce_declared_tuples_for_item(value)
+            for key, value in item.items()
+        }
+    if isinstance(item, list):
+        return tuple(_coerce_declared_tuples_for_item(i) for i in item)
+    return item
+
+
+def _coerce_bytes(cls: type, values: dict) -> dict:
+    coerced = dict(values)
+    for name, field in cls.model_fields.items():
+        if name not in coerced:
+            continue
+        annotation = _unwrap(_resolve_forward_ref(field.annotation))
+        if annotation is not bytes or not isinstance(coerced[name], str):
+            continue
+        coerced[name] = coerced[name].encode()
+    return coerced
 
 
 # --- sibling digest pinning -------------------------------------------------
@@ -1473,6 +1525,11 @@ def migrate_memory_records() -> bool:
                 wrapper_cls = _model_class(
                     "BootstrapGraphCanonicalSourceResultV3"
                 )
+                from memorii.core.semantic_ingestion.contracts import (
+                    restore_closed_wire_enums as _restore,
+                )
+
+                wrapper = _restore(wrapper)
                 wrapper["ordered_group_result_digests"] = list(
                     _ROOT_EXPORT.get("group_result_digests") or ()
                 )
