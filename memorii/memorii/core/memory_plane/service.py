@@ -27,9 +27,6 @@ from memorii.core.memory_plane.store import (
     MemoryPlaneWriteAuthorization,
 )
 from memorii.core.memory_plane.unit_of_work import MemoryPlaneUnitOfWork
-from memorii.core.storage_administration.revoked_identity_view import (
-    RevokedIdentityServingGate,
-)
 from memorii.core.provider.blocking_policy import evaluate_operation_policy
 from memorii.core.provider.models import (
     ProviderEvent,
@@ -42,6 +39,9 @@ from memorii.core.provider.models import (
 from memorii.core.provider.prefetch import classify_prefetch_query, format_prefetch_context
 from memorii.core.provider.reranking import ProviderReranker
 from memorii.core.retrieval.planner import RetrievalPlanner
+from memorii.core.storage_administration.revoked_identity_view import (
+    RevokedIdentityServingGate,
+)
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 from memorii.domain.memory_object import MemoryObject
 from memorii.domain.retrieval import (
