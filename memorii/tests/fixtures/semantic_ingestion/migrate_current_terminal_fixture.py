@@ -411,6 +411,11 @@ def rebuild(node: dict, cls: type):
                 )
         values[name] = value
 
+    # Coerce wire shapes (lists→tuples, text→bytes, dicts→models) BEFORE
+    # any digest body is computed: the preimages must hold properly typed
+    # values exactly as a validated instance would.
+    values = _coerce_for_model(cls, values)
+
     graph_plane = _graph_plane_digest(cls, values, node)
     if graph_plane is not None:
         values[graph_plane[0]] = graph_plane[1]
@@ -484,6 +489,60 @@ def rebuild(node: dict, cls: type):
             b"memorii.semantic-ingestion.bootstrap-graph-terminal-publication-locator.v3",
             {"intent_digest": intent_digest},
         )
+
+    if {
+        "final_write_identity", "terminal_control", "checkpoint_receipt",
+        "reload_digest",
+    } <= set(node):
+        # The terminal reload's checkpoint receipt pins the identity's
+        # atomic-write digest, the terminal control's core digest, and the
+        # generation counters; the children above were rebuilt with fresh
+        # digests, so re-pin the receipt and rebuild it before this node's
+        # own digest is computed.
+        identity_model = values.get("final_write_identity")
+        control_model = values.get("terminal_control")
+        receipt_dict = node.get("checkpoint_receipt")
+        if (
+            identity_model is not None
+            and control_model is not None
+            and isinstance(receipt_dict, dict)
+        ):
+            # The identity pins the terminal control's own digest and its
+            # request digest; the control was rebuilt above, so re-pin the
+            # identity and rebuild it before the receipt.
+            identity_dict = node.get("final_write_identity")
+            if isinstance(identity_dict, dict):
+                identity_dict["terminal_control_digest"] = (
+                    control_model.terminal_control_digest
+                )
+                identity_dict["request_digest"] = control_model.request_digest
+                identity_cls = _class_for_dict(
+                    _resolve_forward_ref(
+                        cls.model_fields["final_write_identity"].annotation
+                    ),
+                    identity_dict,
+                )
+                if identity_cls is not None:
+                    values["final_write_identity"] = rebuild(
+                        identity_dict, identity_cls
+                    )
+                    identity_model = values["final_write_identity"]
+            receipt_dict["atomic_write_digest"] = identity_model.atomic_write_digest
+            receipt_dict["reload_core_digest"] = control_model.terminal_control_digest
+            receipt_dict["publication_operation_generation"] = (
+                identity_model.publication_operation_generation
+            )
+            receipt_dict["publication_artifact_generation"] = (
+                identity_model.publication_artifact_generation
+            )
+            receipt_cls = _class_for_dict(
+                _resolve_forward_ref(
+                    cls.model_fields["checkpoint_receipt"].annotation
+                ),
+                receipt_dict,
+            )
+            if receipt_cls is not None:
+                values["checkpoint_receipt"] = rebuild(receipt_dict, receipt_cls)
 
     if {
         "canonical_outcome_core", "completed_canonical_source_result",
@@ -1307,13 +1366,17 @@ def migrate_memory_records() -> bool:
                 member_dump = patched
         else:
             member_dump = patched
-        encoded = encode_typed_value(
-            {
-                "codec_key": decoded.get("codec_key"),
-                "payload": member_dump,
-                "schema": decoded.get("schema"),
-            }
-        )
+        envelope = {
+            "codec_key": decoded.get("codec_key"),
+            "payload": member_dump,
+            "schema": decoded.get("schema"),
+        }
+        if not envelope.get("codec_key"):
+            # Envelope preservation: never emit a codec-less envelope.
+            envelope["codec_key"] = (
+                f"bootstrap_graph_v3/{member.get('kind', 'unknown')}/native"
+            )
+        encoded = encode_typed_value(envelope)
         member["canonical_payload"] = encoded.decode()
         member["payload_digest"] = _hashlib.sha256(encoded).hexdigest()
         # The member digest preimage carries canonical_payload as BYTES
@@ -1505,6 +1568,12 @@ def migrate_memory_records() -> bool:
             reload_value = content.get("reload")
             if not isinstance(reload_value, dict) or "reload_digest" not in reload_value:
                 continue
+            from memorii.core.semantic_ingestion.contracts import (
+                restore_closed_wire_enums as _restore_reload,
+            )
+
+            reload_value = _restore_reload(reload_value)
+            content["reload"] = reload_value
             result_model = _ROOT_EXPORT.get("canonical_source_result")
             wrapper = reload_value.get("canonical_source_result")
             if (
@@ -1548,7 +1617,13 @@ def migrate_memory_records() -> bool:
                         wrapper[field] = exported
                 try:
                     wrapper_model = rebuild(wrapper, wrapper_cls)
-                    reload_value["canonical_source_result"] = wrapper_model
+                    import warnings as _warnings6
+
+                    with _warnings6.catch_warnings():
+                        _warnings6.simplefilter("ignore")
+                        reload_value["canonical_source_result"] = (
+                            wrapper_model.model_dump(mode="json")
+                        )
                 except Exception:
                     reload_value["canonical_source_result"] = wrapper
             delta_model = _ROOT_EXPORT.get("finalization_delta")
@@ -1574,15 +1649,136 @@ def migrate_memory_records() -> bool:
                 digests = _ROOT_EXPORT.get("group_result_digests")
                 if digests and "ordered_group_result_digests" in canonical:
                     canonical["ordered_group_result_digests"] = list(digests)
+            # The terminal-locator records pin the handoff digest; refresh
+            # them from the rebuilt publication-request root.
+            exported_handoff = _ROOT_EXPORT.get("handoff_digest")
+            if exported_handoff is not None:
+                locator_content = record.get("content") or {}
+                if (
+                    "handoff_digest" in locator_content
+                    and "reload" in locator_content
+                ):
+                    locator_content["handoff_digest"] = exported_handoff
+
+            # The final write identity pins every manifest member digest
+            # and the manifest request's digests; refresh them from the
+            # migrated manifest.
+            identity = reload_value.get("final_write_identity")
+            if isinstance(identity, dict):
+                manifest_record = next(
+                    (
+                        r
+                        for r in records
+                        if r.get("memory_id") == identity.get("member_manifest_id")
+                    ),
+                    None,
+                )
+                if manifest_record is not None:
+                    manifest_content = manifest_record.get("content") or {}
+                    members = manifest_content.get("members", ())
+                    identity["required_member_digests"] = [
+                        member.get("member_digest") for member in members
+                    ]
+                    embedded_control = reload_value.get("terminal_control")
+                    control_request = (
+                        embedded_control.get("request_digest")
+                        if isinstance(embedded_control, dict)
+                        else None
+                    )
+                    if (
+                        isinstance(control_request, str)
+                        and "request_digest" in identity
+                    ):
+                        identity["request_digest"] = control_request
+                    # The manifest digest is the store's exact formula:
+                    # sha256 over the encoded member dumps. Recompute it and
+                    # pin it in the manifest record, the identity, and the
+                    # embedded terminal control.
+                    from memorii.core.memory_evolution.ingestion_contracts import (
+                        encode_typed_value as _etv,
+                    )
+                    from memorii.core.semantic_ingestion.contracts import (
+                        BootstrapGraphPlanAtomicMemberV3 as _member_cls,
+                    )
+
+                    member_values = []
+                    for member in members:
+                        member_model = _member_cls.model_validate(
+                            member, strict=False
+                        )
+                        member_values.append(
+                            member_model.model_dump(mode="json")
+                        )
+                    recomputed_manifest_digest = hashlib.sha256(
+                        _etv(member_values)
+                    ).hexdigest()
+                    manifest_content["manifest_digest"] = recomputed_manifest_digest
+                    if "member_manifest_digest" in identity:
+                        identity["member_manifest_digest"] = (
+                            recomputed_manifest_digest
+                        )
+                    exported_epoch = _ROOT_EXPORT.get("control_epoch_digest")
+                    if (
+                        exported_epoch is not None
+                        and "control_epoch_digest" in identity
+                    ):
+                        identity["control_epoch_digest"] = exported_epoch
+                    embedded_control = reload_value.get("terminal_control")
+                    if (
+                        isinstance(embedded_control, dict)
+                        and "member_manifest_digest" in embedded_control
+                    ):
+                        embedded_control["member_manifest_digest"] = (
+                            recomputed_manifest_digest
+                        )
+                        embedded_control["control_epoch_digest"] = identity.get(
+                            "control_epoch_digest",
+                            embedded_control.get("control_epoch_digest"),
+                        )
+
+            # The wrapper/delta patches above re-introduced wire-shaped
+            # enum strings; restore them again before the rebuild.
+            reload_value = _restore_reload(reload_value)
+            content["reload"] = reload_value
             try:
                 reload_model = rebuild(reload_value, reload_cls)
             except Exception:
+                import traceback as _tb
+
+                print("reload rebuild failed:",
+                      [l.strip() for l in _tb.format_exc().splitlines()
+                       if "Value error" in l or "instance of" in l][:2])
                 continue
             import warnings as _warnings3
 
             with _warnings3.catch_warnings():
                 _warnings3.simplefilter("ignore")
                 content["reload"] = reload_model.model_dump(mode="json")
+                # The standalone terminal-identity record embeds the same
+                # final write identity; sync it from the rebuilt model so
+                # both copies carry the recomputed identity digest.
+                fresh_identity = reload_model.final_write_identity.model_dump(
+                    mode="json"
+                )
+                fresh_control = reload_model.terminal_control.model_dump(
+                    mode="json"
+                )
+                for other in records:
+                    other_content = other.get("content") or {}
+                    other_identity = other_content.get("identity")
+                    if (
+                        isinstance(other_identity, dict)
+                        and other_identity.get("member_manifest_id")
+                        == fresh_identity.get("member_manifest_id")
+                    ):
+                        other_content["identity"] = fresh_identity
+                    other_control = other_content.get("terminal_control")
+                    if (
+                        isinstance(other_control, dict)
+                        and other_control.get("locator_digest")
+                        == fresh_control.get("locator_digest")
+                    ):
+                        other_content["terminal_control"] = fresh_control
 
     records_path.write_bytes(
         gzip.compress(_json.dumps(records, default=lambda o: o.decode() if isinstance(o, bytes) else str(o)).encode())
