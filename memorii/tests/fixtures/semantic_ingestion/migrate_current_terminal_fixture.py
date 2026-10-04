@@ -690,59 +690,61 @@ def rebuild(node: dict, cls: type):
     try:
         return cls.model_validate(values)
     except Exception:
-        # Wire dicts carry JSON lists where strict models want tuples and
-        # base64 text where they want bytes; the digest bodies are already
-        # computed, so retry after coercing both.
-        return cls.model_validate(
-            _coerce_bytes(cls, _coerce_declared_tuples(cls, values))
+        # Wire dicts carry JSON lists for declared tuples, text for
+        # declared bytes, and plain dicts for declared models; the digest
+        # bodies are already computed, so retry after coercing per the
+        # annotations.
+        return cls.model_validate(_coerce_for_model(cls, values))
+
+
+def _coerce_for_model(cls: type, values: dict) -> dict:
+    """Coerce a wire dict to the strict shapes the model declares.
+
+    JSON wire dicts carry lists for declared tuples, text for declared
+    bytes, and plain dicts for declared models; strict validation refuses
+    all three. Recursion follows the field annotations so nested models
+    are coerced by their own declarations.
+    """
+
+    coerced: dict[str, object] = {}
+    for name, field in cls.model_fields.items():
+        if name not in values:
+            continue
+        coerced[name] = _coerce_value(
+            _resolve_forward_ref(field.annotation), values[name]
         )
-
-
-def _coerce_declared_tuples(cls: type, values: dict) -> dict:
-    coerced = dict(values)
-    for name, field in cls.model_fields.items():
-        if name not in coerced:
-            continue
-        annotation = _unwrap(_resolve_forward_ref(field.annotation))
-        if get_origin(annotation) is not tuple:
-            continue
-        value = coerced[name]
-        if isinstance(value, list):
-            value = tuple(value)
-        if isinstance(value, tuple):
-            coerced[name] = tuple(
-                _coerce_declared_tuples_for_item(item) for item in value
-            )
     return coerced
 
 
-def _coerce_declared_tuples_for_item(item: object) -> object:
-    if isinstance(item, dict):
-        item_cls = _owner_by_field_set(item)
-        if item_cls is not None:
-            return _coerce_declared_tuples(item_cls, item)
-        return {
-            key: _coerce_declared_tuples_for_item(value)
-            for key, value in item.items()
-        }
-    if isinstance(item, list):
-        return tuple(_coerce_declared_tuples_for_item(i) for i in item)
-    return item
-
-
-def _coerce_bytes(cls: type, values: dict) -> dict:
-    coerced = dict(values)
-    for name, field in cls.model_fields.items():
-        if name not in coerced:
-            continue
-        annotation = _unwrap(_resolve_forward_ref(field.annotation))
-        if annotation is not bytes or not isinstance(coerced[name], str):
-            continue
-        coerced[name] = coerced[name].encode()
-    return coerced
-
-
-# --- sibling digest pinning -------------------------------------------------
+def _coerce_value(annotation: object, value: object) -> object:
+    annotation = _unwrap(_resolve_forward_ref(annotation))
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+    if origin is Union:
+        for candidate in args:
+            resolved = _unwrap(_resolve_forward_ref(candidate))
+            if isinstance(value, dict) and isinstance(resolved, type) and hasattr(resolved, "model_fields"):
+                if set(value) <= set(resolved.model_fields):
+                    return _coerce_for_model(resolved, value)
+        return value
+    if isinstance(annotation, type) and hasattr(annotation, "model_fields"):
+        if isinstance(value, dict):
+            return _coerce_for_model(annotation, value)
+        return value
+    if origin is bytes:
+        return value.encode() if isinstance(value, str) else value
+    if annotation is bytes:
+        return value.encode() if isinstance(value, str) else value
+    if origin in (list, tuple):
+        if isinstance(value, (list, tuple)):
+            item_annotation = args[0] if args else None
+            items = [
+                _coerce_value(item_annotation, item) if item_annotation else item
+                for item in value
+            ]
+            return tuple(items) if origin is tuple else list(items)
+        return value
+    return value
 
 
 def _construction_pins(construction: dict, epoch_digest: str, core_digest: str,
@@ -1519,8 +1521,11 @@ def migrate_memory_records() -> bool:
 
                 with _warnings4.catch_warnings():
                     _warnings4.simplefilter("ignore")
+                    # JSON mode: the rebuilt record must enter the wrapper as
+                    # wire-shaped data (enum values as strings, datetimes
+                    # normalized), exactly like the captured bytes.
                     wrapper["canonical_source_result"] = (
-                        result_model.model_dump(mode="python")
+                        result_model.model_dump(mode="json")
                     )
                 wrapper_cls = _model_class(
                     "BootstrapGraphCanonicalSourceResultV3"
@@ -1554,7 +1559,7 @@ def migrate_memory_records() -> bool:
                 with _warnings5.catch_warnings():
                     _warnings5.simplefilter("ignore")
                     delta_field.clear()
-                    delta_field.update(delta_model.model_dump(mode="python"))
+                    delta_field.update(delta_model.model_dump(mode="json"))
             for field, exported in (
                 ("handoff_digest", _ROOT_EXPORT.get("handoff_digest")),
                 ("control_epoch_digest", _ROOT_EXPORT.get("control_epoch_digest")),
