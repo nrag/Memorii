@@ -658,10 +658,19 @@ ledger):
 4. `generated_reference_schema_manifest` — declare the directive's target
    reference edges; `advance_reference_integrity`/`extract_reference_edges`
    learn the kind.
-5. Event envelope schema: mint `memorii.semantic-memory-event.v2` (current
-   write), demote v1 to deprecated-readable with an identity upcaster
-   (v0→v1 pattern), registry history stays monotonic; new batches pin the
-   new registry revision.
+5. Event envelope schema: the revocation grammar extension is an
+   additive superset, so it extends the current
+   `memorii.semantic-memory-event.v1` under strict decode — unknown kinds
+   fail closed, the registry revision still advances monotonically, and
+   new batches pin it. A new envelope version is minted only when a
+   change is not an additive superset (removing, renaming, or
+   reinterpreting any existing kind or field, or changing wire layout),
+   and after first external release every grammar change mints because
+   uncontrolled old readers exist. Historical versions remain readable
+   only through registered upcasters (v0→v1 pattern). A version mint
+   without a stated rule for which change belongs in which version is
+   prohibited. (Owner resolution 2026-10-04; the original v2-mint
+   mandate is superseded.)
 6. Typed-value publication regeneration via
    `memorii/scripts/generate_observation_registry_publication.py`
    (production authoring path only; never hand-edit signed manifests).

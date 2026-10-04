@@ -185,6 +185,19 @@ organizational only and must not appear in outputs.
 
 ## Decision Log
 
+- 2026-10-04 (owner decision; resolves the 2026-10-03 M1b flagged
+  deviation): the event-envelope schema stays
+  `memorii.semantic-memory-event.v1` and additive grammar extensions
+  extend it. Verified before deciding: nothing in the repository's
+  golden fixtures or trial artifacts carries v0-stamped bytes — the v0
+  reader in event replay is dormant fail-closed support, and v1 is the
+  sole proven current write. The version rule is codified in the design
+  (§6.10 item 5): additive-superset extensions extend the current
+  version under strict decode; non-additive changes (removal, rename,
+  reinterpretation, wire-layout change) mint a new version, and every
+  grammar change mints after first external release. Minting a version
+  without being able to state which change belongs in which version is
+  prohibited.
 - 2026-10-03 (flagged deviation for milestone review — design §6.10 item
   5): the event-envelope schema version remains
   `memorii.semantic-memory-event.v1` instead of minting v2. The grammar
