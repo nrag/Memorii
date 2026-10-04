@@ -98,7 +98,8 @@ implementation introduces (all behavioral/protocol class): record kind
 `RecordRevocationTarget`; `SuppressionRecord` (journal v2 envelope);
 control field `pending_epoch_increments`; lifecycle members `revoked`
 (ClaimLifecycleState, EntityLinkLifecycleState); event schema version
-`memorii.semantic-memory-event.v2` with upcaster; view component
+`memorii.semantic-memory-event.v1` extended additively (owner resolution
+2026-10-04, no v2 mint); view component
 `RevokedIdentityView`; governance entry `commit_forget_enforcement`;
 marking reason `revoked_evidence`; forensic surface
 `forensic_lineage_audit`. Mutation coverage added for each new surface in
@@ -165,10 +166,15 @@ organizational only and must not appear in outputs.
   content-free closure, journal v2 (stable suppression identity,
   v1-legacy reader, unknown fail-closed), journal-first barrier-gated
   apply, pending_epoch_increments + one-transaction finalize +
-  boot completion (DUR-09 closed), drain on barrier-release/boot,
+  boot completion (DUR-09 closed), drain call on barrier-release/boot
+  (CORRECTED 2026-10-04: the drain is structurally inert — the
+  enforcement emitter is never wired; see review findings),
   doctor/status/CLI; (4) c06de831 serving gates — RevokedIdentityView
-  (protocol-typed) injected at retrieval/scoped-context/structured-facts/
-  entity-match/factory/sidecar; harness + resume justification marking;
+  (protocol-typed) accepted at retrieval/scoped-context/structured-facts/
+  entity-match/factory/sidecar (CORRECTED 2026-10-04: no production
+  composition root performs the injection; only the managed-partition
+  factory and harness sidecar do — see review findings); harness + resume
+  justification marking;
   (5) 11b4ad8b governance entry — store method appending the directive
   delta through the full canonical commit (batch/replay state/reference
   ledger genesis-bootstrap/projection/checkpoint/aggregate) with
@@ -274,6 +280,66 @@ captured ones.
 
 None beyond the known failure above. Budget: three review rounds per
 milestone before blocking.
+
+## Milestone Review Round (2026-10-04, three independent reviewers)
+
+Verdict: NOT ready — the grammar and control-plane spine satisfy the
+design, but the serving-enforcement promise ("no read path may ever
+surface the content again") is not delivered on the production serving
+plane. Confirmed findings (all verified against code):
+
+P1 / changes_required (blocks FGT-R2/R3/R8/R11):
+- RV1 No production composition root injects the revoked view into the
+  provider serving plane (hermes_factory, hermes_provider,
+  authenticated_source, filesystem bundle, production_capture all pass
+  none); absence is treated as unfiltered, but the design requires
+  absence to be a fail-closed composition error.
+- RV2 Enforcement publication has no production trigger: the emitter is
+  None forever (no setter), the barrier-release/boot drains are inert,
+  enforce_forget has no production caller, the CLI has no enforce
+  command.
+- RV3 observe_graph has no revocation enforcement (neither view nor
+  replay-projection exclusion; the retired-claim set never sees
+  revocation directives).
+
+P2 / changes_required:
+- RV4 identity-lineage host-grant reads serve revoked content (R16 host
+  half; provider/service.read_identity_lineage applies no view).
+- RV5 memory-plane query surface (get_record/list_records/query_records,
+  pagination, cursors) unfiltered; the design requires pre-slice
+  filtering (no host caller of query_records yet; exposure is via
+  internal consumers).
+- RV6 runtime-step retrieval admits revoked ids into
+  available_evidence_ids.
+- RV7 legacy graph queries: no tombstones for graph_node/graph_edge, no
+  view, REVOKED missing from graph_persistence validity map (KeyError
+  crash) and from temporal never-eligible states.
+- RV8 learned-ontology coverage/index serving has no revoked-source
+  ineligibility.
+- RV9 the serving view never refreshes at apply-time (journal write);
+  long-lived processes serve revoked content until restart.
+- RV10 suppression journal filename collision (same second + same
+  coordinate count) silently destroys a prior entry.
+- RV11 the applied directive carries an empty closure manifest and a
+  synthetic authority digest (audit fidelity, no serving impact).
+- RV12 the §10.1 parity family is a reduced single test: ten matrix rows
+  unwalked, no cursor exhaustion, per-path deltas, restart, in-window
+  oracle, or crash-cut family; mixed pre/post-extension fold replay
+  untested.
+
+P3 / follow_up (recorded, not blocking): forensic negatives (empty
+coordinate, cross-coordinate leakage, non-entity kinds), rank-competition
+prefetch pin, older-binary strict-decode proxy, fixture-manifest drift
+check, migration idempotence, malformed-coordinate IndexError, plan_digest
+field disagreement between index-record writers, closure class 2-3
+under-enumeration, derived-index projection consistency, doctor revoked
+counts, operator inspection surfaces (do not exist; vacuous row).
+
+Revision order (dependency-sorted): RV1+RV2+RV9 first (composition and
+enforcement spine — everything else hangs off them), then RV3/RV4/RV5/
+RV6/RV7/RV8 serving gates, then RV10/RV11 durability and audit fidelity,
+then RV12 the full parity family. Test-reviewer finding "forensic suite
+absent from CI" already fixed (1c1feb13).
 
 ## Next Action
 

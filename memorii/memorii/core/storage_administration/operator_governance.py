@@ -131,6 +131,10 @@ class DoctorFinding(BaseModel):
 
 def _split_coordinate(coordinate: str) -> tuple[str, str, str | None]:
     parts = coordinate.split("|", 2)
+    if len(parts) == 1:
+        # Malformed callers must see an empty coordinate id so their
+        # validation refuses, not an IndexError.
+        return parts[0], "", None
     if len(parts) == 2:
         return parts[0], parts[1], None
     return parts[0], parts[1], parts[2]

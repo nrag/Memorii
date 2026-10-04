@@ -95,8 +95,12 @@ def write_suppression_record(
     directory.mkdir(parents=True, exist_ok=True)
     os.chmod(directory, 0o700)
     payload = (json.dumps(record.model_dump(mode="json"), sort_keys=True) + "\n").encode()
+    # The suppression_id is unique per plan and stable across retries, so
+    # distinct suppressions applied within the same second can never
+    # collide (a retry of the same plan rewrites its own entry, which is
+    # the intended idempotence).
     path = directory / (
-        f"forget-{record.applied_at_unix * 1000}-{len(record.suppressed)}.json"
+        f"forget-{record.applied_at_unix * 1000}-{record.suppression_id[:16]}.json"
     )
     temporary = path.with_name(f".{path.name}.tmp")
     with temporary.open("wb") as handle:
