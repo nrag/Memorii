@@ -439,6 +439,7 @@ jobs:
           tests/integration/test_memory_plane_migration_recovery.py
           tests/integration/test_forget_enforcement_publication.py
           tests/integration/test_forget_serving_parity.py
+          tests/integration/test_forget_forensic_lineage.py
           -p no:cacheprovider
 
   sdk-typescript:
@@ -626,6 +627,7 @@ jobs:
           tests/integration/test_runtime_sidecar.py
           tests/integration/test_forget_enforcement_publication.py
           tests/integration/test_forget_serving_parity.py
+          tests/integration/test_forget_forensic_lineage.py
           -p no:cacheprovider
 
   semantic-terminal-persistence:
