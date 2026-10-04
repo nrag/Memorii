@@ -60,6 +60,9 @@ _MEMBER_SCHEMA_VERSION = None
 # The rebuilt publication-request root's exported pins, consumed when the
 # memory-records fixture refreshes its terminal-recovery record.
 _ROOT_EXPORT: dict = {}
+# The records-plane rebuilt terminal reload; the terminal-reload.ctv capture
+# is written from it so both planes carry identical bytes.
+_RECORDS_RELOAD: dict = {"model": None}
 
 
 # --- module and class resolution -------------------------------------------
@@ -1057,6 +1060,18 @@ def migrate(name: str, class_name: str) -> bool:
     )
 
     path = _FIXTURE_ROOT / f"{name}.gz"
+    if (
+        class_name == "BootstrapGraphTerminalReloadV3"
+        and _RECORDS_RELOAD["model"] is not None
+    ):
+        # The records plane owns the authoritative rebuilt reload; write the
+        # capture from it so the .ctv and records copies are identical.
+        from memorii.core.semantic_ingestion.contracts import (
+            encode_semantic_contract as _esc_reload,
+        )
+
+        path.write_bytes(gzip.compress(_esc_reload(_RECORDS_RELOAD["model"])))
+        return True
     envelope = decode_typed_value(gzip.decompress(path.read_bytes()))
     payload = envelope["payload"]
 
@@ -1064,6 +1079,35 @@ def migrate(name: str, class_name: str) -> bool:
     replacements = _discover_replacements(payload)
     patched = deepcopy(payload)
     _patch_values(patched, replacements, _NEW_KIND)
+    global _ROOT_EXPORT
+    if class_name == "BootstrapGraphTerminalReloadV3":
+        # The reload embeds the same finalization delta and canonical
+        # source-result record the publication request encodes. The store
+        # reconstructs the delta from the reload's wrapper, so both embedded
+        # copies must carry the rebuilt request's digests; the generic
+        # rebuild cannot re-derive them.
+        exported_delta = _ROOT_EXPORT.get("finalization_delta")
+        if exported_delta is not None and isinstance(
+            patched.get("source_finalization_observation_delta"), dict
+        ):
+            import warnings as _warnings_export
+
+            with _warnings_export.catch_warnings():
+                _warnings_export.simplefilter("ignore")
+                patched["source_finalization_observation_delta"] = (
+                    exported_delta.model_dump(mode="json")
+                )
+        exported_record = _ROOT_EXPORT.get("canonical_source_result")
+        wrapper = patched.get("canonical_source_result")
+        if exported_record is not None and isinstance(wrapper, dict):
+            wrapper["canonical_source_result"] = (
+                exported_record.model_dump(mode="json")
+            )
+            exported_digests = _ROOT_EXPORT.get("group_result_digests")
+            if exported_digests and "ordered_group_result_digests" in wrapper:
+                wrapper["ordered_group_result_digests"] = list(
+                    exported_digests
+                )
     patched = restore_closed_wire_enums(patched)
     intent_probe = patched.get("publication_intent")
     _MEMBER_SCHEMA_VERSION = (
@@ -1265,7 +1309,6 @@ def migrate(name: str, class_name: str) -> bool:
     encoded = encode_semantic_contract(root)
     path.write_bytes(gzip.compress(encoded))
 
-    global _ROOT_EXPORT
     if class_name == "BootstrapGraphTerminalPublicationRequestV3":
         _ROOT_EXPORT = {
             "handoff_digest": getattr(
@@ -1329,6 +1372,192 @@ def migrate_memory_records() -> bool:
     compilation_cls = _model_class("BootstrapGraphPlanCompilationV3")
     migrated_members: dict[str, dict] = {}
 
+    # The group-commit primary is migrated first: rebuilding its request
+    # changes request_ctv_digest, which changes the derived primary id, and
+    # every construction-embedded reload tuple must re-pin the fresh digest
+    # or the store rejects the member as not repository-owned.
+    primary_ctv = {"value": None}
+    primary_request_cls = _model_class("BootstrapGraphGroupCommitRequestV3")
+    primary_reload_cls = _model_class("BootstrapGraphGroupCommitReloadV3")
+    for record in records:
+        if (
+            record.get("source_kind")
+            != "semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+        ):
+            continue
+        content = record.get("content") or {}
+        try:
+            request_env = decode_typed_value(bytes.fromhex(content["request_hex"]))
+            reload_env = decode_typed_value(bytes.fromhex(content["reload_hex"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        request_payload = request_env.get("payload")
+        reload_payload = reload_env.get("payload")
+        if not isinstance(request_payload, dict) or not isinstance(reload_payload, dict):
+            continue
+        for payload_dict in (request_payload, reload_payload):
+            _patch_values(
+                payload_dict,
+                _discover_replacements(payload_dict),
+                _NEW_KIND,
+            )
+        request_payload = restore_closed_wire_enums(request_payload)
+        reload_payload = restore_closed_wire_enums(reload_payload)
+        # The request validator joins planning_authorization.
+        # group_plan_member_digest against the plan member's own digest;
+        # rebuilding the member changes it, so re-pin and rebuild the
+        # authorization before the request itself.
+        plan_member = request_payload.get("group_plan_member")
+        if isinstance(plan_member, dict):
+            member_cls = _class_for_dict(
+                _resolve_forward_ref(
+                    primary_request_cls.model_fields["group_plan_member"].annotation
+                ),
+                plan_member,
+            )
+            if member_cls is not None:
+                try:
+                    plan_member_model = rebuild(plan_member, member_cls)
+                    request_payload["group_plan_member"] = plan_member_model
+                    authorization = request_payload.get("planning_authorization")
+                    if (
+                        isinstance(authorization, dict)
+                        and "group_plan_member_digest" in authorization
+                    ):
+                        authorization["group_plan_member_digest"] = (
+                            plan_member_model.member_digest
+                        )
+                        authorization_cls = _class_for_dict(
+                            _resolve_forward_ref(
+                                primary_request_cls.model_fields[
+                                    "planning_authorization"
+                                ].annotation
+                            ),
+                            authorization,
+                        )
+                        if authorization_cls is not None:
+                            request_payload["planning_authorization"] = rebuild(
+                                authorization, authorization_cls
+                            )
+                except Exception:
+                    pass
+        try:
+            request_model = rebuild(request_payload, primary_request_cls)
+        except Exception:
+            continue
+        reload_payload["request_ctv_digest"] = request_model.request_ctv_digest
+        # The reload validator joins persisted_result.core.request_ctv_digest
+        # to the reload's, and the receipt pins the rebuilt core's digests;
+        # rebuild the core first, then re-pin the receipt from the model.
+        persisted = reload_payload.get("persisted_result")
+        if isinstance(persisted, dict):
+            result_cls = _class_for_dict(
+                _resolve_forward_ref(
+                    primary_reload_cls.model_fields["persisted_result"].annotation
+                ),
+                persisted,
+            )
+            core = persisted.get("core")
+            if (
+                result_cls is not None
+                and isinstance(core, dict)
+                and "request_ctv_digest" in core
+            ):
+                core["request_ctv_digest"] = request_model.request_ctv_digest
+                core_cls = _class_for_dict(
+                    _resolve_forward_ref(result_cls.model_fields["core"].annotation),
+                    core,
+                )
+                if core_cls is not None:
+                    core_model = rebuild(core, core_cls)
+                    persisted["core"] = core_model
+                    receipt = persisted.get("receipt")
+                    if isinstance(receipt, dict):
+                        receipt["request_ctv_digest"] = core_model.request_ctv_digest
+                        receipt["result_core_digest"] = core_model.core_digest
+                        receipt["atomic_write_digest"] = core_model.atomic_write_digest
+                        receipt["ordered_operation_result_digests"] = tuple(
+                            item.result_digest
+                            for item in core_model.ordered_operation_results
+                        )
+                        receipt_cls = _class_for_dict(
+                            _resolve_forward_ref(
+                                result_cls.model_fields["receipt"].annotation
+                            ),
+                            receipt,
+                        )
+                        if receipt_cls is not None:
+                            persisted["receipt"] = rebuild(receipt, receipt_cls)
+        try:
+            reload_model = rebuild(reload_payload, primary_reload_cls)
+        except Exception:
+            continue
+        from memorii.core.memory_evolution.bootstrap_group_primary import (
+            bootstrap_graph_group_commit_primary_id,
+        )
+        from memorii.core.semantic_ingestion.contracts import (
+            encode_semantic_contract,
+        )
+
+        content["request_hex"] = encode_semantic_contract(request_model).hex()
+        content["reload_hex"] = encode_semantic_contract(reload_model).hex()
+        record["memory_id"] = bootstrap_graph_group_commit_primary_id(
+            request_model
+        )
+        primary_ctv["value"] = request_model.request_ctv_digest
+
+    def _cascade_primary_ctv(node: object) -> None:
+        if primary_ctv["value"] is None:
+            return
+        if isinstance(node, dict):
+            reload_tuple = node.get("group_commit_reload")
+            if isinstance(reload_tuple, dict) and "request_ctv_digest" in reload_tuple:
+                reload_tuple["request_ctv_digest"] = primary_ctv["value"]
+                # The reload validator joins the persisted core's ctv and
+                # the receipt pins the rebuilt core's digests; rebuild the
+                # core and re-pin the receipt exactly as for the primary.
+                persisted = reload_tuple.get("persisted_result")
+                if isinstance(persisted, dict):
+                    core = persisted.get("core")
+                    if isinstance(core, dict) and "request_ctv_digest" in core:
+                        core["request_ctv_digest"] = primary_ctv["value"]
+                        try:
+                            core_model = rebuild(
+                                core,
+                                _model_class(
+                                    "BootstrapGraphGroupCommitResultCoreV3"
+                                ),
+                            )
+                            persisted["core"] = core_model
+                            receipt = persisted.get("receipt")
+                            if isinstance(receipt, dict):
+                                receipt["request_ctv_digest"] = (
+                                    core_model.request_ctv_digest
+                                )
+                                receipt["result_core_digest"] = (
+                                    core_model.core_digest
+                                )
+                                receipt["atomic_write_digest"] = (
+                                    core_model.atomic_write_digest
+                                )
+                                receipt["ordered_operation_result_digests"] = tuple(
+                                    item.result_digest
+                                    for item in core_model.ordered_operation_results
+                                )
+                                persisted["receipt"] = rebuild(
+                                    receipt,
+                                    _model_class(
+                                        "BootstrapGraphAtomicEffectReceiptV3"
+                                    ),
+                                )
+                        except Exception:
+                            pass
+            for value in node.values():
+                _cascade_primary_ctv(value)
+        elif isinstance(node, (list, tuple)):
+            for value in node:
+                _cascade_primary_ctv(value)
+
     def migrate_member_payload(member: dict) -> bool:
         payload = member.get("canonical_payload")
         if not isinstance(payload, str):
@@ -1341,42 +1570,77 @@ def migrate_memory_records() -> bool:
         if not isinstance(inner, dict):
             return False
         replacements = _discover_replacements(inner)
-        counts_pinned = "exact_record_counts_by_kind" in _json.dumps(
+        inner_json = _json.dumps(
             inner, default=lambda o: o.decode() if isinstance(o, bytes) else str(o)
         )
-        if not replacements and not counts_pinned:
+        counts_pinned = "exact_record_counts_by_kind" in inner_json
+        # Members that pin group-result digests must be migrated even when
+        # their own payload carries no fingerprint replacements: the pinned
+        # digests change because the request-side constructions changed.
+        digest_pins_pinned = (
+            "group_result_digests" in inner_json
+            and bool(_ROOT_EXPORT.get("group_result_digests"))
+        )
+        if not replacements and not counts_pinned and not digest_pins_pinned:
             return False
         patched = deepcopy(inner)
         _patch_values(patched, replacements or {}, _NEW_KIND)
+        exported_digests = _ROOT_EXPORT.get("group_result_digests")
+        if exported_digests:
+            # The delta member's source outcome and the canonical source
+            # result member pin the transaction-group result digests. The
+            # request-side rebuild recomputes those constructions, so the
+            # pinned digests change; re-pin them here or the rebuilt member
+            # keeps the stale pre-migration values and fails the store's
+            # embedded-equality joins.
+            outcome = patched.get("source_outcome")
+            if isinstance(outcome, dict):
+                if "group_result_digests" in outcome:
+                    outcome["group_result_digests"] = list(exported_digests)
+                outcome_core = outcome.get("core")
+                if isinstance(outcome_core, dict) and "group_result_digests" in outcome_core:
+                    outcome_core["group_result_digests"] = list(exported_digests)
+            if "group_result_digests" in patched:
+                patched["group_result_digests"] = list(exported_digests)
+                patched_core = patched.get("core")
+                if isinstance(patched_core, dict) and "group_result_digests" in patched_core:
+                    patched_core["group_result_digests"] = list(exported_digests)
         patched = restore_closed_wire_enums(patched)
+        _cascade_primary_ctv(patched)
         inner_cls = (
             compilation_cls
             if set(patched) == set(compilation_cls.model_fields)
             else _owner_by_field_set(patched)
         )
+        model = None
         if inner_cls is not None:
             try:
                 model = rebuild(patched, inner_cls)
-                import warnings as _warnings
-
-                with _warnings.catch_warnings():
-                    _warnings.simplefilter("ignore")
-                    member_dump = model.model_dump(mode="python")
             except Exception:
-                member_dump = patched
+                model = None
+        # Envelope-family preservation: contract-family members (schema
+        # "memorii.semantic-ingestion.contract-envelope.v1", no codec_key)
+        # must be re-encoded with encode_semantic_contract, and atomic-family
+        # members (schema "memorii.bootstrap-graph.atomic-member-envelope.v3")
+        # with the atomic member encoder. Fabricating a mixed envelope (or a
+        # synthetic codec_key) fails the store's native-payload decode.
+        from memorii.core.semantic_ingestion.contracts import (
+            encode_bootstrap_graph_atomic_member_payload_v3 as _encode_atomic,
+            encode_semantic_contract as _encode_contract,
+        )
+
+        envelope_schema = decoded.get("schema")
+        if inner_cls is not None and not isinstance(model, dict) and model is not None:
+            if envelope_schema == "memorii.bootstrap-graph.atomic-member-envelope.v3":
+                encoded = _encode_atomic(
+                    kind=member.get("kind"), artifact=model
+                )
+            else:
+                encoded = _encode_contract(model)
         else:
-            member_dump = patched
-        envelope = {
-            "codec_key": decoded.get("codec_key"),
-            "payload": member_dump,
-            "schema": decoded.get("schema"),
-        }
-        if not envelope.get("codec_key"):
-            # Envelope preservation: never emit a codec-less envelope.
-            envelope["codec_key"] = (
-                f"bootstrap_graph_v3/{member.get('kind', 'unknown')}/native"
-            )
-        encoded = encode_typed_value(envelope)
+            # No owning model resolved; keep the captured bytes untouched
+            # rather than fabricating an envelope the store will reject.
+            return False
         member["canonical_payload"] = encoded.decode()
         member["payload_digest"] = _hashlib.sha256(encoded).hexdigest()
         # The member digest preimage carries canonical_payload as BYTES
@@ -1701,14 +1965,14 @@ def migrate_memory_records() -> bool:
                         BootstrapGraphPlanAtomicMemberV3 as _member_cls,
                     )
 
-                    member_values = []
-                    for member in members:
-                        member_model = _member_cls.model_validate(
+                    # The store hashes a TUPLE of member dumps; CTV
+                    # encodes list and tuple differently, so build the tuple.
+                    member_values = tuple(
+                        _member_cls.model_validate(
                             member, strict=False
-                        )
-                        member_values.append(
-                            member_model.model_dump(mode="json")
-                        )
+                        ).model_dump(mode="json")
+                        for member in members
+                    )
                     recomputed_manifest_digest = hashlib.sha256(
                         _etv(member_values)
                     ).hexdigest()
@@ -1742,6 +2006,8 @@ def migrate_memory_records() -> bool:
             content["reload"] = reload_value
             try:
                 reload_model = rebuild(reload_value, reload_cls)
+                if _RECORDS_RELOAD["model"] is None:
+                    _RECORDS_RELOAD["model"] = reload_model
             except Exception:
                 import traceback as _tb
 
@@ -1806,8 +2072,18 @@ def refresh_manifest() -> None:
 
 
 def main() -> int:
-    migrated = [name for name, cls in _TARGETS.items() if migrate(name, cls)]
+    migrated = []
+    first = "publication-request.ctv"
+    if migrate(first, _TARGETS[first]):
+        migrated.append(first)
+    # The records plane must be migrated before the remaining captures: the
+    # reload capture is written from the records-rebuilt reload model.
     migrate_memory_records()
+    for name, cls in _TARGETS.items():
+        if name == first:
+            continue
+        if migrate(name, cls):
+            migrated.append(name)
     refresh_manifest()
     print("migrated:", migrated)
     return 0

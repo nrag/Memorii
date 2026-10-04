@@ -227,27 +227,35 @@ organizational only and must not appear in outputs.
 
 | Command | Signature | Authority chain | Disposition |
 | --- | --- | --- | --- |
-| `pytest tests/integration/test_observation_ledger_activation.py tests/integration/test_observation_terminal_intent.py` (local, package cwd) | 5 failures: `graph_state_snapshot_counts_invalid` + `planning_state_manifest_mismatch` decoding the golden `.ctv` captures in `tests/fixtures/semantic_ingestion/current_terminal/` (captured at revision a9b9813f per their manifest) | the `revocation_directive` grammar change alters `canonical_graph_codec_manifest().manifest_fingerprint` (13 entries) and every snapshot counts tuple; the captured payloads embed the 12-kind values | IN SCOPE, deterministic: stale golden fixtures under an approved grammar change — production paths pass everywhere else (155/160 in the same run; enforcement + parity + event-replay suites green). FIX IN PROGRESS (work-in-progress tool committed at tests/fixtures/semantic_ingestion/migrate_current_terminal_fixture.py, NOT yet run to success; fixture bytes untouched): the tool discovers the old codec/reference fingerprints by value, patches snapshot counts, and REBUILDS each payload bottom-up as real models — children become validated instances before each parent digest is recomputed over `model_dump`, honoring the content-addressed `_digest_field` convention with versioned exclusions, the coordinator's subset core digest + authority replay pin + control-epoch pin (the epoch pin must be written into BOTH the dict and `values`), the graph-plane read-set/snapshot/planning-state digests, the execution-manifest whole-body digest + identity-closure re-pin, sibling rebinds (plan/lineage→handoff-core and its embedded copy, constructions→reload/result digests→record+core group tuples), coordinator-first digest scattering into every attempt/control-epoch/successor pin, lazy `model_rebuild` for late-bound classes, exact-field-set + literal union discrimination, and pydantic private-attr defaults. Converged past: coordinator request, snapshot bundle/authority, planning states, group plans/members/authorizations, identity closures, execution manifest. REMAINING (one node class): `BootstrapNativePlanningConstructionAuthorityV3` (the deep group-commit persisted planning authority; two exact-match sites under `group_commit_reload.persisted_result.core.ordered_operation_results[*]`). The engine (committed through f8fc076e) now resolves Annotated union members and self-corrects across variants (try-next-candidate rebuild), so fact/correction/retraction members, attempt authorities, planning states, snapshots, constructions, and the execution manifest all rebuild with correct digests. The authority node still reports `authority_digest mismatch` after its children rebuild — the engine's digest over the rebuilt model body differs from the validator's expectation; the discriminating next probe is to dump the engine's `values` for that node, run `model_validate` directly, and diff the validator's recomputation inputs (planning_codec_entries / temporal_constructions / evidence_constructions serialization and the identity_construction union pick are the candidates). Then the three .ctv files + manifest regenerate and the five tests re-run. This blocks CI green for the milestone.
+| `pytest tests/integration/test_observation_ledger_activation.py tests/integration/test_observation_terminal_intent.py` (local, package cwd) | 5 failures: stale golden `.ctv` captures under the approved `revocation_directive` grammar change | the captured payloads embed the 12-kind codec manifest and snapshot counts | RESOLVED 2026-10-03: the migration engine (tests/fixtures/semantic_ingestion/migrate_current_terminal_fixture.py) now migrates all three `.ctv` captures, the memory-records plane (9 members, both manifest copies, reference ledger, terminal recovery, group-commit primary with ctv cascade into every construction-embedded reload tuple), and re-encodes each member with its original envelope family (contract vs atomic). The records plane is migrated first and the terminal-reload capture is written from the records-rebuilt reload model so both planes carry identical bytes. Both modules green: 47/47 (terminal intent 3/3, retained closure both variants, captured jsonl history preserved). |
 
-LATEST NARROWING (final of this stretch, engine at e3c149a0): the
-ENTIRE terminal-recovery/locator/identity/manifest digest chain now
-closes — the store's substituted checks pass down to the LAST
-comparison: `record.content["member"] != member_dump` for exactly three
-member kinds (bootstrap_graph_dependent_attempt,
-bootstrap_transaction_group_plan, bootstrap_source_plan_lineage_entry).
-Those three manifest members' canonical_payload decodes with envelope
-keys {kind, payload, schema} instead of the required {codec_key,
-payload, schema} — some writer re-encoded them without the codec_key
-envelope, and migrate_member_payload's envelope-preservation guard did
-not change the outcome, so the writer is another path (candidates: the
-holder_cls rebuild in the manifest-refresh loop rebuilding the REQUEST
-holder's members tuple, or _rebind_publication_intent's member
-rebuild). Discriminating next step: instrument migrate_memory_records
-with a writer probe (wrap the three member dicts, print a stack trace
-on canonical_payload mutation), then make that writer preserve the
-codec_key envelope exactly.
-
-MIGRATION STATUS (engine at tests/fixtures/semantic_ingestion/.../migrate_current_terminal_fixture.py, fixtures always restored until the tool runs green end to end): the .ctv migrations now COMPLETE — all three captures (publication-request, terminal-reload, publication-intent) rebuild, re-encode, and pass tests/integration/test_observation_terminal_intent.py (3/3) plus the retained-native-terminal-closure activation test. The memory-records fixture migrates 7 member payloads + both manifest copies + the reference ledger record. REMAINING (one record, narrowed twice): the terminal-RECOVERY record's wrapper rebuild now reaches the embedded `CanonicalSourceTerminalOutcomeCore`, whose own validator ("canonical source terminal outcome core is invalid") rejects — the wrapper's record/core dicts are byte-identical to the migrated .ctv fixture's (verified: record_digest d3c9af05, core_digest e6e4776b on both sides), so the divergence is a strict-mode/coercion artifact inside the graph-effect rebuild path (enum restore + declared-tuple + declared-bytes coercions were added; narrowed further 2026-10-03: the engine now has a general annotation-guided wire coercion (`_coerce_for_model`/`_coerce_value`: lists→declared tuples, text→declared bytes, dicts→declared models, recursively) and json-mode exports of the rebuilt record/delta into the recovery wrapper; the core and coerced wrapper VALIDATE standalone against the stored fixture, but inside rebuild() the core's final validate still raises "core is invalid" WITHOUT reaching its digest comparison — i.e. an earlier equality condition (artifact-embedded copies vs sibling fields: governance_carrier_artifact.segment_governance/message_admissions/required_outcome_scopes vs the standalone fields) compares a rebuilt model against a raw dict or two independently-built models that differ. The discriminating next step: inside rebuild() for CanonicalSourceTerminalOutcomeCore, print `type(values['governance_carrier_artifact'])`, `type(values['required_outcome_scopes'])` and their normalized dumps; if one side is a dict, coerce embedded copies of duplicated structures before the final validate). Engine lessons banked in-commit: member-digest preimages carry canonical_payload as BYTES (CTV base64), the member-schema context selects persisted-vs-construction result digests (v3 vs v2), manifest copies in BOTH content.request.members and content.members need symmetric refresh, and json writes need a bytes/default fallback. |
+MIGRATION COMPLETE (2026-10-03): both fixture planes migrate green end to
+end. Final engine structure (tests/fixtures/semantic_ingestion/
+migrate_current_terminal_fixture.py): (1) publication-request.ctv is
+migrated first and exports the authoritative request chain (handoff,
+epoch, request, replay, lineage digests, group-result digests, canonical
+record, finalization delta); (2) the memory-records plane migrates the
+group-commit primary first (plan-member rebuild, authorization
+group_plan_member_digest re-pin, persisted core + receipt cascade from
+the rebuilt core), cascades the fresh request_ctv_digest into every
+construction-embedded group_commit_reload (rebuilding each core and
+re-pinning its receipt), re-pins delta/canonical-record
+group_result_digests from the export, re-encodes every member with its
+original envelope family (contract members via encode_semantic_contract,
+atomic members via the atomic member encoder, no synthetic codec_key),
+recomputes the manifest digest over a TUPLE of member dumps (CTV encodes
+list and tuple differently), and captures the records-rebuilt terminal
+reload model; (3) terminal-reload.ctv is written from that records
+reload model (plane convergence); (4) publication-intent.ctv migrates
+last. Store debug was instrumented only against a scratch copy and
+restored; atomic_store.py is untouched. Durable lessons: original pinned
+digests (group results 691439a7..., delta 27caf38a...) are STALE under
+the grammar change because the rebuilt constructions legitimately
+recompute (planning-state manifest reconciliation changes
+group_plan_member digests); the store treats the records-plane manifest
+members as authority for the v2 delta, so every embedded copy (request
+delta, reload delta, wrapper) must carry the rebuilt values, not the
+captured ones.
 
 ## Blockers And Limits
 
@@ -256,6 +264,8 @@ milestone before blocking.
 
 ## Next Action
 
-Run the code-mapper preflight producing
-docs/work/semantic-forgetting-implementation/preflight-bindings.md, then
-open milestones/record-kind-schema-chain.plan.md and implement M1.
+Commit the migrated golden fixtures plus the migration engine, push, and
+re-run the observation-ledger-activation CI job on the release branch;
+then continue the recorded release chain (forensic lineage surface,
+prefetch canonical-channel filter, milestone review with the M1b
+registry-v2 deviation decision).
