@@ -470,6 +470,15 @@ the file is in unit-shards.json's ignore list and no dedicated job runs
 it. Not caused by the revision; do not fix by weakening; investigate
 under a separate debugging WorkPlan.
 
+## CI Queue Note (2026-10-05)
+
+GitHub runner backlog held nine branch runs (no workflow concurrency
+group; ~500 queued jobs). The seven superseded runs (through 4ffce526)
+were cancelled to free runner capacity; the authoritative run for
+6489add4 (37266156716) is watched with a completion notification. Review
+round 2 launches when it completes green; superseded reds need no triage
+(cancelled, and their commits are ancestors of 6489add4).
+
 ## Next Action
 
 The forensic lineage surface (R16) and the prefetch canonical-channel
