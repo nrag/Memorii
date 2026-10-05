@@ -535,10 +535,11 @@ now landed or scoped:
   checkpoint-tail in the mixed docstring (C9 — the equality IS now
   pinned), keeps_record graph-reference depth (S6).
 
-REMAINING before the readiness statement: S3 RV12 residue decision
-(per-path delta tables + entity-match/structured-fact/observe-graph
-endpoint walks) — implementation or owner sign-off on deferral; CI green
-on the remediation head.
+REMAINING before the readiness statement: none. OWNER DECISION
+(2026-10-05): the three endpoint-level walks (S3) are PARKED until after
+the release is published; they head the post-release follow-up queue.
+The delta tables are implemented. CI: full-suite green on the final code
+head (12ecb2f4, 58/58) and on every subsequent commit.
 
 ## S3 Resolution (2026-10-05)
 
