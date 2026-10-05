@@ -18,6 +18,9 @@ from memorii.core.memory_evolution.temporal_contracts import (
     QueryTemporalKind,
     evaluate_temporal_eligibility,
 )
+from memorii.core.storage_administration.revoked_identity_view import (
+    RevokedIdentityServingGate,
+)
 
 
 class MemoryGraphQueryService:
@@ -28,12 +31,55 @@ class MemoryGraphQueryService:
         *,
         graph_store: MemoryGraphStore,
         now_provider: Callable[[], datetime],
+        revoked_view: RevokedIdentityServingGate | None = None,
     ) -> None:
         self._graph_store = graph_store
         self._now_provider = now_provider
+        self._revoked_view = revoked_view
 
     def snapshot(self) -> MemoryGraphSnapshot:
-        return self._graph_store.snapshot()
+        """The serving snapshot: revoked identities never appear (§6.8 row).
+
+        Internal integrity readers read the graph store directly; every
+        query through this service excludes revoked nodes and edges.
+        """
+
+        snapshot = self._graph_store.snapshot()
+        view = self._revoked_view
+        if view is None:
+            return snapshot
+
+        def revoked(value: object) -> bool:
+            if isinstance(value, str):
+                return (
+                    view.is_revoked_entity(value)
+                    or view.is_revoked_claim(value)
+                    or view.is_revoked_source(value)
+                    or view.is_revoked_record(value)
+                )
+            if isinstance(value, dict):
+                return any(revoked(item) for item in value.values())
+            if isinstance(value, (list, tuple)):
+                return any(revoked(item) for item in value)
+            return False
+
+        def referenced(node_or_edge: object) -> bool:
+            dump = getattr(node_or_edge, "model_dump", None)
+            body = dump(mode="python") if callable(dump) else node_or_edge
+            return revoked(body)
+
+        kept_nodes = tuple(node for node in snapshot.nodes if not referenced(node))
+        kept_node_ids = {node.node_id for node in kept_nodes}
+        kept_edges = tuple(
+            edge
+            for edge in snapshot.edges
+            if edge.source_node_id in kept_node_ids
+            and edge.target_node_id in kept_node_ids
+            and not referenced(edge)
+        )
+        return snapshot.model_copy(
+            update={"nodes": kept_nodes, "edges": kept_edges}
+        )
 
     def current_truth(
         self,

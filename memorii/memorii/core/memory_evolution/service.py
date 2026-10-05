@@ -136,9 +136,11 @@ class MemoryEvolutionService:
         self._graph_projector = graph_projector or MemoryGraphProjector()
         self._graph_store = graph_store or MemoryGraphStore(memory_plane=memory_plane)
         self._graph_validator = graph_validator or MemoryGraphValidator()
+        self._revoked_view = revoked_view
         self._graph_queries = MemoryGraphQueryService(
             graph_store=self._graph_store,
             now_provider=self._now_provider,
+            revoked_view=self._revoked_view,
         )
         self._query_analyzer = query_analyzer or EnglishLexicalQueryAnalyzer()
         self._temporal_anchor_catalog = temporal_anchor_catalog or TemporalAnchorCatalog()

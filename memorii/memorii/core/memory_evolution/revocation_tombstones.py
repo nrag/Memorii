@@ -173,6 +173,12 @@ def tombstone_records_for(
                     record, suppression_id=suppression_id, applied_at=moment
                 )
             )
+        elif kind in ("graph_node", "graph_edge"):
+            rewritten.append(
+                graph_record_tombstone_record(
+                    record, suppression_id=suppression_id, applied_at=moment
+                )
+            )
         elif kind == "entity_link":
             rewritten.append(
                 entity_link_tombstone_record(
@@ -191,3 +197,33 @@ __all__ = [
     "revoked_entity_link",
     "tombstone_records_for",
 ]
+
+def graph_record_tombstone_record(
+    record: CanonicalMemoryRecord, *, suppression_id: str, applied_at: datetime
+) -> CanonicalMemoryRecord:
+    """Mark one legacy graph_node/graph_edge record revoked (design 6.3).
+
+    The superseding version keeps the structural identity fields (node or
+    edge ids and kinds) and flips the lifecycle to REVOKED; literal text
+    never lives here, and serving exclusion is structural through the
+    lifecycle maps.
+    """
+
+    import copy
+
+    content = copy.deepcopy(record.content)
+    payload_key = "graph_node" if "graph_node" in content else "graph_edge"
+    payload = content.get(payload_key) or {}
+    if isinstance(payload, dict):
+        payload["lifecycle_state"] = "revoked"
+        payload["updated_at"] = applied_at
+    content[payload_key] = payload
+    content["revocation_suppression_id"] = suppression_id
+    return record.model_copy(
+        update={
+            "text": _marker(suppression_id),
+            "validity_status": TemporalValidityStatus.INVALIDATED,
+            "timestamp": applied_at,
+            "content": content,
+        }
+    )

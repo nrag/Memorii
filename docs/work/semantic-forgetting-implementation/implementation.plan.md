@@ -387,6 +387,17 @@ coverage statuses exclude revoked sources at the provider read. Query
 parity 15/15 (revocation exclusion + pagination exactness + lookup
 denial + fail-closed wrapper), store contract suites green.
 
+RV7-rest LANDED (2026-10-04): the legacy graph query family serves
+through a revoked-identity-gated snapshot (MemoryGraphQueryService filters
+nodes and dangling edges before every query; MemoryEvolutionService
+threads its injected view), and the forget closure now enumerates
+graph_node/graph_edge records referencing revoked identities, rewriting
+them at enforcement as superseding REVOKED-lifecycle versions (structural
+identity preserved; literal text never lives there). Combined with the
+earlier REVOKED validity/never-eligible maps, the legacy row is closed.
+Evolution suites (retrieval/execution/temporal) 112 passed; forget
+suites 7/7; ruff/pyright clean.
+
 SEPARATE PRE-EXISTING DEFECT (recorded 2026-10-04, needs its own
 debugging operation): tests/unit/core/semantic_ingestion/
 test_bootstrap_graph_root_composition.py fails locally (24 tests; sample

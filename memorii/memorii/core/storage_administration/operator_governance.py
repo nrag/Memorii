@@ -571,7 +571,8 @@ class GovernanceOperator:
             coordinate.coordinate_id
             for coordinate in record.suppressed
             if coordinate.coordinate_kind == "record"
-            and coordinate.record_kind in ("claim_state", "entity_link")
+            and coordinate.record_kind
+            in ("claim_state", "entity_link", "graph_node", "graph_edge")
         )
         if not memory_ids:
             return (), ()
@@ -797,6 +798,22 @@ class GovernanceOperator:
         for memory_id, content in ontology_payloads:
             if _content_references(content, sources):
                 coordinates.add(f"record|{memory_id}|learned_ontology")
+
+        # Legacy graph_node/graph_edge records referencing revoked
+        # identities: superseding versions marked revoked (design 6.3).
+        for row in record_rows:
+            try:
+                graph_record = json.loads(str(row["record_json"]))
+            except (TypeError, ValueError):
+                continue
+            graph_content = graph_record.get("content")
+            if not isinstance(graph_content, dict):
+                continue
+            graph_kind = graph_content.get("memory_evolution_kind")
+            if graph_kind not in ("graph_node", "graph_edge"):
+                continue
+            if _content_references(graph_content, entities | claims | sources):
+                coordinates.add(f"record|{row['memory_id']}|{graph_kind}")
 
         ordered = tuple(sorted(coordinates))
         counts = tuple(
