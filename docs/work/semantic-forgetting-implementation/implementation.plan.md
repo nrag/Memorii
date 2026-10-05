@@ -368,6 +368,12 @@ this band: observe_graph exclusion (RV3), memory-plane query-surface
 pre-slice (RV5), legacy graph_query view + graph tombstones (RV7 rest),
 ontology serving (RV8).
 
+RV3 LANDED (2026-10-04): the graph-observation cohort provider excludes
+revoked identities from every observation stream (ingestion, native
+projection, boundary, claim projections) before the merge and preimage,
+so paging stays exact; build_host_graph_observation_runtime requires the
+gate. Composed observation suite 11/11 green.
+
 SEPARATE PRE-EXISTING DEFECT (recorded 2026-10-04, needs its own
 debugging operation): tests/unit/core/semantic_ingestion/
 test_bootstrap_graph_root_composition.py fails locally (24 tests; sample

@@ -127,6 +127,9 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapNativeRetractionEffectV3,
     decode_semantic_contract,
 )
+from memorii.core.storage_administration.revoked_identity_view import (
+    RevokedIdentityServingGate,
+)
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 
 if TYPE_CHECKING:
@@ -172,11 +175,48 @@ class AtomicStoreGraphObservationCohortProvider:
         registry_history: ProtectedTypedValueRegistryHistory,
         registry_publication: VerifiedTypedValuePublication,
         limits: ProtectedTypedValueArtifactReaderLimits,
+        revoked_view: RevokedIdentityServingGate | None = None,
     ) -> None:
         self._atomic_store = atomic_store
         self._history = registry_history
         self._publication = registry_publication
         self._limits = limits
+        self._revoked_view = revoked_view
+
+    def _revocation_keeps(self, records: tuple) -> tuple:
+        """Observation streams exclude revoked identities (design 6.2.1).
+
+        The exclusion is a deterministic identity-set filter applied to
+        every stream before the merge, so paging stays exact across
+        cursors; retained bytes stay in the integrity projections and the
+        owner forensic surface.
+        """
+
+        if self._revoked_view is None:
+            return records
+        view = self._revoked_view
+
+        def walk(value: object) -> bool:
+            if isinstance(value, str):
+                return (
+                    view.is_revoked_entity(value)
+                    or view.is_revoked_claim(value)
+                    or view.is_revoked_source(value)
+                    or view.is_revoked_record(value)
+                )
+            if isinstance(value, dict):
+                return any(walk(item) for item in value.values())
+            if isinstance(value, (list, tuple)):
+                return any(walk(item) for item in value)
+            return False
+
+        kept = []
+        for record in records:
+            dump = getattr(record, "model_dump", None)
+            body = dump(mode="python") if callable(dump) else record
+            if not walk(body):
+                kept.append(record)
+        return tuple(kept)
 
     def graph_observation_input(
         self, *, snapshot: DetachedGraphObservationRecords,
@@ -202,12 +242,25 @@ class AtomicStoreGraphObservationCohortProvider:
             graph_revision=authority.graph.graph_revision,
             history=self._history, publication=self._publication, limits=self._limits,
         )
-        stream = _merge_observation_streams(ingestion, (*native, *boundary, *projections.records))
+        ingestion = self._revocation_keeps(ingestion)
+        native = self._revocation_keeps(native)
+        boundary = self._revocation_keeps(boundary)
+        kept_projections = self._revocation_keeps(projections.records)
+        stream = _merge_observation_streams(ingestion, (*native, *boundary, *kept_projections))
         if len(stream) > maximum_stream_records:
             raise ObservationCohortUnavailableError("observation stream record ceiling exceeded")
+        import dataclasses
+
+        if kept_projections == projections.records:
+            kept_projection_view = projections
+        else:
+            kept_projection_view = dataclasses.replace(
+                projections, records=kept_projections
+            )
         preimage = self._preimage(
             authority, membership, decision, request, (*ingestion, *native),
-            (*boundary, *projections.records), projections,
+            (*boundary, *kept_projections),
+            kept_projection_view,
         )
         return GraphObservationCohortInput(cohort_preimage=preimage, stream=stream)
 

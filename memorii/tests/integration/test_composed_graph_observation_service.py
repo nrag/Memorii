@@ -253,6 +253,7 @@ def backend(tmp_path_factory, request):
     ))
     key = Ed25519PrivateKey.generate()
     observation_runtime = build_host_graph_observation_runtime(
+        revoked_view=empty_revoked_view(),
         configuration=ProtectedGraphObservationConfiguration(
             context_resolver=_FixedContextResolver(context),
             authorizer=_GrantingAuthorizer(decision, policy, grant),
@@ -610,7 +611,7 @@ def test_hermes_forwards_real_graph_observation_and_attestation_routes(backend):
 def test_unconfigured_hermes_observation_routes_fail_closed() -> None:
     """An unconfigured Hermes host exposes only the public denial contract."""
 
-    hermes = HermesMemoryProvider(service=build_provider_memory_service_from_env(), revoked_view=empty_revoked_view())
+    hermes = HermesMemoryProvider(service=build_provider_memory_service_from_env(revoked_view=empty_revoked_view()), revoked_view=empty_revoked_view())
     ingress = _host_ingress()
     selector = GraphObservationCohortSelector(
         seed_source_ids=("unknown",),

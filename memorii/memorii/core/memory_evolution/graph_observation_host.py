@@ -22,6 +22,9 @@ from memorii.core.memory_evolution.typed_value_artifact_integrity import Trusted
 from memorii.core.memory_evolution.typed_value_artifact_reader import ProtectedTypedValueArtifactReaderLimits
 from memorii.core.memory_evolution.typed_value_registry_history import ProtectedTypedValueRegistryHistory
 from memorii.core.memory_plane.service import MemoryPlaneService
+from memorii.core.storage_administration.revoked_identity_view import (
+    RevokedIdentityServingGate,
+)
 
 
 @dataclass(frozen=True)
@@ -63,6 +66,7 @@ def build_host_graph_observation_runtime(
     registry_history: ProtectedTypedValueRegistryHistory,
     activation_target: VerifiedObservationActivationTarget,
     now_provider: Callable[[], datetime],
+    revoked_view: RevokedIdentityServingGate,
 ) -> AuthenticatedGraphObservationPagingRuntime:
     """Compose the concrete reader against the writer's exact authorities."""
     from memorii.core.memory_evolution.graph_observation_materialization import (
@@ -80,6 +84,7 @@ def build_host_graph_observation_runtime(
         registry_history=registry_history,
         registry_publication=activation_target.publication,
         limits=configuration.reader_limits,
+        revoked_view=revoked_view,
     )
     return AuthenticatedGraphObservationPagingRuntime(
         memory_plane=memory_plane,
