@@ -162,6 +162,40 @@ class MemoryPlaneService:
             and (self._revoked_view is None or self._revoked_view.keeps_record(item))
         ]
 
+    def query_records_host(
+        self,
+        query: object,
+        *,
+        cursor: str | None = None,
+        now: object = None,
+        cursor_lifetime: object = None,
+    ) -> object:
+        """Host-facing record-query endpoint: revoked identities never serve.
+
+        The only composition that may reach record scan/pagination/lookup
+        from a host; it fails closed when no revoked-identity gate was
+        injected. Internal integrity readers use the unfiltered store API
+        by design (§6.2.2).
+        """
+        if self._revoked_view is None:
+            raise RuntimeError(
+                "revoked_view is required for host record queries"
+            )
+        store = self._record_store()
+        query_records = getattr(store, "query_records", None)
+        if query_records is None:
+            raise RuntimeError("record queries are unavailable on this store")
+        kwargs: dict[str, RevokedIdentityServingGate | object] = {
+            "revoked_view": self._revoked_view
+        }
+        if cursor is not None:
+            kwargs["cursor"] = cursor
+        if now is not None:
+            kwargs["now"] = now
+        if cursor_lifetime is not None:
+            kwargs["cursor_lifetime"] = cursor_lifetime
+        return query_records(query, **kwargs)
+
     def list_records(
         self,
         *,

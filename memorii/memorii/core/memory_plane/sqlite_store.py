@@ -44,6 +44,9 @@ from memorii.core.memory_plane.store import (
     validate_governed_write,
     validate_preconditions,
 )
+from memorii.core.storage_administration.revoked_identity_view import (
+    RevokedIdentityServingGate,
+)
 from memorii.domain.enums import CommitStatus, MemoryDomain
 from memorii.stores.sqlite.partition import PartitionDataRepository
 
@@ -313,6 +316,7 @@ class SqliteMemoryPlaneStore:
         cursor: str | None = None,
         now: Callable[[], datetime] | None = None,
         cursor_lifetime: timedelta = DEFAULT_CURSOR_LIFETIME,
+        revoked_view: RevokedIdentityServingGate | None = None,
     ) -> MemoryPlanePage:
         """Serve one bounded typed query page with an authenticated cursor."""
         clock = now or (lambda: datetime.now(UTC))
@@ -343,25 +347,73 @@ class SqliteMemoryPlaneStore:
                 record = None if row is None else _decode_record(row["record_json"])
                 if record is not None and not _matches_query(record, query):
                     record = None
+                if (
+                    record is not None
+                    and revoked_view is not None
+                    and not revoked_view.keeps_record(record)
+                ):
+                    record = None
                 return MemoryPlanePage(
                     records=() if record is None else (clone_record(record),),
                     next_cursor=None,
                     truncated=False,
                 )
-            rows = self._partition.read_current_record_rows(
-                connection,
-                statuses=[status.value for status in query.statuses]
-                or None,
-                domains=[domain.value for domain in query.domains] or None,
-                source_kinds=list(query.source_kinds) or None,
-                limit=query.page_size + 1,
-                offset=offset,
-            )
-            truncated = len(rows) > query.page_size
-            records = tuple(
-                clone_record(_decode_record(row["record_json"]))
-                for row in rows[: query.page_size]
-            )
+            if revoked_view is None:
+                rows = self._partition.read_current_record_rows(
+                    connection,
+                    statuses=[status.value for status in query.statuses]
+                    or None,
+                    domains=[domain.value for domain in query.domains] or None,
+                    source_kinds=list(query.source_kinds) or None,
+                    limit=query.page_size + 1,
+                    offset=offset,
+                )
+                truncated = len(rows) > query.page_size
+                records = tuple(
+                    clone_record(_decode_record(row["record_json"]))
+                    for row in rows[: query.page_size]
+                )
+                next_scan_offset = offset + query.page_size if truncated else None
+            else:
+                # Revocation exclusion applies before the page slice, inside
+                # the read transaction: rows are scanned from the cursor's
+                # raw offset until page_size+1 serving-eligible records are
+                # collected, so pages and cursors stay exact within one
+                # revision (the cursor already binds both revisions, and a
+                # forget rewrites records, invalidating older cursors).
+                kept: list = []
+                kept_offsets: list[int] = []
+                raw_offset = offset
+                scan_chunk = max(query.page_size + 1, 16)
+                while len(kept) <= query.page_size:
+                    chunk = self._partition.read_current_record_rows(
+                        connection,
+                        statuses=[status.value for status in query.statuses]
+                        or None,
+                        domains=[domain.value for domain in query.domains]
+                        or None,
+                        source_kinds=list(query.source_kinds) or None,
+                        limit=scan_chunk,
+                        offset=raw_offset,
+                    )
+                    if not chunk:
+                        break
+                    for row in chunk:
+                        record = _decode_record(row["record_json"])
+                        if revoked_view.keeps_record(record):
+                            kept.append(clone_record(record))
+                            kept_offsets.append(raw_offset)
+                            if len(kept) > query.page_size:
+                                break
+                        raw_offset += 1
+                    else:
+                        continue
+                    break
+                truncated = len(kept) > query.page_size
+                records = tuple(kept[: query.page_size])
+                next_scan_offset = (
+                    kept_offsets[query.page_size] if truncated else None
+                )
         next_cursor = None
         if truncated:
             expires_at = clock() + cursor_lifetime
@@ -369,7 +421,9 @@ class SqliteMemoryPlaneStore:
                 query_digest=query.digest(),
                 write_revision=write_revision,
                 data_revision=data_revision,
-                offset=offset + query.page_size,
+                offset=next_scan_offset
+                if next_scan_offset is not None
+                else offset + query.page_size,
                 expires_at=expires_at,
             )
         return MemoryPlanePage(

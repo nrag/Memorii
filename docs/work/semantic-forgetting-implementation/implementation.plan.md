@@ -374,6 +374,19 @@ projection, boundary, claim projections) before the merge and preimage,
 so paging stays exact; build_host_graph_observation_runtime requires the
 gate. Composed observation suite 11/11 green.
 
+RV5+RV8 LANDED (2026-10-04): the record-query surface consults the
+revoked-identity view pre-slice inside the read transaction
+(SqliteMemoryPlaneStore.query_records accepts the gate; scan pages
+collect serving-eligible rows from the cursor's raw offset so pages and
+revision-bound cursors stay exact; record_lookup denies revoked ids) and
+the only host-facing entry (MemoryPlaneService.query_records_host) fails
+closed without a gate — internal integrity readers keep the unfiltered
+store API by design, per the caller inventory that showed every
+production list_records/get_record caller is internal. Learned-ontology
+coverage statuses exclude revoked sources at the provider read. Query
+parity 15/15 (revocation exclusion + pagination exactness + lookup
+denial + fail-closed wrapper), store contract suites green.
+
 SEPARATE PRE-EXISTING DEFECT (recorded 2026-10-04, needs its own
 debugging operation): tests/unit/core/semantic_ingestion/
 test_bootstrap_graph_root_composition.py fails locally (24 tests; sample

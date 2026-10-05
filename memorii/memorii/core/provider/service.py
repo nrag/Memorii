@@ -1682,6 +1682,10 @@ class ProviderMemoryService:
                 if observation.principal_id == principal_id
                 and observation.agent_id == agent_id
                 and observation.source_scope_digest == source_scope_digest
+                and (
+                    self._revoked_view is None
+                    or not self._revoked_view.is_revoked_source(observation.source_id)
+                )
             )
         except (OSError, ValueError):
             return CoverageObservationStatusResponse(status="unavailable")

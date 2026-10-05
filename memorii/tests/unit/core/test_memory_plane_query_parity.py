@@ -188,3 +188,93 @@ def test_visibility_rule_unchanged_for_queries(tmp_path: Path) -> None:
     # not query eligibility.
     assert [record.memory_id for record in page.records] == ["mem:internal"]
     assert store.revision() == 0
+
+
+class _RecordRevokingView:
+    """Minimal serving gate that revokes exact record ids."""
+
+    def __init__(self, revoked: frozenset[str]) -> None:
+        self._revoked = revoked
+
+    def is_revoked_entity(self, logical_entity_id: str) -> bool:
+        return False
+
+    def is_revoked_claim(self, claim_id: str) -> bool:
+        return False
+
+    def is_revoked_source(self, source_id: str) -> bool:
+        return False
+
+    def is_revoked_record(self, memory_id: str) -> bool:
+        return memory_id in self._revoked
+
+    def is_revoked_task(self, task_id: str) -> bool:
+        return False
+
+    def is_revoked_justification(self, justification_id: str) -> bool:
+        return False
+
+    def keeps_record(self, record: object) -> bool:
+        return not self.is_revoked_record(record.memory_id)
+
+    def filter_records(self, records: object) -> tuple:
+        return tuple(record for record in records if self.keeps_record(record))
+
+
+def test_revoked_records_never_serve_and_pagination_stays_exact(
+    tmp_path: Path,
+) -> None:
+    store = _seeded_store(tmp_path)
+    view = _RecordRevokingView(
+        frozenset(f"mem:parity:{index}" for index in range(0, 60, 5))
+    )
+    query = MemoryPlaneQuery(kind="filtered_records", page_size=7)
+    collected: list[CanonicalMemoryRecord] = []
+    cursor = None
+    while True:
+        page = store.query_records(query, cursor=cursor, revoked_view=view)
+        collected.extend(page.records)
+        assert all(record.memory_id not in view._revoked for record in page.records)
+        if page.next_cursor is None:
+            assert not page.truncated
+            break
+        cursor = page.next_cursor
+    reference = [
+        record
+        for record in _authorized_scan(store, query)
+        if record.memory_id not in view._revoked
+    ]
+    assert [record.memory_id for record in collected] == [
+        record.memory_id for record in reference
+    ]
+
+    # Record lookup through the gated surface denies revoked ids.
+    page = store.query_records(
+        MemoryPlaneQuery(kind="record_lookup", memory_id="mem:parity:5"),
+        revoked_view=view,
+    )
+    assert page.records == ()
+    page = store.query_records(
+        MemoryPlaneQuery(kind="record_lookup", memory_id="mem:parity:1"),
+        revoked_view=view,
+    )
+    assert page.records and page.records[0].memory_id == "mem:parity:1"
+
+
+def test_host_query_wrapper_fails_closed_without_a_gate(tmp_path: Path) -> None:
+    from memorii.core.memory_plane.service import MemoryPlaneService
+
+    plane = MemoryPlaneService(record_store=_seeded_store(tmp_path))
+    try:
+        plane.query_records_host(MemoryPlaneQuery(kind="filtered_records"))
+    except RuntimeError as exc:
+        assert "revoked_view" in str(exc)
+    else:
+        raise AssertionError("host record queries must fail closed without a gate")
+    plane_gated = MemoryPlaneService(
+        record_store=_seeded_store(tmp_path), revoked_view=_RecordRevokingView(frozenset())
+    )
+    page = plane_gated.query_records_host(
+        MemoryPlaneQuery(kind="filtered_records", page_size=3)
+    )
+    assert len(page.records) == 3 and page.truncated

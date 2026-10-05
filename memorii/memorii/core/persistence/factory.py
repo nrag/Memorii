@@ -175,6 +175,9 @@ class PublishedMemoryPlaneStore:
             source_kind=source_kind,
         )
 
+    def query_records(self, *args: object, **kwargs: object) -> object:
+        return self._inner.query_records(*args, **kwargs)
+
 
 def detect_legacy_memory_plane_layouts(root: str | Path) -> tuple[str, ...]:
     """Return the recognized legacy layouts present under ``root``."""
