@@ -18,6 +18,9 @@ from memorii.core.memory_evolution.writer_admission import (
     SemanticWriterAdmissionStore,
     bounded_preplanning_ownership_manifest,
 )
+from memorii.core.memory_evolution.writer_admission import (
+    writer_admission_memory_id as _writer_admission_memory_id,
+)
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.query import MemoryPlaneQuery
 from memorii.core.memory_plane.service import MemoryPlaneService
@@ -37,6 +40,7 @@ from memorii.core.storage_administration.revoked_identity_view import (
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 from tests.integration.test_forget_serving_parity import (
     CLAIM_MEMORY_ID,
+    LINK_MEMORY_ID,
     _seed_records,
 )
 from tests.unit.core.test_storage_administration_operator import (
@@ -145,22 +149,27 @@ def test_runtime_step_and_host_query_exhaustion_exclude_revoked(tmp_path: Path) 
             service, SqliteMemoryPlaneStore(service.partition())
         )
         plane = MemoryPlaneService(record_store=store)
-        runtime_claim = CanonicalMemoryRecord(
-            memory_id=CLAIM_MEMORY_ID + ":runtime",
-            domain=MemoryDomain.SEMANTIC,
-            text="parity fixture",
-            content={"note": "parity fixture"},
-            visibility=MemoryRecordVisibility.RUNTIME_CONTEXT,
-            status=CommitStatus.COMMITTED,
-            source_kind="provider_seed",
+        # Forty runtime records plus the parity closure; the forget revokes
+        # the entity closure (claim, link, graph node) AND a contiguous
+        # sixteen-record block (a bulk forget spanning entire scan chunks).
+        bulk = tuple(
+            CanonicalMemoryRecord(
+                memory_id=f"mem:provider:runtime:bulk:{index}",
+                domain=MemoryDomain.SEMANTIC,
+                text=f"bulk fixture {index}",
+                content={"note": f"bulk {index}"},
+                visibility=MemoryRecordVisibility.RUNTIME_CONTEXT,
+                status=CommitStatus.COMMITTED,
+                source_kind="provider_seed",
+            )
+            for index in range(40)
         )
         service.publish_memory_plane_batch(
-            (*_seed_records(), _graph_seed_record(), runtime_claim),
+            (*_seed_records(), _graph_seed_record(), *bulk),
             operation_binding="family_seed",
         )
         governance = GovernanceOperator(operator)
 
-        from memorii.core.memory_plane.service import MemoryPlaneService as _MPS
         from memorii.domain.retrieval import (
             DomainRetrievalQuery,
             RetrievalNamespace,
@@ -177,27 +186,59 @@ def test_runtime_step_and_host_query_exhaustion_exclude_revoked(tmp_path: Path) 
             for item in MemoryPlaneService(record_store=store).query_runtime_memory(query_obj)
         }
         assert before_ids
+        assert CLAIM_MEMORY_ID in before_ids
 
-        _forget(operator, governance, capability, barrier=True)
+        bulk_revoked_ids = tuple(
+            record.memory_id for record in bulk[10:26]
+        )
+        selectors = (
+            ForgetTargetSelector(selector_kind="entity", selector_id="entity:parity"),
+            *(
+                ForgetTargetSelector(selector_kind="record", selector_id=memory_id)
+                for memory_id in bulk_revoked_ids
+            ),
+        )
+        plan = governance.plan_forget(
+            capability=capability, selectors=selectors, scope_note="bulk family"
+        )
+        operator.change_mode(
+            ModeChangeRequest(
+                target_mode="read_only",
+                expected_control_revision=operator.status().control_revision,
+                reason="barrier",
+            ),
+            capability=capability,
+        )
+        governance.apply_forget(capability=capability, plan=plan)
+        operator.change_mode(
+            ModeChangeRequest(
+                target_mode="active",
+                expected_control_revision=operator.status().control_revision,
+                reason="resume",
+            ),
+            capability=capability,
+        )
         view = view_from_control_root(
             service.installation_root / "control", records=plane.list_records()
         )
 
-        gated = _MPS(record_store=store, revoked_view=view)
+        gated = MemoryPlaneService(record_store=store, revoked_view=view)
         after_ids = {
             getattr(item, "memory_id", None)
             for item in gated.query_runtime_memory(query_obj)
         }
-        # The claim's runtime object is revoked with the entity closure;
-        # the independent runtime-context record survives an entity-scoped
-        # forget until a record selector revokes it (pinned in the
-        # prefetch suite).
         assert CLAIM_MEMORY_ID not in after_ids
-        assert runtime_claim.memory_id in after_ids
+        assert all(memory_id not in after_ids for memory_id in bulk_revoked_ids)
 
-        # Host record-query surface: walk to exhaustion; no revoked id ever
-        # appears and the walk terminates exactly (no cursor loops).
-
+        # Host record-query surface: paginate to exhaustion under the gate.
+        # Kept rows (24 bulk survivors + the seed runtime claim is not seeded
+        # here) force at least five pages of five; the contiguous revoked
+        # block spans entire scan chunks, exercising the chunk-refill loop.
+        expected_kept = sorted(
+            record.memory_id
+            for record in bulk
+            if record.memory_id not in bulk_revoked_ids
+        )
         seen: list[str] = []
         cursor = None
         steps = 0
@@ -205,16 +246,71 @@ def test_runtime_step_and_host_query_exhaustion_exclude_revoked(tmp_path: Path) 
             steps += 1
             assert steps < 50, "cursor walk did not terminate"
             page = gated.query_records_host(
-                MemoryPlaneQuery(kind="filtered_records", page_size=2), cursor=cursor
+                MemoryPlaneQuery(kind="filtered_records", page_size=5), cursor=cursor
             )
             seen.extend(record.memory_id for record in page.records)
             if page.next_cursor is None:
                 assert not page.truncated
                 break
             cursor = page.next_cursor
+        assert steps >= 5, f"exhaustion walk never paginated (steps={steps})"
         assert len(seen) == len(set(seen)), "duplicate rows across pages"
-        assert CLAIM_MEMORY_ID not in seen
-        assert runtime_claim.memory_id in seen
+        assert sorted(seen) == expected_kept, "host query leaked revoked or dropped kept"
+        assert all(
+            memory_id not in (CLAIM_MEMORY_ID, LINK_MEMORY_ID, GRAPH_NODE_MEMORY_ID)
+            for memory_id in seen
+        )
+
+        # Post-enforcement: the directive index record itself (coordinates
+        # content, runtime-context visibility) must never serve on any host
+        # surface (design 6.2.1 / the section 8 absence oracle).
+        fingerprint = canonical_graph_codec_manifest().manifest_fingerprint
+        writers = SemanticWriterAdmissionStore(
+            plane, bounded_preplanning_ownership_manifest()
+        )
+        if plane.get_record(_writer_admission_memory_id()) is None:
+            writers.create_initial_evidence_only(
+                admission_id="family-enforce",
+                writer_implementation_fingerprint=fingerprint,
+                graph_schema_fingerprint=fingerprint,
+            )
+        from memorii.core.memory_evolution.atomic_store import (
+            SemanticIngestionAtomicStore,
+        )
+
+        store = SemanticIngestionAtomicStore(plane, writers)
+        governance.enforce_forget(store=store)
+        seen_after: list[str] = []
+        cursor = None
+        while True:
+            page = gated.query_records_host(
+                MemoryPlaneQuery(kind="filtered_records", page_size=5), cursor=cursor
+            )
+            seen_after.extend(record.memory_id for record in page.records)
+            if page.next_cursor is None:
+                break
+            cursor = page.next_cursor
+        # Enforcement legitimately appends authority/replay records; the
+        # oracle is absence: no revoked id and no directive coordinate ever
+        # serves, and no previously-kept record is lost.
+        assert set(expected_kept) <= set(seen_after), "kept records lost"
+        assert not any(
+            memory_id in bulk_revoked_ids
+            or memory_id in (CLAIM_MEMORY_ID, LINK_MEMORY_ID, GRAPH_NODE_MEMORY_ID)
+            for memory_id in seen_after
+        ), "revoked record served post-enforcement"
+        assert not any(
+            memory_id.startswith("semantic_ingestion:revocation:")
+            for memory_id in seen_after
+        ), "directive leaked post-enforcement"
+        after_enforced_ids = {
+            getattr(item, "memory_id", None)
+            for item in gated.query_runtime_memory(query_obj)
+        }
+        assert not any(
+            memory_id and memory_id.startswith("semantic_ingestion:revocation:")
+            for memory_id in after_enforced_ids
+        )
     finally:
         service.close()
 

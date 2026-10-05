@@ -470,6 +470,41 @@ the file is in unit-shards.json's ignore list and no dedicated job runs
 it. Not caused by the revision; do not fix by weakening; investigate
 under a separate debugging WorkPlan.
 
+## Review Round 2 (2026-10-05, in flight)
+
+Spec auditor and test reviewer reported; correctness reviewer pending.
+Classification and remediation so far (all confirmed findings):
+
+LANDED in this round's remediation:
+- S1 (spec, P2): the CLI `forget enforce` dispatch fell through to the
+  apply branch (AttributeError on an unregistered argument); the apply
+  path is now guarded so enforce reaches its branch.
+- S2 (spec, P2): the revocation directive index record itself (runtime-
+  context visibility, coordinates content) served on host surfaces —
+  keeps_record now excludes `semantic_ingestion:revocation:*` and the
+  revocation-directive source kind unconditionally (design 6.2.1), and
+  the parity-family exhaustion test now enforces mid-test and asserts
+  the absence oracle post-enforcement: no revoked id, no directive
+  coordinate, no lost kept records across the full cursor walk and the
+  runtime channel.
+- T1+T2+T3 (test, P2): the host exhaustion walk now genuinely paginates
+  (40 bulk records, a contiguous 16-record revoked block spanning whole
+  scan chunks, page_size 5, >=5 pages asserted) with exact surviving-set
+  equality and duplicate/termination checks.
+- T7 (test, P2): the mixed pre/post-extension fold replay now also pins
+  signed checkpoint-tail equality with the genesis fold (its docstring's
+  full claim).
+- T9 (test, P3): the runtime-channel before-control now asserts the
+  claim served pre-forget.
+
+REMAINING this round (correctness reviewer pending, then): T4 crash-cut
+through production wiring, T5 wire_forget_enforcement coverage incl.
+double-wiring, T6 live composed root mid-process forget, S3 RV12
+residue (delta tables + entity-match/structured-fact/observe-graph
+endpoint walks) or explicit owner sign-off on deferral. Spec follow-ups
+recorded: S4 drain retry loop, S5 legacy-layout plane views, S6
+keeps_record graph-reference depth.
+
 ## CI Queue Note (2026-10-05)
 
 GitHub runner backlog held nine branch runs (no workflow concurrency

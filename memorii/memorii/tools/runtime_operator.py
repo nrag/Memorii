@@ -207,6 +207,10 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 print(plan.model_dump_json())
                 return 0
+            if arguments.forget_command != "apply":
+                raise ValueError(
+                    f"unsupported forget command: {arguments.forget_command}"
+                )
             plan = ForgetPlan.model_validate(json.loads(arguments.plan_json))
             receipt = governance.apply_forget(
                 capability=require_capability(), plan=plan

@@ -2827,3 +2827,67 @@ def test_mixed_pre_extension_history_folds_with_directive_tail() -> None:
     kinds = {item.record_kind for item in from_genesis.materialized_records}
     assert "revocation_directive" in kinds
     assert len(from_genesis.materialized_records) == len(records)
+
+    # Checkpoint-tail equivalence: an installation that checkpointed after
+    # its pre-extension history and replays only the directive tail must
+    # reach exactly the genesis-fold state (the docstring's full claim).
+    from memorii.core.semantic_ingestion.event_replay import (
+        ReplayCheckpointTrustPolicy,
+        create_replay_checkpoint,
+        replay_semantic_checkpoint_tail,
+    )
+    from tests.fixtures.semantic_ingestion.event_replay_fixture import (
+        CheckpointKeyMaterial,
+        DeterministicCheckpointSignatureAuthority,
+    )
+
+    material = CheckpointKeyMaterial(
+        key_id="mixed-replay-checkpoint-key", secret=b"m" * 32
+    )
+    signature_authority = DeterministicCheckpointSignatureAuthority(material)
+    key = ReplayCheckpointSigningKey.create(
+        key_id=material.key_id,
+        issuer_id="operator",
+        public_key_fingerprint=material.public_key_fingerprint,
+        valid_from=datetime(2025, 1, 1, tzinfo=UTC),
+    )
+    policy = ReplayCheckpointTrustPolicy.create(
+        policy_revision=1,
+        authorized_repository_id="repository",
+        keys=(key,),
+    )
+    lifecycle = ReplayCheckpointLifecycleState.create(
+        repository_id="repository",
+        authority_revision=1,
+        registry=registry,
+        trust_policy=policy,
+    )
+    authority = ReplayCheckpointResumeAuthority(
+        lifecycle=lifecycle,
+        registry=registry,
+        trust_policy=policy,
+        signature_authority_provider=lambda _: signature_authority,
+        signing_key_id=material.key_id,
+    )
+    bindings = projection_history_bindings("repository")
+    bundle = create_replay_checkpoint(
+        state=first_state,
+        watermark_batch=first,
+        writer_epoch=1,
+        authority=authority,
+        created_at=NOW,
+        projection_history_bindings=bindings,
+    )
+    checkpoint_tail = replay_semantic_checkpoint_tail(
+        bundle,
+        tail_batches=(second,),
+        authority=authority,
+        projection_history_verifier=ExactProjectionHistoryVerifier(
+            bindings=bindings,
+            graph_revision=first_state.graph_revision,
+        ),
+    )
+    assert checkpoint_tail == from_genesis
+    assert encode_typed_value(checkpoint_tail.model_dump(mode="python")) == (
+        encode_typed_value(from_genesis.model_dump(mode="python"))
+    )

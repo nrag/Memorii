@@ -117,6 +117,14 @@ class RevokedIdentityView:
     def keeps_record(self, record) -> bool:
         """Serving filter for one memory-plane record; True means serve."""
 
+        # Revocation directives themselves never serve on host paths
+        # (design 6.2.1): their coordinate content is exactly what the
+        # absence oracle forbids disclosing.
+        if record.memory_id.startswith("semantic_ingestion:revocation:") or (
+            getattr(record, "source_kind", None)
+            == "semantic_ingestion_revocation_directive"
+        ):
+            return False
         memory_evolution_kind = (
             record.content.get("memory_evolution_kind")
             if isinstance(getattr(record, "content", None), dict)
