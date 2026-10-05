@@ -433,7 +433,11 @@ CAS — confirming the quote-authority diagnosis and exposing the next
 layer for the dedicated debugging operation (pre-existing, CI-excluded
 suite; not a release-chain gate). The pr-gates registration for the
 parity-family suite (missed by the memorii/docs-scoped add in 5f0e29d8)
-is committed here.
+is committed here. MEASURED (2026-10-05): the fix takes the suite from
+24 failures to 8 (40 passed); the remaining 8 cluster behind the
+publication_linearized/publication_conflict layer — the dedicated
+debugging operation's entry point, with the single-fact fixtures
+unaffected.
 
 ROOT-CAUSE DIAGNOSIS (2026-10-05, instrumentation fully reverted): the
 root-composition failures chain is
