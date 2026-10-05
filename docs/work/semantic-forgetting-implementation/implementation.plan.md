@@ -556,6 +556,17 @@ deferral is presented to the owner with the readiness statement for
 explicit accept-or-implement sign-off, per the spec reviewer's note
 that the reclassification is the owner's to make.
 
+## CHAIN COMPLETE (2026-10-05) — terminal instruction to this automation
+
+The revision chain, both review rounds, and the readiness statement are
+DELIVERED. If the 30-minute automation fires after this note: take NO
+action beyond checking `gh run list` for the branch — if the latest run
+is green (or red on a superseded commit), do nothing; if red on the
+final head (bf63c8bd or later), diagnose and fix per the all-failures
+rule. The watches on the final runs carry the confirmation. Owner
+decisions pending: the S3 endpoint-walk accept-or-implement call and
+the release-keys set.
+
 ## First-Release Readiness Statement (DRAFT — pending the 12ecb2f4 run)
 
 Status: the semantic-forgetting milestone, both review rounds, and every
