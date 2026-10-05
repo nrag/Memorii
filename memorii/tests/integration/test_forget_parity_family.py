@@ -35,6 +35,7 @@ from memorii.core.storage_administration.operator_governance import (
     GovernanceOperator,
 )
 from memorii.core.storage_administration.revoked_identity_view import (
+    empty_revoked_view,
     view_from_control_root,
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
@@ -428,3 +429,135 @@ def test_crash_between_apply_and_enforcement_recovers_at_reopen(tmp_path: Path) 
     finally:
         with contextlib.suppress(Exception):
             service.close()
+
+
+def test_per_path_count_arithmetic_on_one_fixture(tmp_path: Path) -> None:
+    """§10.1 per-path delta counts: every surface moves by the exact delta.
+
+    One shared fixture walks each serving surface before and after the
+    forget and asserts the count change equals the revoked delta for
+    that surface — no surface drops more (over-forgetting) or fewer
+    (leakage) than the closure revokes.
+    """
+    from memorii.core.memory_plane.query import MemoryPlaneQuery
+    from memorii.core.memory_plane.service import MemoryPlaneService
+    from memorii.domain.enums import MemoryRecordVisibility
+
+    operator, service = _operator(tmp_path)
+    capability = _capability(service)
+    try:
+        store = PublishedMemoryPlaneStore(
+            service, SqliteMemoryPlaneStore(service.partition())
+        )
+        runtime_records = tuple(
+            CanonicalMemoryRecord(
+                memory_id=f"mem:provider:runtime:count:{index}",
+                domain=MemoryDomain.SEMANTIC,
+                text=f"count fixture {index}",
+                content={"note": f"count {index}"},
+                visibility=MemoryRecordVisibility.RUNTIME_CONTEXT,
+                status=CommitStatus.COMMITTED,
+                source_kind="provider_seed",
+            )
+            for index in range(12)
+        )
+        revoked_runtime = tuple(record.memory_id for record in runtime_records[:5])
+        service.publish_memory_plane_batch(
+            (*_seed_records(), _graph_seed_record(), *runtime_records),
+            operation_binding="count_seed",
+        )
+        governance = GovernanceOperator(operator)
+        plan = governance.plan_forget(
+            capability=capability,
+            selectors=(
+                ForgetTargetSelector(selector_kind="entity", selector_id="entity:parity"),
+                *(
+                    ForgetTargetSelector(selector_kind="record", selector_id=memory_id)
+                    for memory_id in revoked_runtime
+                ),
+            ),
+            scope_note="count arithmetic",
+        )
+
+        ungated = MemoryPlaneService(record_store=store)
+        gated_probe = MemoryPlaneService(
+            record_store=store, revoked_view=empty_revoked_view()
+        )
+        from memorii.domain.retrieval import (
+            DomainRetrievalQuery,
+            RetrievalNamespace,
+            RetrievalScope,
+        )
+
+        query_obj = DomainRetrievalQuery(
+            domain=MemoryDomain.SEMANTIC,
+            scope=RetrievalScope(),
+            namespace=RetrievalNamespace(memory_domain=MemoryDomain.SEMANTIC),
+        )
+
+        def runtime_count(plane: MemoryPlaneService) -> int:
+            return len(plane.query_runtime_memory(query_obj))
+
+        def host_count(plane: MemoryPlaneService) -> int:
+            seen = 0
+            cursor = None
+            while True:
+                page = plane.query_records_host(
+                    MemoryPlaneQuery(kind="filtered_records", page_size=4),
+                    cursor=cursor,
+                )
+                seen += len(page.records)
+                if page.next_cursor is None:
+                    return seen
+                cursor = page.next_cursor
+
+        def graph_node_count(evolution_view: object) -> int:
+            from memorii.core.memory_evolution.service import MemoryEvolutionService
+
+            evolution = MemoryEvolutionService(
+                memory_plane=ungated, revoked_view=evolution_view
+            )
+            return len(evolution._graph_queries.snapshot().nodes)
+
+        before_runtime = runtime_count(ungated)
+        before_graph_nodes = graph_node_count(None)
+
+        operator.change_mode(
+            ModeChangeRequest(
+                target_mode="read_only",
+                expected_control_revision=operator.status().control_revision,
+                reason="barrier",
+            ),
+            capability=capability,
+        )
+        governance.apply_forget(capability=capability, plan=plan)
+        operator.change_mode(
+            ModeChangeRequest(
+                target_mode="active",
+                expected_control_revision=operator.status().control_revision,
+                reason="resume",
+            ),
+            capability=capability,
+        )
+        view = view_from_control_root(
+            service.installation_root / "control", records=ungated.list_records()
+        )
+        gated = MemoryPlaneService(record_store=store, revoked_view=view)
+
+        # The entity closure revokes claim + link + graph node — all three
+        # runtime-visible on this channel — and the five record selectors
+        # revoke five runtime records: delta eight.
+        after_runtime = runtime_count(gated)
+        assert before_runtime - after_runtime == 8, "runtime channel delta"
+
+        # The host surface serves every committed record minus the revoked
+        # eight (three closure + five runtime). Internal authority records
+        # count on both sides of the walk, so pin the DELTA, not absolutes.
+        before_host = host_count(gated_probe)
+        after_host = host_count(gated)
+        assert before_host - after_host == 8, "host query surface delta"
+
+        after_graph_nodes = graph_node_count(view)
+        assert before_graph_nodes - after_graph_nodes == 1, "graph snapshot delta"
+    finally:
+        service.close()

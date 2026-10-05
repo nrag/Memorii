@@ -540,6 +540,22 @@ REMAINING before the readiness statement: S3 RV12 residue decision
 endpoint walks) — implementation or owner sign-off on deferral; CI green
 on the remediation head.
 
+## S3 Resolution (2026-10-05)
+
+The delta-table half of the RV12 residue is IMPLEMENTED:
+test_per_path_count_arithmetic_on_one_fixture walks one fixture across
+the runtime channel, the host record-query surface, and the gated graph
+snapshot, asserting each surface's count moves by exactly its revoked
+delta (8 / 8 / 1) — over-forgetting and leakage both fail loudly. The
+three endpoint-level walks (entity-match, structured-facts,
+observe-graph under an active revocation) remain the single open item:
+each bottoms out in fabricating graph-snapshot / structured-authority /
+observation-cohort runtime state — bounded fixture work, not a code gap
+(their gates are code-verified per the round-2 spec audit). This
+deferral is presented to the owner with the readiness statement for
+explicit accept-or-implement sign-off, per the spec reviewer's note
+that the reclassification is the owner's to make.
+
 ## CI Queue Note (2026-10-05)
 
 GitHub runner backlog held nine branch runs (no workflow concurrency
