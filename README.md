@@ -15,6 +15,19 @@ state, and task-local reasoning state.
 > established agent-level task improvement, production-scale operation, or
 > readiness for unguarded durable writes from ordinary chat.
 
+## Contents
+
+- [Why Memorii](#why-memorii)
+- [Get Started](#get-started) — Python library, Hermes Docker, TypeScript client
+- [Architecture](#architecture) — the one-page flow; the detailed guide with
+  diagrams is [docs/architecture.md](docs/architecture.md)
+- [Implemented Capabilities](#implemented-capabilities)
+- [Provider Integration Surface](#provider-integration-surface)
+- [Hermes External Memory Provider](#hermes-external-memory-provider)
+- [Correctness And Safety Contracts](#correctness-and-safety-contracts)
+- [Benchmarks And Evidence](#benchmarks-and-evidence)
+- [Current Limitations](#current-limitations)
+
 ## Why Memorii
 
 Most memory systems flatten state into a collection of documents to retrieve.
@@ -92,7 +105,12 @@ Runtime memory evolution is part of the standard provider composition. Durable
 recovery across process restarts requires a persistent memory-plane store; the
 standalone default composition remains in memory.
 
-## Quick Start
+## Get Started
+
+Pick the path that matches what you are doing. All three work from a
+clone of this repository; paths 2 and 3 need Docker or Node.
+
+### 1. Python library (5 minutes)
 
 Memorii requires Python 3.11 or newer. From the repository root:
 
@@ -101,7 +119,8 @@ cd memorii
 python -m pip install -e '.[dev]'
 ```
 
-Run the deterministic unit suite:
+Verify the installation with the deterministic suite (no credentials,
+no network):
 
 ```bash
 python -W error -m pytest tests/unit -p no:cacheprovider
@@ -123,10 +142,86 @@ Dry-run LLM and hybrid modes use deterministic fake extraction to validate
 composition, artifacts, alignment, judges, and calibration. They do not make
 provider calls and do not measure live model quality.
 
-For provider configuration and live execution, see
-[Environment Configuration](docs/design/environment_config.md). Live gates
-consume credentials and are meaningful only when intentionally bound to an
-exact clean revision.
+The production-facing API is `ProviderMemoryService`, composed through
+`build_provider_memory_service_from_env(...)`. A minimal durable
+composition:
+
+```python
+from memorii.core.memory_plane.service import MemoryPlaneService
+from memorii.core.persistence.factory import open_managed_partition
+from memorii.core.provider.factory import build_provider_memory_service_from_env
+
+administration, plane = open_managed_partition("/path/to/installation")
+service = build_provider_memory_service_from_env(
+    memory_plane=plane,
+    revoked_view=plane._revoked_view,  # the refreshing gate wired at open
+)
+result = service.sync_event(
+    operation=ProviderOperation.CHAT_USER_TURN,
+    content="Atlas owns Bob.",
+    operation_id="my-stable-operation-id",  # retries must reuse this id
+    task_id="task:one",
+    user_id="user:alice",
+    authenticated_host_ingress=None,
+)
+```
+
+Every mutating call requires a stable, caller-supplied `operation_id`;
+retries reuse the same id so replay stays idempotent. The gate parameter
+is required on purpose: serving compositions refuse to start without an
+explicit revoked-identity view (an empty view is the valid statement for
+ephemeral planes — see `empty_revoked_view()`).
+
+### 2. Hermes external memory provider (Docker)
+
+Run Memorii as your Hermes memory provider with the first-party image:
+
+```bash
+docker build -f Dockerfile.memorii -t hermes-memorii .
+docker volume create hermes-memorii-data
+docker run -d --name hermes-memorii -e HERMES_HOME=/opt/data \
+  -v hermes-memorii-data:/opt/data hermes-memorii tail -f /dev/null
+docker exec hermes-memorii /opt/hermes/.venv/bin/memorii-hermes authorize-local-level2 \
+  --hermes-home /opt/data --acknowledge-openai-egress
+docker exec hermes-memorii /opt/hermes/.venv/bin/hermes config set memory.provider memorii
+docker restart hermes-memorii
+docker exec hermes-memorii /opt/hermes/.venv/bin/hermes memory status
+```
+
+Restart reopens the same `/opt/data/memorii` store; authorization
+acknowledges model egress explicitly. The full hook surface and
+operational detail are in
+[Hermes External Memory Provider](#hermes-external-memory-provider) below.
+
+### 3. TypeScript runtime client
+
+Sandboxed hosts read task state through the loopback sidecar with the
+typed client (`sdk/typescript`, Node 24-26):
+
+```ts
+import { RuntimeStateClient } from "@memorii/runtime-client";
+
+const client = new RuntimeStateClient({
+  baseUrl: "http://127.0.0.1:8734", // loopback sidecar only
+  credential: process.env["MEMORII_CREDENTIAL"] ?? "",
+});
+const state = await client.getState("task:one");
+```
+
+### Where to go next
+
+- **How it all fits together:** [Architecture](docs/architecture.md) —
+  storage and control, the event/replay spine, the ingestion pipeline,
+  serving gates, and verification, with diagrams.
+- **Operating an installation:** `memorii-operator --help` (status,
+  doctor, backup, forget, retention, erasure).
+- **Provider configuration and live execution:**
+  [Environment Configuration](docs/design/environment_config.md). Live
+  gates consume credentials and are meaningful only when intentionally
+  bound to an exact clean revision.
+- **Governing designs:** start with
+  [the specification](docs/design/memorii_spec.md); precedence is defined
+  in [AGENTS.md](AGENTS.md).
 
 ## Provider Integration Surface
 
