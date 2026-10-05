@@ -159,6 +159,7 @@ class MemoryPlaneService:
             if item.visibility == MemoryRecordVisibility.RUNTIME_CONTEXT
             and self._matches_scope(item, query.scope)
             and self._matches_semantics(item, include_candidates=query.include_candidates, freshness=query.freshness)
+            and (self._revoked_view is None or self._revoked_view.keeps_record(item))
         ]
 
     def list_records(

@@ -351,6 +351,7 @@ def _validity_for_lifecycle(lifecycle_state: RecordLifecycleState) -> TemporalVa
         RecordLifecycleState.MERGED: TemporalValidityStatus.INVALIDATED,
         RecordLifecycleState.SPLIT: TemporalValidityStatus.INVALIDATED,
         RecordLifecycleState.RELINKED: TemporalValidityStatus.INVALIDATED,
+        RecordLifecycleState.REVOKED: TemporalValidityStatus.INVALIDATED,
         RecordLifecycleState.UNKNOWN: TemporalValidityStatus.UNKNOWN,
     }[lifecycle_state]
 

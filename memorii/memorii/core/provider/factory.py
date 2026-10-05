@@ -142,6 +142,7 @@ def build_provider_memory_service_from_env(
         )
         audit_reader = AtomicStoreScopedIdentityLineageAuditReader(
             identity_lineage_atomic_store,
+            revoked_view=revoked_view,
             tenant_partition_id=identity_lineage_tenant_partition_id,
             scope_revalidator=lambda scope, server_time: (
                 audit_authorizer.revalidate_identity_lineage_audit_scope(

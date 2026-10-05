@@ -45,6 +45,9 @@ from memorii.core.semantic_ingestion.contracts import (
     SemanticAuthorizationReadSet,
     SemanticCandidate,
 )
+from memorii.core.storage_administration.revoked_identity_view import (
+    RevokedIdentityServingGate,
+)
 
 if TYPE_CHECKING:
     from memorii.core.memory_evolution.graph_planning import (
@@ -259,7 +262,9 @@ class AtomicStoreScopedIdentityLineageAuditReader:
             IdentityLineageAuditScopeSnapshot | None,
         ],
         now_provider: Callable[[], datetime] = lambda: datetime.now(UTC),
+        revoked_view: RevokedIdentityServingGate | None = None,
     ) -> None:
+        self._revoked_view = revoked_view
         if not callable(getattr(store, "semantic_replay_state", None)) or not callable(
             getattr(store, "lineage_audit_scope_event_ids", None)
         ):
@@ -302,6 +307,7 @@ class AtomicStoreScopedIdentityLineageAuditReader:
             state,
             disclosed_event_ids=event_ids,
             system_time=system_time,
+            revoked_view=self._revoked_view,
         )
 
 
@@ -1275,19 +1281,56 @@ def identity_lineage_audit_view(
     )
 
 
+def _references_revoked_identity(
+    record: object, revoked_view: RevokedIdentityServingGate | None
+) -> bool:
+    """True when any opaque id the record carries is revoked.
+
+    The host-grant lineage read excludes revoked identities (R16); the
+    complete retained audit stays reachable only through the
+    owner-capability forensic surface.
+    """
+
+    if revoked_view is None:
+        return False
+
+    def walk(value: object) -> bool:
+        if isinstance(value, str):
+            return (
+                revoked_view.is_revoked_entity(value)
+                or revoked_view.is_revoked_claim(value)
+                or revoked_view.is_revoked_source(value)
+                or revoked_view.is_revoked_record(value)
+            )
+        if isinstance(value, dict):
+            return any(walk(item) for item in value.values())
+        if isinstance(value, (list, tuple)):
+            return any(walk(item) for item in value)
+        return False
+
+    return walk(getattr(record, "model_dump", lambda mode: record)(mode="python"))
+
+
 def scoped_identity_lineage_audit_view(
     state: object,
     *,
     disclosed_event_ids: frozenset[str],
     system_time: datetime | None = None,
+    revoked_view: RevokedIdentityServingGate | None = None,
 ) -> IdentityLineageAuditView:
-    """Build and digest only the records authorized for this audit request."""
+    """Build and digest only the records authorized for this audit request.
+
+    Revoked identities are excluded before any digest is computed, so the
+    scoped view stays coherent; the retained history remains in the
+    integrity projection and the owner forensic surface.
+    """
 
     lineage = replay_identity_lineage(state, system_time=system_time)
     materialized = tuple(
         item
         for item in getattr(state, "materialized_records", ())
         if getattr(item, "source_event_id", None) in disclosed_event_ids
+        and not _references_revoked_identity(getattr(item, "record", item), revoked_view)
     )
     disclosed_transition_digests = {
         item.record.transition.transition_digest

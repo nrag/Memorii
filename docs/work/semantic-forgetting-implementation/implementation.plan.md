@@ -357,6 +357,17 @@ tests/integration/test_forget_composition_gates.py (factory refusal,
 journal-write observation without restart, mode-resume drain publishing
 the directive), registered in both durable CI jobs.
 
+RV4+RV6+RV7-maps LANDED (2026-10-04): host-grant identity-lineage reads
+exclude revoked identities before the audit view digests are computed
+(revoked view threaded through the scoped reader and the provider
+factory); query_runtime_memory excludes revoked records so
+available_evidence_ids never contains them; REVOKED added to the legacy
+graph validity map (no KeyError) and the temporal never-eligible set.
+Lineage 14/14, visibility/execution/recall 17/17 green. REMAINING in
+this band: observe_graph exclusion (RV3), memory-plane query-surface
+pre-slice (RV5), legacy graph_query view + graph tombstones (RV7 rest),
+ontology serving (RV8).
+
 SEPARATE PRE-EXISTING DEFECT (recorded 2026-10-04, needs its own
 debugging operation): tests/unit/core/semantic_ingestion/
 test_bootstrap_graph_root_composition.py fails locally (24 tests; sample
