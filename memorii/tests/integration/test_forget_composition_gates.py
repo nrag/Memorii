@@ -158,9 +158,28 @@ def test_wired_emitter_drains_pending_enforcement(tmp_path: Path) -> None:
         assert service.drain_pending_forget_enforcement() == 0
         assert service.pending_forget_enforcements() == ()
         replay = store.semantic_replay_state()
-        assert any(
-            item.record_kind == "revocation_directive"
+        directive = next(
+            item
             for item in replay.materialized_records
+            if item.record_kind == "revocation_directive"
+        )
+        # RV11 fidelity: the directive binds the plan's record closure and
+        # the owner capability presented at apply (never a synthetic hash).
+        assert (
+            directive.record.authority_capability_digest
+            == capability.capability_digest
+        )
+        from tests.integration.test_forget_serving_parity import (
+            CLAIM_MEMORY_ID,
+            LINK_MEMORY_ID,
+        )
+
+        assert sorted(
+            coordinate.record_id for coordinate in directive.record.closure_coordinates
+        ) == sorted([CLAIM_MEMORY_ID, LINK_MEMORY_ID])
+        assert all(
+            coordinate.record_kind == "reference_disposition"
+            for coordinate in directive.record.closure_coordinates
         )
     finally:
         service.close()

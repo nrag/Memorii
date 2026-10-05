@@ -45,6 +45,9 @@ class SuppressionRecord(BaseModel):
     suppressed: tuple[SuppressionCoordinate, ...]
     applied_at_unix: int = Field(ge=0)
     control_journal_position: int = Field(default=1, ge=1)
+    # The owner-capability digest presented at apply; None only for
+    # legacy entries written before the field existed.
+    authority_capability_digest: str | None = Field(default=None, pattern=_HEX_64)
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

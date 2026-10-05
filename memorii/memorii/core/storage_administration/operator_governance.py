@@ -271,6 +271,7 @@ class GovernanceOperator:
                 suppression_id=suppression_id,
                 plan_digest=plan.plan_digest,
                 closure_digest=plan.closure_digest,
+                authority_capability_digest=capability.capability_digest,
                 scope_note=plan.scope_note,
                 suppressed=tuple(
                     SuppressionCoordinate(
@@ -434,6 +435,27 @@ class GovernanceOperator:
                 )
                 enforced.append(record.suppression_id)
                 continue
+            from memorii.core.memory_evolution.graph_records import (
+                RevocationClosureCoordinate,
+            )
+
+            # The plan-time closure enumeration, bound into the directive
+            # for audit: every record coordinate the plan carried, under
+            # the established reference_disposition carrier kind (the
+            # graph-record union has no plane record kinds).
+            closure_coordinates = tuple(
+                sorted(
+                    {
+                        RevocationClosureCoordinate(
+                            record_kind="reference_disposition",
+                            record_id=coordinate.coordinate_id,
+                        )
+                        for coordinate in record.suppressed
+                        if coordinate.coordinate_kind == "record"
+                    },
+                    key=lambda item: (item.record_kind, item.record_id),
+                )
+            )
             codec = {
                 item.record_kind: item
                 for item in canonical_graph_codec_manifest().entries
@@ -443,15 +465,22 @@ class GovernanceOperator:
                 revocation_id=f"revocation:{record.suppression_id}",
                 suppression_id=record.suppression_id,
                 revoked_targets=semantic_targets,
-                closure_coordinates=(),
+                closure_coordinates=closure_coordinates,
                 closure_digest=graph_digest(
-                    b"memorii.revocation-closure.v1\0", ()
+                    b"memorii.revocation-closure.v1\0",
+                    tuple(
+                        coordinate.model_dump(mode="python")
+                        for coordinate in closure_coordinates
+                    ),
                 ),
-                authority_capability_digest=_sha256(
-                    b"memorii.governance-capability.v1\0"
-                    + record.suppression_id.encode()
-                    + record.plan_digest.encode()
-                ).hexdigest(),
+                authority_capability_digest=(
+                    record.authority_capability_digest
+                    or _sha256(
+                        b"memorii.governance-capability.v1\0"
+                        + record.suppression_id.encode()
+                        + record.plan_digest.encode()
+                    ).hexdigest()
+                ),
                 control_journal_position=record.control_journal_position,
                 applied_at=_from_unix(record.applied_at_unix),
                 scope_note_digest=_sha256(

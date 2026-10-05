@@ -398,6 +398,16 @@ earlier REVOKED validity/never-eligible maps, the legacy row is closed.
 Evolution suites (retrieval/execution/temporal) 112 passed; forget
 suites 7/7; ruff/pyright clean.
 
+RV11 LANDED (2026-10-05): the applied revocation directive binds the
+plan-time closure enumeration (every record coordinate the plan carried,
+under the established reference_disposition carrier kind, canonical and
+digest-pinned per the model's own formula) and records the owner
+capability digest presented at apply — the suppression journal gained an
+optional authority_capability_digest field (legacy entries default None
+and keep the documented synthetic fallback); the composition-gates drain
+test asserts both bindings against the materialized directive. All
+forget suites and static gates green.
+
 SEPARATE PRE-EXISTING DEFECT (recorded 2026-10-04, needs its own
 debugging operation): tests/unit/core/semantic_ingestion/
 test_bootstrap_graph_root_composition.py fails locally (24 tests; sample
