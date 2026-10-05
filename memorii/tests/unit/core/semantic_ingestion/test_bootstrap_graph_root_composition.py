@@ -1413,7 +1413,10 @@ def test_direct_root_leaves_multi_fact_source_effect_free() -> None:
         ),
         abstained=False,
     )
-    normalization, _lane_calls = _v3_normalization_host_builder(proposal=proposal)
+    normalization, _lane_calls = _v3_normalization_host_builder(
+        proposal=proposal,
+        source_text="Atlas owns Bob. Carol owns Dan. Erin owns Finn.",
+    )
     conflict_calls: list[str] = []
     successful_calls: list[str] = []
     service = provider_service(

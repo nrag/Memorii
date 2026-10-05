@@ -885,9 +885,18 @@ class _UnusedNormalizationQuoteAuthority:
 
 
 class _SingleTextQuoteAuthority:
+    """Resolve quotes against exactly one known source text.
+
+    The builder states the text; multi-fact fixtures must pass their own
+    turn content or quote resolution fail-closes (by design).
+    """
+
+    def __init__(self, text: str = "Atlas owner is Bob.") -> None:
+        self._text = text
+
     def resolve(self, quote, context, owned):
         del owned
-        text = "Atlas owner is Bob."
+        text = self._text
         start = text.find(quote, context.projection_span.start, context.projection_span.end)
         if start < 0 or text.find(quote, start + 1, context.projection_span.end) >= 0:
             raise ValueError("fixture quote must resolve exactly once")
@@ -902,7 +911,7 @@ class _SingleTextQuoteAuthority:
         )
 
     def verify_quote(self, *, projection_digest, quote, span):
-        if projection_digest != span.projection_digest or "Atlas owner is Bob."[span.projection_span.start:span.projection_span.end] != quote:
+        if projection_digest != span.projection_digest or self._text[span.projection_span.start:span.projection_span.end] != quote:
             raise ValueError("fixture quote is not exact")
 
 
@@ -910,10 +919,15 @@ def _v3_normalization_host_builder(
     *,
     proposal: ProviderSemanticProposal | None = None,
     proposal_ref: list[ProviderSemanticProposal] | None = None,
+    source_text: str = "Atlas owner is Bob.",
 ) -> tuple[SourceNormalizationHostBundleBuilder, dict[str, int]]:
     """Build a complete V3-only host bundle for the ordinary provider root."""
     proposal_value = proposal or ProviderSemanticProposal(abstained=True)
-    quotes = _UnusedNormalizationQuoteAuthority() if proposal is None else _SingleTextQuoteAuthority()
+    quotes = (
+        _UnusedNormalizationQuoteAuthority()
+        if proposal is None
+        else _SingleTextQuoteAuthority(source_text)
+    )
     calls = {"proposal": 0, "stanza": 0, "spacy": 0, "predicate": 0, "temporal": 0}
 
     def selected_proposal() -> ProviderSemanticProposal:

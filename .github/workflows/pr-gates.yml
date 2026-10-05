@@ -441,6 +441,7 @@ jobs:
           tests/integration/test_forget_serving_parity.py
           tests/integration/test_forget_forensic_lineage.py
           tests/integration/test_forget_composition_gates.py
+          tests/integration/test_forget_parity_family.py
           -p no:cacheprovider
 
   sdk-typescript:
@@ -630,6 +631,7 @@ jobs:
           tests/integration/test_forget_serving_parity.py
           tests/integration/test_forget_forensic_lineage.py
           tests/integration/test_forget_composition_gates.py
+          tests/integration/test_forget_parity_family.py
           -p no:cacheprovider
 
   semantic-terminal-persistence:

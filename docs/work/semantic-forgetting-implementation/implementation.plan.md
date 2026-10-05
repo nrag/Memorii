@@ -424,6 +424,17 @@ which require authenticated-ingress fixtures beyond the shared plane
 fixture; their gates are already pinned by the composition sweep and the
 observation suite respectively.
 
+FIX PROGRESS (2026-10-05): the shared scenario quote authority is now
+parametrized on the source text (default unchanged) and the multi-fact
+root-composition test states its own text; instrumentation proved the
+fix advances the failing chain past proposal sealing to a NEW layer —
+publication_linearized/publication_conflict in the scenario publication
+CAS — confirming the quote-authority diagnosis and exposing the next
+layer for the dedicated debugging operation (pre-existing, CI-excluded
+suite; not a release-chain gate). The pr-gates registration for the
+parity-family suite (missed by the memorii/docs-scoped add in 5f0e29d8)
+is committed here.
+
 ROOT-CAUSE DIAGNOSIS (2026-10-05, instrumentation fully reverted): the
 root-composition failures chain is
 sync_event -> _run_semantic_ingestion ->
