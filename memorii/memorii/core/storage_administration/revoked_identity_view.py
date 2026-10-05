@@ -235,12 +235,64 @@ def identities_from_directive_records(records) -> RevokedIdentities:
 def view_from_control_root(
     control_root: Path, records: tuple = ()
 ) -> RevokedIdentityView:
-    """Compose the serving view: journal identities plus directive identities."""
+    """Compose the serving view: journal plus retention-archive identities.
+
+    Retention tiering moves aged journal entries to suppressions-archive
+    (bytes retained); age never removes revocation state, so the archive
+    contributes identities exactly like the live journal. Directive index
+    records supplement when a caller supplies them.
+    """
 
     identities = identities_from_journal(control_root)
+    archive = Path(control_root) / "suppressions-archive"
+    if archive.is_dir():
+        identities = identities.union(_archive_identities(archive))
     if records:
         identities = identities.union(identities_from_directive_records(records))
     return RevokedIdentityView(identities)
+
+
+def _archive_identities(archive: Path) -> RevokedIdentities:
+    import json as _json
+
+    from memorii.core.storage_administration.suppression_journal import (
+        SuppressionRecord,
+    )
+
+    entities: set[str] = set()
+    claims: set[str] = set()
+    sources: set[str] = set()
+    records: set[str] = set()
+    tasks: set[str] = set()
+    justifications: set[str] = set()
+    for path in sorted(archive.glob("forget-*.json")):
+        try:
+            entry = SuppressionRecord.model_validate(_json.loads(path.read_text()))
+        except (OSError, ValueError) as exc:
+            raise ValueError(
+                f"retention archive entry is unreadable: {path.name}"
+            ) from exc
+        for coordinate in entry.suppressed:
+            if coordinate.coordinate_kind == "entity":
+                entities.add(coordinate.coordinate_id)
+            elif coordinate.coordinate_kind == "claim":
+                claims.add(coordinate.coordinate_id)
+            elif coordinate.coordinate_kind == "source":
+                sources.add(coordinate.coordinate_id)
+            elif coordinate.coordinate_kind == "record":
+                records.add(coordinate.coordinate_id)
+            elif coordinate.coordinate_kind == "task":
+                tasks.add(coordinate.coordinate_id)
+            elif coordinate.coordinate_kind == "justification":
+                justifications.add(coordinate.coordinate_id)
+    return RevokedIdentities(
+        entities=frozenset(entities),
+        claims=frozenset(claims),
+        sources=frozenset(sources),
+        records=frozenset(records),
+        tasks=frozenset(tasks),
+        justifications=frozenset(justifications),
+    )
 
 
 def empty_revoked_view() -> RevokedIdentityView:
@@ -255,18 +307,20 @@ def empty_revoked_view() -> RevokedIdentityView:
 
 
 def _journal_fingerprint(control_root: Path) -> tuple:
-    """Cheap change signal over the suppression journal directory."""
+    """Cheap change signal over the suppression journal directory.
+
+    One stat of the directory itself: create, rename, and replace (the
+    journal's atomic write) all update the directory mtime on POSIX, so
+    a single syscall detects every change the per-file walk did — the
+    walk made every serving predicate O(journal entries).
+    """
 
     directory = control_root / "suppressions"
     try:
-        entries = sorted(
-            (path.name, path.stat().st_mtime_ns, path.stat().st_size)
-            for path in directory.iterdir()
-            if path.is_file()
-        )
+        info = directory.stat()
     except (FileNotFoundError, NotADirectoryError, OSError):
         return ()
-    return tuple(entries)
+    return (info.st_mtime_ns, info.st_size, info.st_ino)
 
 
 class RefreshingRevokedIdentityView:

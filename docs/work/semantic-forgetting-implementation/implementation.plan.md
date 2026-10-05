@@ -505,6 +505,41 @@ endpoint walks) or explicit owner sign-off on deferral. Spec follow-ups
 recorded: S4 drain retry loop, S5 legacy-layout plane views, S6
 keeps_record graph-reference depth.
 
+## Review Round 2 — Correctness Findings Remediated (2026-10-05)
+
+All three round-2 reviewers reported; every changes_required finding is
+now landed or scoped:
+
+- C1/F1 (P2): retention archiving silently removed revocations from the
+  serving view — view_from_control_root now unions the retention archive
+  (probe-verified: archived entry stays revoked; retention's "age never
+  removes revocation state" restored).
+- C2/F2 (P2): the per-predicate journal stat-walk made serving
+  O(rows x entries) — the fingerprint is now a single directory stat
+  (measured 70ms -> 0.022ms per call at 2000 entries).
+- T4/T5/T6 (P2): the live managed root observes a mid-process forget
+  without restart (production open_managed_partition composition);
+  wire_forget_enforcement double-wiring stays idempotent; the crash-cut
+  recovers at reopen through the CLI's exact composition and now also
+  asserts post-drain serving exclusion (tombstone eligibility + empty
+  retrieval). BLOCKER RECORDED as follow-up: end-to-end enforcement
+  through a store composed over open_managed_partition's plane raises
+  SemanticWriterAdmissionError (the managed-open admission path differs
+  from the operator-tool composition); production Hermes wiring follows
+  bootstrap enrollment, so this is a composition-investigation item, not
+  a serving defect.
+- Recorded follow-ups (P3): drain diagnostic logging (C5/S4), provider-
+  class fail-open defaults (C3), legacy-plane views (C4/S5), scan-loop
+  quadratic materialization (C6), closure-manifest kind collision + index
+  plan_digest disagreement (C7), graph tombstone label retention (C8),
+  checkpoint-tail in the mixed docstring (C9 — the equality IS now
+  pinned), keeps_record graph-reference depth (S6).
+
+REMAINING before the readiness statement: S3 RV12 residue decision
+(per-path delta tables + entity-match/structured-fact/observe-graph
+endpoint walks) — implementation or owner sign-off on deferral; CI green
+on the remediation head.
+
 ## CI Queue Note (2026-10-05)
 
 GitHub runner backlog held nine branch runs (no workflow concurrency
