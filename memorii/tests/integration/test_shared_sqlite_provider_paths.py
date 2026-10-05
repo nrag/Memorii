@@ -20,6 +20,9 @@ from memorii.core.persistence.factory import (
     ManagedPartitionError,
     select_persistent_memory_plane,
 )
+from memorii.core.storage_administration.revoked_identity_view import (
+    empty_revoked_view,
+)
 from memorii.core.storage_administration.service import StorageAdministrationService
 from memorii.domain.enums import CommitStatus, MemoryDomain
 
@@ -193,7 +196,7 @@ def test_hermes_provider_wrapper_selects_managed_partition(tmp_path: Path) -> No
     from memorii.integrations.hermes_provider import HermesMemoryProvider
 
     root = _initialized_root(tmp_path)
-    provider = HermesMemoryProvider(storage_root=str(root))
+    provider = HermesMemoryProvider(storage_root=str(root), revoked_view=empty_revoked_view())
     plane = provider._service._memory_plane
     plane.conditionally_write_records(
         (_record("mem:wrapper:hermes"),), preconditions=()

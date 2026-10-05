@@ -60,6 +60,9 @@ from memorii.core.semantic_ingestion.production_capture import (
     CanonicalEvidenceCaptureCell,
     CanonicalEvidenceCaptureSupervisor,
 )
+from memorii.core.storage_administration.revoked_identity_view import (
+    empty_revoked_view,
+)
 from memorii.integrations.authenticated_source import (
     AuthenticatedSourceSubmission,
     build_authenticated_source_runtime,
@@ -2596,6 +2599,7 @@ def test_production_composition(tmp_path: Path) -> None:
     authority = _production_authority()
     enabled_roots = (
         lambda repository: build_provider_memory_service_from_env(
+            revoked_view=empty_revoked_view(),
             conflict_attention_repository=repository,
             conflict_attention_enabled=True,
             verified_production_host_authority=authority,
@@ -2624,6 +2628,7 @@ def test_production_composition(tmp_path: Path) -> None:
 
     disabled_roots = (
         lambda repository: build_provider_memory_service_from_env(
+            revoked_view=empty_revoked_view(),
             conflict_attention_repository=repository,
             conflict_attention_enabled=False,
             verified_production_host_authority=authority,
@@ -2637,6 +2642,7 @@ def test_production_composition(tmp_path: Path) -> None:
     )
     missing_authority_roots = (
         lambda repository: build_provider_memory_service_from_env(
+            revoked_view=empty_revoked_view(),
             conflict_attention_repository=repository,
             conflict_attention_enabled=True,
         ),

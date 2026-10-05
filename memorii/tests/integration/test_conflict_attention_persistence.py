@@ -27,6 +27,9 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     RequiredOutcomeScopeSet,
 )
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.storage_administration.revoked_identity_view import (
+    empty_revoked_view,
+)
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 
 NOW = datetime(2026, 8, 2, tzinfo=UTC)
@@ -140,8 +143,7 @@ def _hermes(
             conflict_attention_enabled=enabled,
             authenticated_ingress_resolver=resolver,
             now_provider=lambda: NOW,
-        )
-    )
+        ), revoked_view=empty_revoked_view())
 
 
 def _list(

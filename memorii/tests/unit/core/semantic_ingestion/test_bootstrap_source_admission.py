@@ -53,6 +53,9 @@ from memorii.core.memory_plane.store import (
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.models import ProviderEvent, ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.storage_administration.revoked_identity_view import (
+    empty_revoked_view,
+)
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 from tests.fixtures.semantic_ingestion.host_bootstrap_authority import (
@@ -579,8 +582,7 @@ def test_provider_reprepares_atomic_admission_when_writer_cutover_wins_race(
 def test_hermes_trusted_ingress_uses_internal_composite_coordinates() -> None:
     memory_plane = MemoryPlaneService()
     provider = HermesMemoryProvider(
-        _service_with_capability(_TestHostBootstrapCapability(), memory_plane=memory_plane)
-    )
+        _service_with_capability(_TestHostBootstrapCapability(), memory_plane=memory_plane), revoked_view=empty_revoked_view())
     result = provider.sync_turn(
         "Atlas owner is Bob.", "Receipt is confirmed.", operation_id="turn-1", task_id="task:one",
         authenticated_host_ingress=AuthenticatedHostIngress(
@@ -646,8 +648,7 @@ def test_authenticated_metadata_poor_snapshot_is_governed_evidence_only() -> Non
 def test_hermes_metadata_poor_payload_preserves_structural_shape() -> None:
     memory_plane = MemoryPlaneService()
     provider = HermesMemoryProvider(
-        _service_with_capability(_TestHostBootstrapCapability(), memory_plane=memory_plane)
-    )
+        _service_with_capability(_TestHostBootstrapCapability(), memory_plane=memory_plane), revoked_view=empty_revoked_view())
     host_ingress = AuthenticatedHostIngress(
         provider_identity="provider:test",
         principal_handle=object(),
@@ -706,6 +707,7 @@ def test_factory_loads_installed_host_capability_and_ignores_public_language_lab
         return_value=(_InstalledCapabilityEntryPoint(capability),),
     ):
         service = build_provider_memory_service_from_env(
+            revoked_view=empty_revoked_view(),
             memory_plane=MemoryPlaneService(),
             host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
         )
@@ -910,6 +912,7 @@ def test_installed_capability_loader_works_through_hermes_and_filesystem_roots(t
         return_value=(_InstalledCapabilityEntryPoint(capability),),
     ):
         hermes = HermesMemoryProvider(
+            revoked_view=empty_revoked_view(),
             host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
         )
     hermes_result = hermes.sync_turn(
@@ -968,6 +971,7 @@ def test_normal_roots_discover_installed_host_capability_without_arguments(
     assert direct_result.blocked_reasons["semantic_ingestion"] == "source_only"
 
     factory = build_provider_memory_service_from_env(
+        revoked_view=empty_revoked_view(),
         memory_plane=MemoryPlaneService(),
         host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
     )
@@ -981,6 +985,7 @@ def test_normal_roots_discover_installed_host_capability_without_arguments(
     assert factory_result.blocked_reasons["semantic_ingestion"] == "source_only"
 
     hermes = HermesMemoryProvider(
+        revoked_view=empty_revoked_view(),
         host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier()
     )
     assert hermes.sync_turn(
@@ -1121,6 +1126,7 @@ def test_bootstrap_construction_and_ingestion_attempt_no_network(monkeypatch: py
     monkeypatch.setattr("socket.socket.bind", network_forbidden)
     monkeypatch.setattr("socket.socket.listen", network_forbidden)
     service = build_provider_memory_service_from_env(
+        revoked_view=empty_revoked_view(),
         memory_plane=MemoryPlaneService(),
         host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
     )

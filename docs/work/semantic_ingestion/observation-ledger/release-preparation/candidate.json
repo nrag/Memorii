@@ -1821,7 +1821,7 @@
     "memorii/memorii/integrations/hermes_factory.py": "714baf12bf2354c01f74dc69281521bc0a7a298f4ba1966ff1f97c9ab80a5ba6",
     "memorii/memorii/integrations/hermes_local_authority.py": "ceefba310fe584a0a5dc42c6689633e1511c5fd48707f1662d7beda901eb9296",
     "memorii/memorii/integrations/hermes_memory_provider.py": "fd3bb866f158dd736e3155b0ec2486ce2f92b8c82d948c6fd9eba9b0e368074c",
-    "memorii/memorii/integrations/hermes_provider.py": "8c3b2c1d1eb938cac39b163a51d5151d17a9239dfcd3c23d4f2986b2cc9462d0",
+    "memorii/memorii/integrations/hermes_provider.py": "08003f120b57734d8fcabb967204ab1a836d6b6c7a8ebb2d3bc0b0bc1d3ec359",
     "memorii/memorii/integrations/hermes_runtime_binding.py": "a7c9a0807f656f95fd2a11c5c9f2699d22f6743c2af41d55724937df3f734f4f",
     "memorii/memorii/integrations/provider_interface.py": "1edd3f990d7596d02ee770af4c35dcbab2d124a25de5c7347f3dcbce3203b70f",
     "memorii/memorii/prompts/answer_verification/v1.yaml": "19556559322015670be13194de84d7b82fbc8052921901afa0edbdc44c91fec7",

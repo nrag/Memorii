@@ -31,6 +31,9 @@ from memorii.core.semantic_ingestion.contracts import (
     decode_bootstrap_graph_atomic_member_payload_v3,
     decode_semantic_contract,
 )
+from memorii.core.storage_administration.revoked_identity_view import (
+    empty_revoked_view,
+)
 from memorii.domain.enums import CommitStatus, MemoryDomain
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 from pydantic import BaseModel
@@ -477,6 +480,7 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
         )
     elif behavior == "real_related_conflict" and root == "factory":
         service = build_provider_memory_service_from_env(
+            revoked_view=empty_revoked_view(),
             memory_plane=memory_plane, **common
         )
     elif behavior == "real_related_conflict" and root == "hermes":
@@ -487,6 +491,7 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
         service = provider_service(memory_plane=memory_plane, **common)
     elif root == "hermes":
         service = HermesMemoryProvider(
+            revoked_view=empty_revoked_view(),
             service=ProviderMemoryService._from_scenario_test_host(
                 memory_plane=memory_plane, **common
             )

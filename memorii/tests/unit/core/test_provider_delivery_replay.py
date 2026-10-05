@@ -26,7 +26,7 @@ store_path = Path(sys.argv[1])
 action = sys.argv[2]
 plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(store_path))
 service = ProviderMemoryService(memory_plane=plane)
-provider = HermesMemoryProvider(service)
+provider = HermesMemoryProvider(service, revoked_view=empty_revoked_view())
 
 if action == "turn":
     result = provider.sync_turn(

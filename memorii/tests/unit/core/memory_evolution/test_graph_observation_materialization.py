@@ -60,6 +60,9 @@ from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import JsonlMemoryPlaneStore, record_digest
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.models import ProviderOperation
+from memorii.core.storage_administration.revoked_identity_view import (
+    empty_revoked_view,
+)
 from pydantic import ValidationError
 from tests.integration.test_observation_ledger_activation import (
     _provider_factory,
@@ -1254,7 +1257,7 @@ def test_ingestion_time_order_key_contract():
 
 @pytest.mark.parametrize("cursor", (None, "untrusted-token"))
 def test_unconfigured_public_observation_never_reads_seeds(monkeypatch, cursor):
-    service = build_provider_memory_service_from_env()
+    service = build_provider_memory_service_from_env(revoked_view=empty_revoked_view())
 
     def unexpected_read(*args, **kwargs):
         raise AssertionError("unconfigured observation read the memory plane")

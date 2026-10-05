@@ -29,6 +29,9 @@ from memorii.core.provider.models import (
 )
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.provider.tools import ProviderToolCallResult
+from memorii.core.storage_administration.revoked_identity_view import (
+    empty_revoked_view,
+)
 from memorii.domain.enums import SourceModality
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 
@@ -205,7 +208,7 @@ def test_service_and_hermes_public_paths_preserve_schema_and_reader_contract() -
         task_id="provider-compatibility",
     )
     assert _legacy_reader().read_sync(_bytes(service_result.model_dump(mode="json", exclude_none=False)))
-    hermes = HermesMemoryProvider(ProviderMemoryService(now_provider=now))
+    hermes = HermesMemoryProvider(ProviderMemoryService(now_provider=now), revoked_view=empty_revoked_view())
     hermes_result = hermes.sync_turn(
         "Provider compatibility user bytes",
         "Provider compatibility assistant bytes",
@@ -243,7 +246,7 @@ def test_current_service_scenarios_remain_reader_compatible() -> None:
         "committed_primary": run(EnglishRuleMemoryExtractor(), "compatibility-primary"),
         "committed_fallback": run(HybridMemoryExtractor(llm_extractor=_failing_extractor()), "compatibility-fallback"),
     }
-    mixed = HermesMemoryProvider(ProviderMemoryService(memory_evolution_extractor=_FailFirstExtractor(), now_provider=now))
+    mixed = HermesMemoryProvider(ProviderMemoryService(memory_evolution_extractor=_FailFirstExtractor(), now_provider=now), revoked_view=empty_revoked_view())
     actual["hermes_ordered_mixed"] = mixed.sync_turn(
         "Atlas owner is Bob.",
         "Atlas owner is Carol.",

@@ -25,6 +25,9 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     RequiredOutcomeScopeSet,
 )
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.storage_administration.revoked_identity_view import (
+    empty_revoked_view,
+)
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 
 NOW = datetime(2026, 8, 2, tzinfo=UTC)
@@ -173,7 +176,7 @@ def test_negotiated_discovery_is_paired_with_provider_and_hermes_dispatch() -> N
     repository = _SpyRepository()
     resolver = _Resolver()
     service = _service(repository, resolver=resolver)
-    hermes = HermesMemoryProvider(service)
+    hermes = HermesMemoryProvider(service, revoked_view=empty_revoked_view())
 
     legacy = service.get_tool_schemas()
     negotiated = service.get_tool_schemas_with_attention()
@@ -423,7 +426,7 @@ def test_hermes_emits_only_after_attention_render_succeeds() -> None:
         ),
         observability_sink=sink,
     )
-    hermes = HermesMemoryProvider(service)
+    hermes = HermesMemoryProvider(service, revoked_view=empty_revoked_view())
 
     with pytest.raises(ValueError, match="context budget"):
         hermes.prefetch_with_attention(

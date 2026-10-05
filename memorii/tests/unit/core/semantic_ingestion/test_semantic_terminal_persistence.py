@@ -173,6 +173,9 @@ from memorii.core.semantic_ingestion.event_replay import (
     replay_semantic_event_batches,
 )
 from memorii.core.semantic_ingestion.persistence import SemanticTerminalPersistenceService
+from memorii.core.storage_administration.revoked_identity_view import (
+    empty_revoked_view,
+)
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 from planning_serialized_oracle import materialize_serialized
 from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import (
@@ -4413,6 +4416,7 @@ def test_hermes_real_store_audit_views_do_not_leak_disjoint_scope_history(
     monkeypatch.setattr(store, "lineage_audit_scope_event_ids", count_scope_event_ids)
     resolver = Resolver()
     provider = HermesMemoryProvider(
+        revoked_view=empty_revoked_view(),
         service=ProviderMemoryService(
             identity_lineage_audit_reader=AtomicStoreScopedIdentityLineageAuditReader(
                 store,

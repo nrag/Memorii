@@ -20,6 +20,9 @@ from memorii.core.memory_evolution.retrieval_contracts import (
     RetrievalPurpose,
 )
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.storage_administration.revoked_identity_view import (
+    empty_revoked_view,
+)
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 
 
@@ -70,7 +73,7 @@ def test_hermes_forwards_typed_scoped_graph_audit_lineage_without_reinterpretati
         authenticated_ingress_resolver=resolver,
         now_provider=lambda: now,
     )
-    hermes = HermesMemoryProvider(service=service)
+    hermes = HermesMemoryProvider(service=service, revoked_view=empty_revoked_view())
     request = GraphAuditRequest(
         query="Alice identity lineage",
         purpose=RetrievalPurpose.GRAPH_AUDIT,

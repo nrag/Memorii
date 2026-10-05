@@ -38,9 +38,6 @@ from memorii.core.memory_evolution.ingestion_contracts import (
 )
 from memorii.core.memory_evolution.retrieval_contracts import GraphAuditRequest
 from memorii.core.memory_plane.service import MemoryPlaneService
-from memorii.core.storage_administration.revoked_identity_view import (
-    RevokedIdentityServingGate,
-)
 from memorii.core.provider.attention_models import ProviderToolAttentionEnvelope
 from memorii.core.provider.classifier import classify_memory_target
 from memorii.core.provider.factory import build_provider_memory_service_from_env
@@ -59,6 +56,9 @@ from memorii.core.semantic_ingestion.production_authority import (
     VerifiedProductionHostAuthority,
 )
 from memorii.core.semantic_ingestion.source_normalization_host import SourceNormalizationHostBundleBuilder
+from memorii.core.storage_administration.revoked_identity_view import (
+    RevokedIdentityServingGate,
+)
 from memorii.domain.enums import SourceModality
 from memorii.integrations.provider_interface import MemoryProviderInterface
 

@@ -40,6 +40,9 @@ from memorii.core.provider.models import (
 )
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.semantic_ingestion.capability import BuiltInLocalHostSemanticIngestionCapability
+from memorii.core.storage_administration.revoked_identity_view import (
+    empty_revoked_view,
+)
 from memorii.domain.enums import (
     ExtractionRunStatus,
     FinalExtractionSource,
@@ -330,7 +333,7 @@ def test_provider_rejects_failed_deterministic_abstention() -> None:
 
 def test_prefetch_excludes_candidate_only_records_and_formats_context() -> None:
     service = ProviderMemoryService()
-    provider = HermesMemoryProvider(service)
+    provider = HermesMemoryProvider(service, revoked_view=empty_revoked_view())
     service.seed_committed_record(
         ProviderStoredRecord(
             memory_id="sem:1",
@@ -356,7 +359,7 @@ def test_prefetch_excludes_candidate_only_records_and_formats_context() -> None:
 
 
 def test_provider_hook_methods_cover_core_operations() -> None:
-    provider = HermesMemoryProvider(ProviderMemoryService())
+    provider = HermesMemoryProvider(ProviderMemoryService(), revoked_view=empty_revoked_view())
     turn_result = provider.sync_turn(
         "User asked to summarize",
         "Assistant summarized",
@@ -393,7 +396,7 @@ def test_provider_hook_methods_cover_core_operations() -> None:
 
 def test_sync_turn_contains_extractor_failures_before_semantic_execution() -> None:
     extractor = _FailFirstTurnExtractor()
-    provider = HermesMemoryProvider(ProviderMemoryService(memory_evolution_extractor=extractor))
+    provider = HermesMemoryProvider(ProviderMemoryService(memory_evolution_extractor=extractor), revoked_view=empty_revoked_view())
 
     result = provider.sync_turn(
         "Atlas migration owner is Alice.",
@@ -500,7 +503,7 @@ def test_provider_graph_audit_prefetch_preserves_analyzer_entity_scope() -> None
 
 
 def test_memory_write_stages_semantic_candidate_and_blocks_commit() -> None:
-    provider = HermesMemoryProvider(ProviderMemoryService())
+    provider = HermesMemoryProvider(ProviderMemoryService(), revoked_view=empty_revoked_view())
     result = provider.on_memory_write(
         "upsert", "memory", "timeout is 30s", operation_id="test:write:memory", task_id="task:w"
     )
@@ -512,7 +515,7 @@ def test_hermes_forwards_semantic_ingestion_lifecycle_surface() -> None:
     """Hermes exposes the service lifecycle without changing trusted arguments."""
 
     service = ProviderMemoryService()
-    provider = HermesMemoryProvider(service)
+    provider = HermesMemoryProvider(service, revoked_view=empty_revoked_view())
     activation = cast(SemanticWriterCommitBinding, object())
     evidence = cast(CapabilityEvidenceWindow, object())
     tick = cast(CapabilityMonitorTickResult, object())
@@ -561,14 +564,14 @@ def test_hermes_forwards_semantic_ingestion_lifecycle_surface() -> None:
 def test_hermes_reconciles_no_pending_memory_evolution() -> None:
     """The public Hermes recovery hook is safe when no durable work is pending."""
 
-    assert HermesMemoryProvider(ProviderMemoryService()).reconcile_memory_evolution() == []
+    assert HermesMemoryProvider(ProviderMemoryService(), revoked_view=empty_revoked_view()).reconcile_memory_evolution() == []
 
 
 def test_hermes_startup_activates_before_recovering_pending_work() -> None:
     """The host startup hook owns the required activation/recovery sequence."""
 
     service = ProviderMemoryService()
-    provider = HermesMemoryProvider(service)
+    provider = HermesMemoryProvider(service, revoked_view=empty_revoked_view())
     activation = cast(SemanticWriterCommitBinding, object())
     calls: list[str] = []
 
@@ -606,7 +609,7 @@ def test_started_hermes_root_runs_lifecycle_before_returning_provider() -> None:
 
 
 def test_memory_write_stages_user_candidate_and_blocks_commit() -> None:
-    provider = HermesMemoryProvider(ProviderMemoryService())
+    provider = HermesMemoryProvider(ProviderMemoryService(), revoked_view=empty_revoked_view())
     result = provider.on_memory_write(
         "upsert", "user", "prefers concise responses", operation_id="test:write:user", task_id="task:w"
     )
@@ -615,14 +618,14 @@ def test_memory_write_stages_user_candidate_and_blocks_commit() -> None:
 
 
 def test_session_end_stages_episodic_candidate() -> None:
-    provider = HermesMemoryProvider(ProviderMemoryService())
+    provider = HermesMemoryProvider(ProviderMemoryService(), revoked_view=empty_revoked_view())
     result = provider.on_session_end(["resolved incident"], operation_id="test:session:end", task_id="task:end")
     assert result.candidate_ids == []
     assert result.evolution_outcomes == []
 
 
 def test_sync_turn_raw_transcript_only_no_direct_commits() -> None:
-    provider = HermesMemoryProvider(ProviderMemoryService())
+    provider = HermesMemoryProvider(ProviderMemoryService(), revoked_view=empty_revoked_view())
     result = provider.sync_turn(
         "user says x", "assistant replies y", operation_id="test:sync:turn", task_id="task:sync"
     )
@@ -634,7 +637,7 @@ def test_sync_turn_raw_transcript_only_no_direct_commits() -> None:
 def test_sync_turn_replay_is_idempotent_across_both_child_events() -> None:
     memory_plane = MemoryPlaneService()
     service = ProviderMemoryService(memory_plane=memory_plane)
-    provider = HermesMemoryProvider(service)
+    provider = HermesMemoryProvider(service, revoked_view=empty_revoked_view())
 
     first = provider.sync_turn(
         "Atlas migration owner is Alice.",
@@ -657,7 +660,7 @@ def test_sync_turn_replay_is_idempotent_across_both_child_events() -> None:
 def test_sync_turn_recovers_after_only_the_first_child_event_was_committed() -> None:
     memory_plane = MemoryPlaneService()
     service = ProviderMemoryService(memory_plane=memory_plane)
-    provider = HermesMemoryProvider(service)
+    provider = HermesMemoryProvider(service, revoked_view=empty_revoked_view())
     service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas migration owner is Alice.",
@@ -732,7 +735,7 @@ def test_provider_integration_mutations_reject_empty_delivery_identity(
     mutation: Callable[[HermesMemoryProvider], object],
 ) -> None:
     with pytest.raises((ValidationError, ValueError)):
-        mutation(HermesMemoryProvider(ProviderMemoryService()))
+        mutation(HermesMemoryProvider(ProviderMemoryService(), revoked_view=empty_revoked_view()))
 
 
 def test_prefetch_general_continuity_prefers_recent_transcript_over_old_semantic() -> None:

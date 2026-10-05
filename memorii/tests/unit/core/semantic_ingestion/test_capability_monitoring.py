@@ -84,6 +84,9 @@ from memorii.core.semantic_ingestion.source_normalization_authority import (
     CapabilityRegistryEntry,
     CapabilityRegistrySnapshot,
 )
+from memorii.core.storage_administration.revoked_identity_view import (
+    empty_revoked_view,
+)
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 from tests.unit.core.semantic_ingestion.bootstrap_graph_production_roots_support import (
@@ -1057,6 +1060,7 @@ def test_public_factory_schedules_windows_from_signed_baseline_authority(tmp_pat
     assert authority is not None
     store_path = tmp_path / "signed-monitor"
     service = build_provider_memory_service_from_env(
+        revoked_view=empty_revoked_view(),
         memory_plane=MemoryPlaneService(record_store=JsonlMemoryPlaneStore(store_path)),
         now_provider=lambda: clock.now,
         verified_capability_monitoring_authorities=(authority,),
@@ -1082,6 +1086,7 @@ def test_public_factory_schedules_windows_from_signed_baseline_authority(tmp_pat
     assert CapabilityRegistrySnapshot.model_validate_json(registry_bytes) == registry
     restarted_plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(store_path))
     restarted = build_provider_memory_service_from_env(
+        revoked_view=empty_revoked_view(),
         memory_plane=restarted_plane, now_provider=lambda: clock.now,
         verified_capability_monitoring_authorities=(authority,),
     )
@@ -1216,6 +1221,7 @@ def test_signed_monitoring_authority_rejects_substitution_and_unacceptable_basel
     plane = MemoryPlaneService()
     with pytest.raises(ValueError, match="initial evidence"):
         build_provider_memory_service_from_env(
+            revoked_view=empty_revoked_view(),
             memory_plane=plane,
             now_provider=lambda: clock.now,
             verified_capability_monitoring_authorities=(stale_authority,),
@@ -1670,6 +1676,7 @@ def test_normal_reconciliation_scheduler_expires_monitor_without_ingress() -> No
     assert authority is not None
     plane = MemoryPlaneService()
     service = build_provider_memory_service_from_env(
+        revoked_view=empty_revoked_view(),
         memory_plane=plane,
         now_provider=lambda: clock.now,
         verified_capability_monitoring_authorities=(authority,),
@@ -1712,6 +1719,7 @@ def test_signed_monitor_initialization_requires_current_use_lease(expired: bool)
         trust.revoke()
     plane = MemoryPlaneService()
     build_provider_memory_service_from_env(
+        revoked_view=empty_revoked_view(),
         memory_plane=plane, now_provider=lambda: clock.now,
         verified_capability_monitoring_authorities=(authority,),
     )
@@ -1776,6 +1784,7 @@ def test_signed_factory_malformed_provider_poll_fails_closed_at_deadline(
     )
     plane = MemoryPlaneService()
     service = build_provider_memory_service_from_env(
+        revoked_view=empty_revoked_view(),
         memory_plane=plane,
         now_provider=lambda: clock.now,
         verified_capability_monitoring_authorities=(authority,),
@@ -1812,6 +1821,7 @@ def test_signed_factory_direct_tick_revalidates_revoked_authority() -> None:
     )
     plane = MemoryPlaneService()
     service = build_provider_memory_service_from_env(
+        revoked_view=empty_revoked_view(),
         memory_plane=plane,
         now_provider=lambda: clock.now,
         verified_capability_monitoring_authorities=(authority,),
@@ -1889,6 +1899,7 @@ def test_scheduler_accounts_for_more_than_sixteen_active_policies_after_provider
     )
     plane = MemoryPlaneService()
     service = build_provider_memory_service_from_env(
+        revoked_view=empty_revoked_view(),
         memory_plane=plane,
         now_provider=lambda: clock.now,
         verified_capability_monitoring_authorities=authorities,
@@ -2730,6 +2741,7 @@ def test_installed_monitoring_configuration_activates_only_verified_operator_art
     clock = _Clock()
     configuration, policy = _installed_monitoring_configuration(tmp_path, clock=clock)
     service = build_provider_memory_service_from_env(
+        revoked_view=empty_revoked_view(),
         now_provider=lambda: clock.now,
         installed_capability_monitoring_configuration=configuration,
     )
@@ -2778,6 +2790,7 @@ def test_installed_monitoring_configuration_fails_closed(
         configuration["monitoring_policy_path"] = str(substituted)
     with pytest.raises(ValueError, match="installed capability monitoring authority"):
         build_provider_memory_service_from_env(
+            revoked_view=empty_revoked_view(),
             now_provider=lambda: clock.now,
             installed_capability_monitoring_configuration=configuration,
         )
@@ -2793,6 +2806,7 @@ def test_installed_monitoring_rejects_unprovisioned_revocation_root_before_activ
     plane = MemoryPlaneService()
     with pytest.raises(ValueError, match="installed capability monitoring authority"):
         build_provider_memory_service_from_env(
+            revoked_view=empty_revoked_view(),
             memory_plane=plane,
             now_provider=lambda: clock.now,
             installed_capability_monitoring_configuration=configuration,
@@ -2824,6 +2838,7 @@ def test_installed_monitoring_rejects_valid_signed_artifact_after_protected_cloc
     plane = MemoryPlaneService()
     with pytest.raises(ValueError, match="installed capability monitoring authority"):
         build_provider_memory_service_from_env(
+            revoked_view=empty_revoked_view(),
             memory_plane=plane,
             now_provider=lambda: clock.now,
             installed_capability_monitoring_configuration=configuration,
@@ -2835,7 +2850,7 @@ def test_installed_monitoring_rejects_valid_signed_artifact_after_protected_cloc
 
 
 def test_absent_installed_monitoring_configuration_leaves_service_evidence_only() -> None:
-    service = build_provider_memory_service_from_env()
+    service = build_provider_memory_service_from_env(revoked_view=empty_revoked_view())
     assert service._capability_monitor is not None
     assert service._capability_monitor.configured_capability_fingerprints == ()
 
@@ -2847,6 +2862,7 @@ def test_installed_monitoring_configuration_reaches_all_capture_roots(
     clock.now = datetime.now(UTC)
     configuration, policy = _installed_monitoring_configuration(tmp_path / "authority", clock=clock)
     installed = build_provider_memory_service_from_env(
+        revoked_view=empty_revoked_view(),
         now_provider=lambda: clock.now,
         installed_capability_monitoring_configuration=configuration,
     )
@@ -2855,6 +2871,7 @@ def test_installed_monitoring_configuration_reaches_all_capture_roots(
         verified_capability_monitoring_authorities=installed._verified_capability_monitoring_authorities,
     )
     factory = build_provider_memory_service_from_env(
+        revoked_view=empty_revoked_view(),
         now_provider=lambda: clock.now,
         installed_capability_monitoring_configuration=configuration,
     )
@@ -2863,6 +2880,7 @@ def test_installed_monitoring_configuration_reaches_all_capture_roots(
         installed_capability_monitoring_configuration=configuration,
     )
     hermes = HermesMemoryProvider(
+        revoked_view=empty_revoked_view(),
         installed_capability_monitoring_configuration=configuration,
         now_provider=lambda: clock.now,
     )
@@ -2912,6 +2930,7 @@ def test_installed_initial_activation_holds_revocation_lease_through_status_cas(
     def construct() -> None:
         try:
             services.append(build_provider_memory_service_from_env(
+                revoked_view=empty_revoked_view(),
                 memory_plane=plane, now_provider=lambda: clock.now,
                 installed_capability_monitoring_configuration=configuration,
             ))
@@ -2954,6 +2973,7 @@ def test_installed_initial_activation_holds_revocation_lease_through_status_cas(
     # before a replacement status/checkpoint can be initialized.
     with pytest.raises(ValueError, match="installed capability monitoring authority"):
         build_provider_memory_service_from_env(
+            revoked_view=empty_revoked_view(),
             memory_plane=MemoryPlaneService(), now_provider=lambda: clock.now,
             installed_capability_monitoring_configuration=configuration,
         )

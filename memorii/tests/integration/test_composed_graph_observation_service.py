@@ -55,6 +55,9 @@ from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import JsonlMemoryPlaneStore
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.models import ProviderOperation
+from memorii.core.storage_administration.revoked_identity_view import (
+    empty_revoked_view,
+)
 from memorii.integrations.hermes_provider import (
     HermesMemoryProvider,
     build_started_hermes_memory_provider,
@@ -271,6 +274,7 @@ def backend(tmp_path_factory, request):
         now_provider=lambda: clock[0],
     )
     service = build_provider_memory_service_from_env(
+        revoked_view=empty_revoked_view(),
         memory_plane=plane, now_provider=lambda: clock[0],
         graph_observation_runtime=observation_runtime,
     )
@@ -567,7 +571,7 @@ def test_configured_service_observe_ingestion_time_attestations_returns_real_pag
 def test_hermes_forwards_real_graph_observation_and_attestation_routes(backend):
     """The public Hermes route preserves the composed protected read contract."""
 
-    hermes = HermesMemoryProvider(service=backend.service)
+    hermes = HermesMemoryProvider(service=backend.service, revoked_view=empty_revoked_view())
 
     graph = hermes.observe_graph(
         host_ingress=_host_ingress(), request=backend.graph_request,
@@ -606,7 +610,7 @@ def test_hermes_forwards_real_graph_observation_and_attestation_routes(backend):
 def test_unconfigured_hermes_observation_routes_fail_closed() -> None:
     """An unconfigured Hermes host exposes only the public denial contract."""
 
-    hermes = HermesMemoryProvider(service=build_provider_memory_service_from_env())
+    hermes = HermesMemoryProvider(service=build_provider_memory_service_from_env(), revoked_view=empty_revoked_view())
     ingress = _host_ingress()
     selector = GraphObservationCohortSelector(
         seed_source_ids=("unknown",),
@@ -654,7 +658,7 @@ def test_unconfigured_hermes_observation_routes_fail_closed() -> None:
 
 
 def test_unconfigured_and_misconfigured_fail_closed(backend, monkeypatch):
-    unconfigured = build_provider_memory_service_from_env()
+    unconfigured = build_provider_memory_service_from_env(revoked_view=empty_revoked_view())
     monkeypatch.setattr(unconfigured._memory_plane, "read_write_snapshot", _unexpected_plane_read)
     monkeypatch.setattr(
         unconfigured._memory_plane, "read_timed_write_snapshot", _unexpected_plane_read,

@@ -41,6 +41,9 @@ from memorii.core.semantic_ingestion.contracts import (
     ProviderSemanticProposal,
     decode_semantic_contract,
 )
+from memorii.core.storage_administration.revoked_identity_view import (
+    empty_revoked_view,
+)
 from tests.fixtures.semantic_ingestion.bootstrap_graph_v3_fixture import (
     DeterministicBootstrapGraphAuthorityProviderV3,
     DeterministicBootstrapGraphPlanCompilerV3,
@@ -1143,7 +1146,7 @@ def test_every_trigger_family_stages_seals_and_leases_prepared_bytes(root, monke
     from memorii.integrations.hermes_provider import HermesMemoryProvider
 
     service = _production_recovery_service()
-    hermes = HermesMemoryProvider(service=service)
+    hermes = HermesMemoryProvider(service=service, revoked_view=empty_revoked_view())
     ingress = _host_ingress().model_copy(
         update={"provider_identity": "scenario-test-host"}
     )

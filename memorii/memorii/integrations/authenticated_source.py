@@ -10,9 +10,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedHostIngress
 from memorii.core.memory_plane.service import MemoryPlaneService
-from memorii.core.storage_administration.revoked_identity_view import (
-    RevokedIdentityServingGate,
-)
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.models import ProviderOperation, ProviderSyncResult
 from memorii.core.provider.service import ProviderMemoryService
@@ -23,6 +20,9 @@ from memorii.core.semantic_ingestion.production_authority import (
 from memorii.core.semantic_ingestion.structured_fact_read import (
     StructuredFactReadRequest,
     StructuredFactReadResponse,
+)
+from memorii.core.storage_administration.revoked_identity_view import (
+    RevokedIdentityServingGate,
 )
 from memorii.domain.enums import SourceModality
 
