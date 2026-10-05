@@ -2724,3 +2724,106 @@ def test_forged_carrier_error_surface_is_pinned() -> None:
             graph_delta_digest=_digest("delta:error-surface"),
             timestamp=datetime(2026, 1, 1, tzinfo=UTC),
         )
+
+
+def test_mixed_pre_extension_history_folds_with_directive_tail() -> None:
+    """An upgraded installation replays its pre-extension history exactly.
+
+    The head batch carries the thirteen pre-extension record kinds (what an
+    installation running before the grammar change actually persisted); the
+    tail batch carries only the new revocation_directive kind. Checkpoint
+    tail replay and genesis replay must agree — the ordinary durable path
+    for every deployment upgraded across the grammar change.
+    """
+    registry = SemanticEventSchemaRegistry.create()
+    records = all_canonical_graph_records(repository_id="repository")
+    owning_kinds = {
+        "claim_assertion",
+        "action_revision",
+        "identity_lineage",
+        "temporal_transition",
+    }
+    pre_extension = tuple(
+        item for item in records if item.record_kind != "revocation_directive"
+    )
+    assert len(pre_extension) == len(records) - 1
+    head_body = {
+        "kind": "semantic_graph_delta",
+        "operation_id": "pre-extension-history",
+        "carriers": tuple(
+            sorted(
+                (item for item in pre_extension if item.record_kind in owning_kinds),
+                key=lambda item: (item.record_kind, item.record_digest),
+            )
+        ),
+        "graph_records": tuple(
+            sorted(
+                (item for item in pre_extension if item.record_kind not in owning_kinds),
+                key=lambda item: (item.record_kind, item.record_digest),
+            )
+        ),
+        "terminal_binding_sets": (),
+    }
+    head_delta = SemanticGraphDelta(
+        **head_body,
+        delta_digest=contract_digest(
+            b"memorii.semantic-ingestion.graph-delta.v1",
+            SemanticGraphDelta.model_construct(
+                **head_body, delta_digest="0" * 64
+            ).model_dump(mode="python", exclude={"delta_digest"}),
+        ),
+    )
+    genesis = SemanticReplayState.genesis("repository")
+    first = _batch(
+        delta=head_delta,
+        state=genesis,
+        before="genesis",
+        after="revision-pre-extension",
+        group="pre-extension",
+        fence="pre-extension-fence",
+        registry=registry,
+    )
+    first_state = replay_semantic_event_batches(
+        repository_id="repository", batches=(first,), registry=registry
+    )
+    assert "revocation_directive" not in {
+        item.record_kind for item in first_state.materialized_records
+    }
+
+    directive = next(
+        item for item in records if item.record_kind == "revocation_directive"
+    )
+    tail_records = (directive,)
+    tail_body = {
+        "kind": "semantic_graph_delta",
+        "operation_id": "pre-extension-history:governance",
+        "carriers": (),
+        "graph_records": tail_records,
+        "terminal_binding_sets": (),
+    }
+    tail_delta = SemanticGraphDelta(
+        **tail_body,
+        delta_digest=contract_digest(
+            b"memorii.semantic-ingestion.graph-delta.v1",
+            SemanticGraphDelta.model_construct(
+                **tail_body, delta_digest="0" * 64
+            ).model_dump(mode="python", exclude={"delta_digest"}),
+        ),
+    )
+    second = _batch(
+        delta=tail_delta,
+        state=first_state,
+        before="revision-pre-extension",
+        after="revision-with-directive",
+        group="governance-update",
+        fence="governance-fence",
+        registry=registry,
+    )
+    from_genesis = replay_semantic_event_batches(
+        repository_id="repository",
+        batches=(first, second),
+        registry=registry,
+    )
+    kinds = {item.record_kind for item in from_genesis.materialized_records}
+    assert "revocation_directive" in kinds
+    assert len(from_genesis.materialized_records) == len(records)

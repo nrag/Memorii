@@ -1,6 +1,6 @@
 {
   "files": {
-    ".github/workflows/pr-gates.yml": "c77c4c3c044536adc7a1d46ced0726376de8778bc984c085399e0921e30ef7dd",
+    ".github/workflows/pr-gates.yml": "e0bc6d3f356a6be4232ad3f5f92baadf963eb718f0aec54a6ce0cec96ecbc328",
     "acceptance/__init__.py": "adbb769f003c08d46e26ff769de38c76f15e3e09b1bee8cb53e3c3886f8aa91d",
     "acceptance/arithmetic.py": "0958fd3aff008ba15b309bd7f4e037bb4e139672f85b51807bfacc562a0528cd",
     "acceptance/authority_cli.py": "4132ae05df5601c4f0a0098b177291c3dc9b722d9250620de4247bbb763eb135",
@@ -1909,7 +1909,7 @@
     "tools/observation_activation_bootstrap.py": "abc6c5397078cf5c907a3c7b5002f6fbb1a19f1a2e2d4b663cb90b3dc8bf31f2",
     "tools/observation_activation_launch.py": "00015559da84ec93316d345e055dd00cc066f17ae3221c978c1240a5b828cac5",
     "tools/observation_activation_prepare.py": "333070a6e3fa8280254cfd3c9f48e05593df1463a5202fa3b947ce290187ecaf",
-    "docs/work/semantic-forgetting-implementation/implementation.plan.md": "b6a9e655ae914e2ef47a1410c7febf3f0f362ca88cef41c64cf2d1b72350b0d2",
+    "docs/work/semantic-forgetting-implementation/implementation.plan.md": "c3da3ab75ccd8fec487f061947cfd3ae87d1aae0b2c56161532fa9163544c965",
     "docs/design/durable_execution_and_solver_runtime.md": "63f90df2a4e822df430c32b209f03a671379189bc8e999e19d7f12ac5fbf94fe",
     "docs/design/semantic_forgetting.md": "f75f7b80f6a019839c0450a2c0497722cb49ceeaf780c5599a77e99fb5503889",
     "memorii/memorii/core/harness_state/service.py": "a1692b86652e27e09adef76325f2e28d330a883d79164e2e4a2807bc05c2c17f",
@@ -1931,7 +1931,7 @@
     "memorii/tests/unit/core/memory_evolution/test_revocation_directive_record.py": "34a6cea5d56a615bdd879a9e60eccab33c29b660f34a8712c73c54a334364d94",
     "memorii/tests/unit/core/memory_evolution/test_revocation_tombstones.py": "fa6796aee3b15d732ab4f62897cc311277e22f0db334425307cb63413c31ea7c",
     "memorii/tests/unit/core/semantic_ingestion/graph_record_test_support.py": "9ce9948f80f2a2ee2438f720566fc87b51c17576251c787289b942f8e97159cb",
-    "memorii/tests/unit/core/semantic_ingestion/test_event_replay.py": "2da2ddfe92670aed9f8ca9a6929808c621d3894a8656b4b01d8bbd4102129206",
+    "memorii/tests/unit/core/semantic_ingestion/test_event_replay.py": "e104124754b2b3f28b9c256b34acf8a44f4d8df6f49612d92fc07ac9f095d326",
     "memorii/tests/unit/core/test_revoked_identity_view.py": "d507522e4ba140e86f6c30c4bbaef1c6ab4917650c2081a0d67d39a84cd77292",
     "memorii/tests/unit/core/test_storage_administration_operator.py": "37536bf31c3b2ebe97f041cf43fe07f9ae28c30af0029592f9fdc3026881fabd"
   },

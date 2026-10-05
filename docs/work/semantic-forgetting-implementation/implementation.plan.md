@@ -408,6 +408,22 @@ and keep the documented synthetic fallback); the composition-gates drain
 test asserts both bindings against the materialized directive. All
 forget suites and static gates green.
 
+RV12 LANDED (2026-10-05): the §10.1 parity family expanded
+(tests/integration/test_forget_parity_family.py, registered in both
+durable CI jobs): the in-window oracle (the journal alone gates serving
+between apply and enforcement), the runtime-step row, the host
+record-query row walked to cursor exhaustion with no duplicates and
+exact termination, the legacy graph row including the REVOKED tombstone
+rewrite and gated snapshot, and the §10.3 crash-cut (apply → close →
+reopen → drain completes the directive). The mixed pre/post-extension
+fold replay landed in test_event_replay.py (thirteen pre-extension kinds
+in the head batch, directive-only tail, genesis equality). Recorded as
+follow-ups (P3): per-path delta-count tables for every matrix row and
+endpoint-level walks for entity-match/structured-fact/observe-graph,
+which require authenticated-ingress fixtures beyond the shared plane
+fixture; their gates are already pinned by the composition sweep and the
+observation suite respectively.
+
 SEPARATE PRE-EXISTING DEFECT (recorded 2026-10-04, needs its own
 debugging operation): tests/unit/core/semantic_ingestion/
 test_bootstrap_graph_root_composition.py fails locally (24 tests; sample
