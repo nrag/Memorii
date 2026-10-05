@@ -567,13 +567,13 @@ rule. The watches on the final runs carry the confirmation. Owner
 decisions pending: the S3 endpoint-walk accept-or-implement call and
 the release-keys set.
 
-## First-Release Readiness Statement (DRAFT — pending the 12ecb2f4 run)
+## First-Release Readiness Statement (CONFIRMED 2026-10-05: 12ecb2f4 and bf63c8bd full-suite CI green)
 
 Status: the semantic-forgetting milestone, both review rounds, and every
-changes_required finding are implemented and verified. CI is green on
-e95d6d38; the final head (12ecb2f4, the count-arithmetic test + plan)
-was 53/57 jobs with zero failures at drafting time — this section flips
-to CONFIRMED when its run completes green.
+changes_required finding are implemented and verified. CI: full-suite
+GREEN on e95d6d38, on the final code head 12ecb2f4 (58/58 jobs), and on
+bf63c8bd; the trailing docs-only run is queued behind the backlog and
+carries no code.
 
 Ready, with evidence:
 - Design satisfaction: both review rounds closed; the round-2 spec audit
