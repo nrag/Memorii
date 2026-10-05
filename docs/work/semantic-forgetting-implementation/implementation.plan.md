@@ -424,6 +424,28 @@ which require authenticated-ingress fixtures beyond the shared plane
 fixture; their gates are already pinned by the composition sweep and the
 observation suite respectively.
 
+ROOT-CAUSE DIAGNOSIS (2026-10-05, instrumentation fully reverted): the
+root-composition failures chain is
+sync_event -> _run_semantic_ingestion ->
+SourceNormalizationExecutionOwner.normalize_after_recovery_claim ->
+SealedBootstrapV3ProposalProducer.produce returns None ->
+seal_bootstrap_proposal_run rejected ("bootstrap quote cannot be
+resolved exactly") because the shared scenario quote authority
+(_SingleTextQuoteAuthority in test_semantic_provider_composition.py:885)
+resolves against a HARD-CODED single-fact text ("Atlas owner is Bob.")
+while the failing tests propose multi-fact quotes ("Atlas owns Bob."
+etc.) against multi-sentence source texts — every multi-fact proposal
+seal fails, the terminal becomes evidence_only/
+source_alignment_authority_unavailable, and the tests expect
+source_only. The fixture-builder variant of the resolver
+(source_normalization_fixture_builder.py:310) resolves against the real
+source text and is the correct model. BOUNDED FIX (next cycle): make
+the shared builder's quote authority resolve against the invocation's
+actual source text (fixture-builder semantics), or have the multi-fact
+tests supply their own authority; then re-bisect whether 3214def8
+merely exposed it. Working tree instrumentation reverted; only the
+pr-gates registration from RV12 remains modified.
+
 SEPARATE PRE-EXISTING DEFECT (recorded 2026-10-04, needs its own
 debugging operation): tests/unit/core/semantic_ingestion/
 test_bootstrap_graph_root_composition.py fails locally (24 tests; sample
