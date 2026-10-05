@@ -556,6 +556,38 @@ deferral is presented to the owner with the readiness statement for
 explicit accept-or-implement sign-off, per the spec reviewer's note
 that the reclassification is the owner's to make.
 
+## First-Release Readiness Statement (DRAFT — pending the 12ecb2f4 run)
+
+Status: the semantic-forgetting milestone, both review rounds, and every
+changes_required finding are implemented and verified. CI is green on
+e95d6d38; the final head (12ecb2f4, the count-arithmetic test + plan)
+was 53/57 jobs with zero failures at drafting time — this section flips
+to CONFIRMED when its run completes green.
+
+Ready, with evidence:
+- Design satisfaction: both review rounds closed; the round-2 spec audit
+  verified every matrix row's gate and the amended version rule; the
+  round-2 correctness audit's two regressions (retention-archive gating,
+  view cost) are fixed with the reviewer's own reproductions.
+- Verification: 60+ forget/composition/parity tests across six suites,
+  all registered in both durable CI jobs; genuine pagination exhaustion
+  with exact-set equality; per-path count arithmetic; mixed-replay
+  checkpoint-tail equality; crash-cut recovery with post-drain serving
+  exclusion; live-root mid-process refresh.
+- Known follow-ups (recorded above, none blocking Level-2): drain
+  diagnostics, provider-class fail-open defaults, legacy-plane views,
+  scan-loop materialization cost, closure-manifest kind collision,
+  graph-tombstone label retention, open-partition enforcement admission
+  path, root-composition publication-CAS defect (separate debug op).
+
+OPEN OWNER DECISIONS at acceptance:
+1. The three endpoint-level walks (entity-match, structured-facts,
+   observe-graph under active revocation): accept the deferral or
+   direct implementation first (bounded fixture work; gates are
+   code-verified).
+2. Release keys (backup key, org env, four facts) — required before the
+   AEAD rotation planned for the release weekend.
+
 ## CI Queue Note (2026-10-05)
 
 GitHub runner backlog held nine branch runs (no workflow concurrency
