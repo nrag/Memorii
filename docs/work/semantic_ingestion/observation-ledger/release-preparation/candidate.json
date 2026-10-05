@@ -1763,7 +1763,7 @@
     "memorii/memorii/core/semantic_ingestion/operation_assessment.py": "c708ead75af8795443ddcb8ae9133958406e0c9fc57c56075ee736cbe0cf0d94",
     "memorii/memorii/core/semantic_ingestion/persistence.py": "e252441ba0f45447891e3e04481a5cd7a87c2759e7573259158723ec9c39c33e",
     "memorii/memorii/core/semantic_ingestion/production_authority.py": "4e669c19125925b23f8266ef934448bc3f8ba7000d5fbeedc9920bfa3917b3c8",
-    "memorii/memorii/core/semantic_ingestion/production_capture.py": "097dc5220aec0b1a1f43e365feb002f59e6ad3a3eef14c76cdcb9908d0e31471",
+    "memorii/memorii/core/semantic_ingestion/production_capture.py": "3efc2ad004004d480f39d069ce71e7f2dd689c30de8c276ce856d640113bda27",
     "memorii/memorii/core/semantic_ingestion/project_assertions.py": "ef894bee58c9a0526e66888583314c6655b5dc092abfa2c34ad0116a748ad021",
     "memorii/memorii/core/semantic_ingestion/project_assertions_profile.py": "22d2c356aa18e8ffbd435eeaf7190b2ead3c2398d3b298106e0658f0616315af",
     "memorii/memorii/core/semantic_ingestion/prompt_authority.py": "d2debbcf4cd0a249d378479811728f7352f9fcfd86ec87e3ef5f11daf9b571c6",

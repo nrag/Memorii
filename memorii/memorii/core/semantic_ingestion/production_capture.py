@@ -243,6 +243,7 @@ def _build_root(
             )
         return HermesMemoryProvider(
             memory_plane=memory_plane,
+            revoked_view=revoked_view,
             verified_production_host_authority=authority,
             verified_capability_monitoring_authorities=monitoring_authorities,
             now_provider=lambda: cell.server_time,
