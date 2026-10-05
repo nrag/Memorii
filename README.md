@@ -15,6 +15,9 @@ state, and task-local reasoning state.
 > established agent-level task improvement, production-scale operation, or
 > readiness for unguarded durable writes from ordinary chat.
 
+This documentation follows Simplified Technical English
+(ASD-STE100): short sentences, active voice, imperative procedures.
+
 ## Contents
 
 - [Why Memorii](#why-memorii)
@@ -107,44 +110,45 @@ standalone default composition remains in memory.
 
 ## Get Started
 
-Pick the path that matches what you are doing. All three work from a
-clone of this repository; paths 2 and 3 need Docker or Node.
+Pick one path. Paths 2 and 3 need Docker or Node.
 
-### 1. Python library (5 minutes)
+### 1. Python library
 
-Memorii requires Python 3.11 or newer. From the repository root:
+Memorii needs Python 3.11 or newer. Do these steps from the repository
+root:
 
-```bash
-cd memorii
-python -m pip install -e '.[dev]'
-```
+1. Install the package:
 
-Verify the installation with the deterministic suite (no credentials,
-no network):
+   ```bash
+   cd memorii
+   python -m pip install -e '.[dev]'
+   ```
 
-```bash
-python -W error -m pytest tests/unit -p no:cacheprovider
-```
+2. Run the deterministic test suite. It needs no credentials and no
+   network:
 
-Run a credential-free runtime memory-evolution smoke evaluation:
+   ```bash
+   python -W error -m pytest tests/unit -p no:cacheprovider
+   ```
 
-```bash
-python -m memorii.tools.run_eval \
-  --suite memory_evolution_runtime_v1 \
-  --mode all \
-  --dry-run \
-  --storage-root .memorii \
-  --sim-profile smoke \
-  --seed 7
-```
+3. Run a smoke evaluation:
 
-Dry-run LLM and hybrid modes use deterministic fake extraction to validate
-composition, artifacts, alignment, judges, and calibration. They do not make
-provider calls and do not measure live model quality.
+   ```bash
+   python -m memorii.tools.run_eval \
+     --suite memory_evolution_runtime_v1 \
+     --mode all \
+     --dry-run \
+     --storage-root .memorii \
+     --sim-profile smoke \
+     --seed 7
+   ```
 
-The production-facing API is `ProviderMemoryService`, composed through
-`build_provider_memory_service_from_env(...)`. A minimal durable
-composition:
+The dry-run modes use deterministic fake extraction. They check
+composition, artifacts, alignment, judges, and calibration. They make no
+provider calls. They do not measure live model quality.
+
+The production API is `ProviderMemoryService`. Compose it through
+`build_provider_memory_service_from_env(...)`:
 
 ```python
 from memorii.core.memory_plane.service import MemoryPlaneService
@@ -154,55 +158,77 @@ from memorii.core.provider.factory import build_provider_memory_service_from_env
 administration, plane = open_managed_partition("/path/to/installation")
 service = build_provider_memory_service_from_env(
     memory_plane=plane,
-    revoked_view=plane._revoked_view,  # the refreshing gate wired at open
+    revoked_view=plane._revoked_view,  # the gate wired at open
 )
 result = service.sync_event(
     operation=ProviderOperation.CHAT_USER_TURN,
     content="Atlas owns Bob.",
-    operation_id="my-stable-operation-id",  # retries must reuse this id
+    operation_id="my-stable-operation-id",  # reuse this id on retries
     task_id="task:one",
     user_id="user:alice",
     authenticated_host_ingress=None,
 )
 ```
 
-Every mutating call requires a stable, caller-supplied `operation_id`;
-retries reuse the same id so replay stays idempotent. The gate parameter
-is required on purpose: serving compositions refuse to start without an
-explicit revoked-identity view (an empty view is the valid statement for
-ephemeral planes — see `empty_revoked_view()`).
+Obey two rules:
 
-### 2. Hermes external memory provider (Docker)
+- Supply a stable `operation_id` for every mutating call. Reuse the
+  same id when you retry. This keeps replay idempotent.
+- Supply the revoked-identity gate at composition. The factory refuses
+  to start without one. For an ephemeral plane, pass
+  `empty_revoked_view()`. This is a valid statement.
 
-Run Memorii as your Hermes memory provider with the first-party image:
+### 2. Hermes memory provider (Docker)
 
-```bash
-docker build -f Dockerfile.memorii -t hermes-memorii .
-docker volume create hermes-memorii-data
-docker run -d --name hermes-memorii -e HERMES_HOME=/opt/data \
-  -v hermes-memorii-data:/opt/data hermes-memorii tail -f /dev/null
-docker exec hermes-memorii /opt/hermes/.venv/bin/memorii-hermes authorize-local-level2 \
-  --hermes-home /opt/data --acknowledge-openai-egress
-docker exec hermes-memorii /opt/hermes/.venv/bin/hermes config set memory.provider memorii
-docker restart hermes-memorii
-docker exec hermes-memorii /opt/hermes/.venv/bin/hermes memory status
-```
+1. Build the image and make a volume:
 
-Restart reopens the same `/opt/data/memorii` store; authorization
-acknowledges model egress explicitly. The full hook surface and
-operational detail are in
-[Hermes External Memory Provider](#hermes-external-memory-provider) below.
+   ```bash
+   docker build -f Dockerfile.memorii -t hermes-memorii .
+   docker volume create hermes-memorii-data
+   ```
+
+2. Start the container:
+
+   ```bash
+   docker run -d --name hermes-memorii -e HERMES_HOME=/opt/data \
+     -v hermes-memorii-data:/opt/data hermes-memorii tail -f /dev/null
+   ```
+
+3. Authorize the provider. This step acknowledges model egress:
+
+   ```bash
+   docker exec hermes-memorii /opt/hermes/.venv/bin/memorii-hermes authorize-local-level2 \
+     --hermes-home /opt/data --acknowledge-openai-egress
+   ```
+
+4. Select the provider and restart:
+
+   ```bash
+   docker exec hermes-memorii /opt/hermes/.venv/bin/hermes config set memory.provider memorii
+   docker restart hermes-memorii
+   ```
+
+5. Check the status:
+
+   ```bash
+   docker exec hermes-memorii /opt/hermes/.venv/bin/hermes memory status
+   ```
+
+The container reopens the same `/opt/data/memorii` store after a
+restart. The section
+[Hermes External Memory Provider](#hermes-external-memory-provider)
+below gives the full hook surface.
 
 ### 3. TypeScript runtime client
 
-Sandboxed hosts read task state through the loopback sidecar with the
-typed client (`sdk/typescript`, Node 24-26):
+Sandboxed hosts read task state through the loopback sidecar
+(`sdk/typescript`, Node 24-26):
 
 ```ts
 import { RuntimeStateClient } from "@memorii/runtime-client";
 
 const client = new RuntimeStateClient({
-  baseUrl: "http://127.0.0.1:8734", // loopback sidecar only
+  baseUrl: "http://127.0.0.1:8734", // loopback only
   credential: process.env["MEMORII_CREDENTIAL"] ?? "",
 });
 const state = await client.getState("task:one");
@@ -210,18 +236,17 @@ const state = await client.getState("task:one");
 
 ### Where to go next
 
-- **How it all fits together:** [Architecture](docs/architecture.md) —
-  storage and control, the event/replay spine, the ingestion pipeline,
-  serving gates, and verification, with diagrams.
-- **Operating an installation:** `memorii-operator --help` (status,
-  doctor, backup, forget, retention, erasure).
-- **Provider configuration and live execution:**
+- For the full system picture, read [Architecture](docs/architecture.md).
+  It covers storage, events, ingestion, serving gates, and verification,
+  with diagrams.
+- To operate an installation, run `memorii-operator --help`. It offers
+  status, doctor, backup, forget, retention, and erasure.
+- For provider configuration, read
   [Environment Configuration](docs/design/environment_config.md). Live
-  gates consume credentials and are meaningful only when intentionally
-  bound to an exact clean revision.
-- **Governing designs:** start with
-  [the specification](docs/design/memorii_spec.md); precedence is defined
-  in [AGENTS.md](AGENTS.md).
+  gates consume credentials. Bind them to one exact clean revision.
+- For the governing designs, start with
+  [the specification](docs/design/memorii_spec.md). `AGENTS.md` defines
+  the precedence.
 
 ## Provider Integration Surface
 

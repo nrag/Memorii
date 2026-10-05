@@ -1,19 +1,20 @@
 # Memorii Architecture
 
-This document is the detailed, current-state architecture of the Memorii
-memory plane: what exists in production code today, how the pieces connect,
-and where the contracts live. It is grounded in the governing design
-documents (`docs/design/memorii_spec.md`,
-`docs/design/memorii_storage_details.md`, `docs/design/event_model.md`)
-and stays honest about what is implemented versus planned — see
-[Current Limitations](../README.md#current-limitations) for the boundary.
+This document describes the Memorii memory plane. It tells you what the
+production code does today and how the parts connect. It follows
+Simplified Technical English (ASD-STE100): short sentences, active
+voice, imperative procedures, and one word for one meaning.
+
+The governing documents are `docs/design/memorii_spec.md`,
+`docs/design/memorii_storage_details.md`, and `docs/design/event_model.md`.
+These documents win when the text disagrees. For limits on what Memorii
+claims today, read the README section "Current Limitations".
 
 ## 1. System Overview
 
-Memorii sits between agent hosts and durable storage as a **typed memory
-plane**: hosts submit events and explicit writes through a validated
-ingestion surface, and read back scoped, lifecycle-aware memory through
-gated serving surfaces.
+Memorii sits between agent hosts and durable storage. It is a typed
+memory plane. Hosts send events and explicit writes. Memorii validates
+the input, stores typed state, and serves scoped reads.
 
 ```mermaid
 flowchart TB
@@ -21,17 +22,17 @@ flowchart TB
         H1["Hermes"]
         H2["OpenClaw"]
         H3["Pi"]
-        H4["Any framework (ProviderMemoryService API)"]
+        H4["Other frameworks"]
     end
 
     subgraph PLANE["Memorii memory plane"]
-        PS["Provider service (ingestion + serving)"]
-        SI["Semantic ingestion (bootstrap graph V3)"]
+        PS["Provider service (input and output)"]
+        SI["Semantic ingestion (graph V3)"]
         MP["Memory plane service (typed records)"]
-        GOV["Governance (forget / retention / doctor)"]
+        GOV["Governance (forget, retention, doctor)"]
     end
 
-    subgraph STORE["Durable storage (managed partition)"]
+    subgraph STORE["Durable storage"]
         CTRL["Control state (control.sqlite3)"]
         PART["Partition (partition.sqlite3)"]
     end
@@ -47,93 +48,91 @@ flowchart TB
     MP --> PART
     GOV --> CTRL
     GOV --> MP
-    CTRL -. "publication + verified snapshots" .-> PART
+    CTRL -. "publication" .-> PART
 ```
 
-Three properties hold across the whole plane:
+Three rules hold everywhere in the plane:
 
-- **Raw observations are the source of truth.** Derived graph state is a
-  validated, replayable projection; nothing derived replaces the raw event
-  history.
-- **Model output is candidate data.** Nothing a model produced becomes
-  committed memory without schema, semantic, provenance, evidence, and
-  lifecycle policy validation.
-- **Fail closed everywhere.** Unknown lifecycle values, ambiguous
-  constraints, missing authorities, and stale leases refuse rather than
-  guess.
+1. Raw observations are the source of truth. Derived graph state is a
+   projection. The system can rebuild it from the events.
+2. Model output is candidate data. It becomes memory only after
+   schema, semantic, provenance, evidence, and lifecycle checks pass.
+3. The system fails closed. Unknown values, unclear input, missing
+   authorities, and stale leases cause a refusal. The system never
+   guesses.
 
 ## 2. The Typed Memory Model
 
-Memory is not one bag of documents. The plane keeps six logical domains
-separate, each with typed contracts (`memorii/core/memory_plane/models.py`):
+Memorii does not store memory as one set of documents. It keeps six
+logical domains apart (`memorii/core/memory_plane/models.py`):
 
-| Domain | Contents | Example record kinds |
+| Domain | Contents | Example kinds |
 | --- | --- | --- |
-| Raw transcript | Durable observations of what was actually said | transcript records |
-| Semantic | Entities, claims, evidence, relations, lifecycle | `claim_state`, `entity_link`, `graph_node` |
-| Episodic | Session- and event-scoped recall | episodic records |
+| Raw transcript | What the user actually said | transcript records |
+| Semantic | Entities, claims, evidence, relations | `claim_state`, `entity_link`, `graph_node` |
+| Episodic | Session and event recall | episodic records |
 | User context | Preferences and delegations | preference records |
-| Execution | Persistent work state: tasks, nodes, edges | runtime tables |
-| Solver / search | Task-local hypotheses, justifications, overlays | solver tables |
+| Execution | Persistent work state | runtime tables |
+| Solver / search | Task-local hypotheses and overlays | solver tables |
 
-Two distinctions cut across all domains:
+Two distinctions cross all domains:
 
-- **Candidate vs committed state.** Extraction and promotion produce
-  candidates; only explicit validation stages commit. Promotion is
-  conservative and auditable.
-- **Structural vs versioned.** Structural graph state is separate from
-  versioned belief/status overlays; lifecycle revision never deletes
-  history (append-only event log, superseding versions).
+- **Candidate versus committed.** Extraction makes candidates. Only the
+  validation stages commit. Promotion is careful and auditable.
+- **Structure versus version.** Structural graph state stays apart from
+  versioned belief overlays. Revision writes new versions. It does not
+  delete history.
 
-## 3. Storage and Control Architecture
+## 3. Storage and Control
 
-A **managed installation** is one root directory containing a control
+A managed installation is one root directory. It holds a control
 authority and a data partition:
 
 ```mermaid
 flowchart LR
     subgraph ROOT["installation root"]
         subgraph C["control/"]
-            CS["control.sqlite3 (mode, journal, epochs)"]
-            SJ["suppressions/ (forget journal)"]
-            SJA["suppressions-archive/ (retention)"]
-            WR["writers/ (enrollment)"]
+            CS["control.sqlite3"]
+            SJ["suppressions/ journal"]
+            SJA["suppressions-archive/"]
+            WR["writers/"]
         end
         subgraph P["partition.sqlite3"]
             MB["memory_batches"]
-            VR["memory_record_versions (append-only history)"]
+            VR["memory_record_versions"]
             CR["memory_current_records"]
-            RT["runtime_* tables (tasks, solver, checkpoints)"]
+            RT["runtime tables"]
         end
     end
-    CS -->|"publish / verify"| MB
-    CS -->|"epoch increments"| CR
+    CS -->|"publish"| MB
+    CS -->|"epochs"| CR
 ```
 
-Key invariants:
+Key facts:
 
-- **Publication is the only write path into the partition.** Every batch
-  lands through `publish_memory_plane_batch` under a verified control
-  revision; readers see old-or-new, never partial state.
-- **`memory_record_versions` is the retained-bytes ledger.** Forgetting
-  rewrites records as tombstone versions; nothing is deleted. The
-  owner-capability forensic surface reads this history.
-- **The suppression journal is the serving gate of record for
-  revocation** between apply and enforcement, and retention tiering moves
-  aged entries to the archive without ever removing revocation state.
-- **The release proof** pins every production and tool file
-  (`docs/work/semantic_ingestion/observation-ledger/release-preparation/candidate.json`);
-  the installed-artifact proof refuses any drift.
+- Publication is the only write path into the partition. Each batch
+  lands under a verified control revision. Readers see the old state or
+  the new state. They never see a partial state.
+- `memory_record_versions` keeps every version of every record. A forget
+  writes tombstone versions. It deletes nothing. The owner forensic
+  surface reads this history.
+- The suppression journal gates serving between apply and enforcement.
+  Retention moves old entries to the archive. The revocations stay in
+  force.
+- The release proof pins every production and tool file
+  (`docs/work/semantic_ingestion/observation-ledger/release-preparation/candidate.json`).
+  The proof fails when a file changes.
 
-Legacy JSONL plane layouts are supported read-side through migration; a
-managed installation refuses to coexist with un-migrated legacy layouts.
+The system reads legacy JSONL planes through migration. A managed
+installation refuses to run next to a legacy plane that no migration
+adopted.
 
-## 4. Event Model and Replay Spine
+## 4. Event Model and Replay
 
-Every semantic mutation is an append-only event under the single active
-envelope schema `memorii.semantic-memory-event.v1` (additive grammar
-extensions extend v1; a version mint requires a non-additive change — the
-owner-ratified rule in `docs/design/semantic_forgetting.md` §6.10).
+Every semantic mutation is an append-only event. The active envelope
+schema is `memorii.semantic-memory-event.v1`. Additive grammar changes
+extend v1. A new version number needs a non-additive change. This rule
+is in `docs/design/semantic_forgetting.md` §6.10.
 
 ```mermaid
 flowchart LR
@@ -141,44 +140,40 @@ flowchart LR
     W --> B2["Event batch 2"]
     B1 --> RS["Replay state (fold)"]
     B2 --> RS
-    CP["Signed checkpoint (keyed)"] -->|"tail replay"| RS
-    GEN["Genesis replay"] -->|"equality"| RS
+    CP["Signed checkpoint"] -->|"tail replay"| RS
+    GEN["Genesis replay"] -->|"equals"| RS
 ```
 
-- **Replay determinism:** folding the persisted batches always equals the
-  persisted replay state — checkpoint-tail replay and genesis replay agree
-  byte-for-byte (pinned by the replay suite, including mixed
-  pre/post-extension history).
-- **Registry-monotone schema history:** the event schema registry admits
-  new record kinds additively; strict decode rejects unknown kinds
-  fail-closed, so an older binary refuses newer records rather than
-  misreading them.
-- **Group-commit primaries:** each transaction group's immutable request
-  and reload are retained in a content-addressed primary record whose
-  identity binds the construction digests — the substrate the golden
-  fixtures and the migration engine build on.
+- Replay is deterministic. Folding the stored batches gives the stored
+  replay state. Checkpoint-tail replay equals genesis replay. The test
+  suite proves this, also for mixed old and new history.
+- The schema registry grows one way. It admits new record kinds
+  additively. Strict decode rejects an unknown kind. An old binary
+  refuses a new record. It does not misread it.
+- Each transaction group keeps an immutable request and reload in a
+  primary record. The record identity binds the construction digests.
+  The golden fixtures and the migration engine build on this substrate.
 
-## 5. Semantic Ingestion Pipeline (Bootstrap Graph V3)
+## 5. Semantic Ingestion (Bootstrap Graph V3)
 
-The default production ingestion path is the bootstrap graph V3 pipeline —
-a sequence of admission-gated, digest-pinned stages
+The default ingestion path is a chain of gated stages
 (`memorii/core/memory_evolution/atomic_store.py`,
 `memorii/core/semantic_ingestion/contracts.py`):
 
 ```mermaid
 flowchart TB
-    E["Provider event"] --> A["Source admission (evidence-only, typed)"]
+    E["Provider event"] --> A["Source admission"]
     A --> HF["Writer handoff (V3 marker)"]
-    HF --> RC["Recovery claim (linearized)"]
-    RC --> GC["Group-commit constructions (plan, epoch, attempts, results)"]
-    GC --> TC["Terminal CAS (one-transaction publication)"]
-    TC --> OUT["Graph records + replay state + projections"]
+    HF --> RC["Recovery claim"]
+    RC --> GC["Group-commit constructions"]
+    GC --> TC["Terminal CAS (one publication)"]
+    TC --> OUT["Graph records, replay state, projections"]
 
-    subgraph GUARD["Fail-closed guards at every stage"]
-        G1["construction-input digest joins"]
-        G2["envelope-family checks (contract vs atomic)"]
-        G3["member manifest digests (tuple-encoded)"]
-        G4["repository-ownership of results"]
+    subgraph GUARD["Fail-closed guards"]
+        G1["Construction digest joins"]
+        G2["Envelope family checks"]
+        G3["Member manifest digests"]
+        G4["Result ownership checks"]
     end
 
     GC -.-> G1
@@ -187,153 +182,141 @@ flowchart TB
     TC -.-> G4
 ```
 
-Everything in this pipeline is content-addressed: intents pin construction
-input digests, members carry payload digests, manifests hash the member
-tuple, and the terminal publication lands under one admission-governed
-compare-and-set. The five golden fixtures under
+Every stage is content-addressed. Intents pin construction input
+digests. Members carry payload digests. Manifests hash the member
+tuple. The terminal publication lands under one admission-governed
+compare-and-set.
+
+Five golden fixtures under
 `memorii/tests/fixtures/semantic_ingestion/current_terminal/` capture a
-full terminal publication (request, reload, intent, retained records) and
-are migrated deterministically whenever the grammar evolves.
+complete terminal publication. When the grammar changes, the migration
+engine re-derives the fixtures. Nobody edits fixture bytes by hand.
 
-## 6. Serving Surfaces and Revocation Gating
+## 6. Serving and Revocation Gating
 
-All host reads flow through `ProviderMemoryService`
+All host reads go through `ProviderMemoryService`
 (`memorii/core/provider/service.py`). Every serving path consults the
-**revoked-identity view** — a typed, composition-injected gate derived
-from the suppression journal plus retention archive, refreshed on journal
-writes so long-lived processes observe new revocations without restart.
+revoked-identity view. The view derives from the journal and the
+retention archive. It refreshes on journal writes. A long-lived
+process sees new revocations without a restart.
 
 ```mermaid
 flowchart TB
-    RV["RevokedIdentityServingGate (refreshing)"]
+    RV["Revoked-identity gate (refreshing)"]
 
     subgraph SERVE["Serving surfaces"]
-        S1["retrieve / prefetch (evolution + canonical channels)"]
-        S2["scoped context / structured facts"]
-        S3["entity matches"]
-        S4["graph observation (cohort streams)"]
-        S5["identity lineage (host-grant audit)"]
-        S6["host record queries (pre-slice, cursor-exact)"]
-        S7["runtime-step evidence"]
-        S8["learned-ontology coverage"]
+        S1["Retrieve and prefetch"]
+        S2["Scoped context and structured facts"]
+        S3["Entity matches"]
+        S4["Graph observation"]
+        S5["Identity lineage"]
+        S6["Host record queries"]
+        S7["Runtime-step evidence"]
+        S8["Ontology coverage"]
     end
 
     RV --> S1 & S2 & S3 & S4 & S5 & S6 & S7 & S8
-
-    FORENSIC["Owner-capability forensic lineage (retained bytes)"]
-    RV -. "excludes revoked" .-> SERVE
-    FORENSIC -. "reads version history" .- RV
 ```
 
-The forgetting flow end to end:
+The forget sequence:
 
 ```mermaid
 sequenceDiagram
-    participant O as Owner (CLI / operator)
+    participant O as Owner (CLI)
     participant G as Governance
-    participant J as Suppression journal
-    participant S as Semantic store
+    participant J as Journal
+    participant S as Store
     participant V as Serving views
 
     O->>G: plan_forget (typed selectors)
-    G-->>O: content-free plan + closure
-    O->>G: apply_forget (under read-only barrier)
-    G->>J: journal entry (revokes immediately)
-    J->>V: serving gates observe the journal
-    O->>G: mode resume → drain
-    G->>S: enforce (directive + tombstones, one CAS)
-    S->>V: revoked identities + tombstoned records
-    Note over V: Every host path excludes revoked content; bytes retained
+    G-->>O: plan with closure
+    O->>G: apply_forget (under barrier)
+    G->>J: journal entry
+    J->>V: serving gates see the journal
+    O->>G: resume mode (drain)
+    G->>S: enforce (directive and tombstones)
+    S->>V: revoked identities
+    Note over V: Host paths exclude revoked content. Bytes stay stored.
 ```
 
-Design references: the full enforcement matrix is
-`docs/design/semantic_forgetting.md` §6.8; the owner forensic surface is
-R16. The parity suite (`tests/integration/test_forget_parity_family.py`)
-walks these surfaces with count arithmetic, cursor-exact pagination, and
-the crash-cut recovery.
+The full enforcement matrix is `docs/design/semantic_forgetting.md`
+§6.8. The parity suite
+(`tests/integration/test_forget_parity_family.py`) walks the surfaces
+with count checks, exact pagination, and crash recovery.
 
 ## 7. Execution and Solver Memory
 
-The execution plane (persistent work state) is deliberately separate from
-the memory-evolution graph:
+The execution plane stays separate from the memory-evolution graph:
 
-- **Execution graph:** tasks, execution nodes and edges, solver runs,
-  justifications, checkpoints — persisted in the partition's runtime
-  tables through `RuntimeStateRepository`
-  (`memorii/core/persistence/runtime_repository.py`), with resume
-  envelopes and revalidation marking for revoked evidence.
-- **Solver graph:** task-local hypotheses and overlays, never mixed into
-  the persistent execution graph.
-- **Loopback sidecar:** a local-only HTTP sidecar exposes read-only
-  runtime state to sandboxed hosts (`memorii/core/harness_state/`), with
-  a typed Python client and a TypeScript client
+- The execution graph keeps tasks, nodes, edges, solver runs,
+  justifications, and checkpoints. It persists through
+  `RuntimeStateRepository` (`memorii/core/persistence/runtime_repository.py`).
+- The solver graph keeps task-local hypotheses and overlays. It never
+  mixes into the execution graph.
+- A loopback sidecar serves read-only runtime state to sandboxed hosts
+  (`memorii/core/harness_state/`). Python and TypeScript clients exist
   (`sdk/typescript`, `@memorii/runtime-client`).
 
 ## 8. Host Integrations
 
-Integration adapters are thin and live at the edges
-(`memorii/integrations/`, `memorii/core/semantic_ingestion/production_capture.py`):
+Adapters are thin and sit at the edges (`memorii/integrations/`,
+`memorii/core/semantic_ingestion/production_capture.py`):
 
 | Host | Path | Status |
 | --- | --- | --- |
-| Hermes | First-party Docker image (`Dockerfile.memorii`), Level-2 sidecar, full hook surface | Early real-world testing |
-| OpenClaw | Docker image (`Dockerfile.openclaw`) + adapter | Blocked on gateway auth for the container journey |
-| Pi | Docker image (`Dockerfile.pi`) + adapter | Journey pending |
-| Any framework | `build_provider_memory_service_from_env(...)` (requires a revoked-identity gate) | Production composition boundary |
-| TypeScript hosts | `@memorii/runtime-client` (loopback sidecar protocol v1) | Shipping |
+| Hermes | Docker image (`Dockerfile.memorii`), Level-2 sidecar | Early real-world tests |
+| OpenClaw | Docker image (`Dockerfile.openclaw`) | Blocked on gateway auth |
+| Pi | Docker image (`Dockerfile.pi`) | Journey pending |
+| Other frameworks | `build_provider_memory_service_from_env(...)` | Production boundary |
+| TypeScript hosts | `@memorii/runtime-client` | Ships |
 
-Framework-neutral contracts never import host SDKs; adapters translate at
-the boundary. Production composition roots are **fail-closed**: the
-provider factory refuses to compose without an explicit revoked-identity
-gate.
+Framework-neutral contracts never import host SDKs. Adapters translate
+at the boundary. The provider factory refuses to compose without an
+explicit revoked-identity gate. This rule fails closed.
 
-## 9. Verification Architecture
+## 9. Verification
 
-Evidence is tiered and never conflated:
+Evidence has tiers. The tiers do not mix:
 
 ```mermaid
 flowchart LR
-    A["Deterministic unit + contract tests"] --> B["Credential-free simulator / dry runs"]
-    B --> C["Revision-bound live statistical gates"]
+    A["Unit and contract tests"] --> B["Simulator and dry runs"]
+    B --> C["Live statistical gates"]
     C --> D["Agent-system evaluation (future)"]
 ```
 
-- **CI (PR Gates, ~58 jobs):** unit shards, semantic-ingestion
-  acceptance, terminal persistence shards, both durable integration jobs
-  (all forget suites registered), observation-ledger activation, package
-  smoke with the installed proof, benchmark contracts, static analysis,
-  ruff/pyright, host-compatibility.
-- **Golden fixtures:** byte-exact captured terminal publications; a
-  deterministic migration engine re-derives them whenever the grammar
-  changes — fixture bytes never hand-edited.
-- **Benchmarks:** typed artifacts with reproducibility fingerprints;
-  fake-oracle runs validate plumbing and are never reported as provider
-  success (see `docs/development/benchmark_certification.md`).
+- CI runs about 58 jobs: unit shards, ingestion acceptance, terminal
+  persistence, two durable integration jobs, activation, package smoke
+  with the installed proof, benchmark contracts, and static analysis.
+- Golden fixtures are byte-exact captures. The migration engine
+  re-derives them when the grammar changes.
+- Benchmarks produce typed artifacts with fingerprints. A fake-oracle
+  run proves plumbing. It never proves live model quality
+  (`docs/development/benchmark_certification.md`).
 
 ## 10. Repository Map
 
 ```
 memorii/                  Python package (memorii 0.1.0, Python >= 3.11)
   core/
-    memory_plane/         typed records, plane service, sqlite/jsonl stores
+    memory_plane/         typed records, plane service, stores
     memory_evolution/     atomic store, replay, graph, tombstones, view
     semantic_ingestion/   contracts, admission, event replay, capture
     provider/             provider service, factory, prefetch
     storage_administration/ control state, governance, revoked view
-    harness_state/        loopback sidecar + runtime reads
+    harness_state/        loopback sidecar, runtime reads
     persistence/          runtime repository, partition factory
   integrations/           hermes, openclaw, pi, authenticated source
   tools/                  memorii-operator, memorii-consume, evals
-  tests/                  unit / integration / acceptance / fixtures
+  tests/                  unit, integration, acceptance, fixtures
 sdk/typescript/           @memorii/runtime-client
 docs/
-  design/                 governing designs (spec, storage, events, ...)
+  design/                 governing designs
   architecture.md         this document
   plans/                  readiness and hardening plans
-  work/                   active WorkPlans and release evidence
+  work/                   WorkPlans and release evidence
 Dockerfile.memorii|openclaw|pi   host images
 ```
 
-For the governing documents' precedence and the full operating rules, see
-`AGENTS.md`. For what is explicitly not yet claimed, see the README's
-Current Limitations.
+For document precedence and operating rules, read `AGENTS.md`. For what
+Memorii does not claim, read the README section "Current Limitations".
