@@ -274,6 +274,7 @@ def test_authenticated_source_wrapper_uses_injected_selected_plane(tmp_path: Pat
     assert authority is not None
     try:
         runtime = build_authenticated_source_runtime(
+        revoked_view=empty_revoked_view(),
             issue_ingress=lambda _submission: None,
             verified_production_host_authority=authority,
             memory_plane=selection.memory_plane,

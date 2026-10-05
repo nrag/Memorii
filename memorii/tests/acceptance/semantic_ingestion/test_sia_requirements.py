@@ -2577,6 +2577,7 @@ def test_production_composition(tmp_path: Path) -> None:
         )
 
     public_runtime = build_authenticated_source_runtime(
+        revoked_view=empty_revoked_view(),
         issue_ingress=lambda _submission: _production_ingress(),
         verified_production_host_authority=_production_authority(),
         memory_plane=MemoryPlaneService(),
