@@ -39,6 +39,9 @@ from memorii.core.provider.models import (
 from memorii.core.provider.prefetch import classify_prefetch_query, format_prefetch_context
 from memorii.core.provider.reranking import ProviderReranker
 from memorii.core.retrieval.planner import RetrievalPlanner
+from memorii.core.storage_administration.revoked_identity_view import (
+    RevokedIdentityServingGate,
+)
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 from memorii.domain.memory_object import MemoryObject
 from memorii.domain.retrieval import (
@@ -66,7 +69,15 @@ class RuntimeEventRouter(Protocol):
 class MemoryPlaneService:
     """Canonical behavior engine for ingestion, staging, and retrieval/reranking."""
 
-    def __init__(self, *, record_store: MemoryPlaneStore | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        record_store: MemoryPlaneStore | None = None,
+        revoked_view: RevokedIdentityServingGate | None = None,
+    ) -> None:
+        # The revoked-identity serving gate (protocol-typed); the canonical
+        # prefetch channel excludes revoked records at assembly time.
+        self._revoked_view = revoked_view
         self._planner = RetrievalPlanner()
         self._reranker = ProviderReranker()
         self._records = record_store if record_store is not None else InMemoryMemoryPlaneStore()
@@ -148,7 +159,42 @@ class MemoryPlaneService:
             if item.visibility == MemoryRecordVisibility.RUNTIME_CONTEXT
             and self._matches_scope(item, query.scope)
             and self._matches_semantics(item, include_candidates=query.include_candidates, freshness=query.freshness)
+            and (self._revoked_view is None or self._revoked_view.keeps_record(item))
         ]
+
+    def query_records_host(
+        self,
+        query: object,
+        *,
+        cursor: str | None = None,
+        now: object = None,
+        cursor_lifetime: object = None,
+    ) -> object:
+        """Host-facing record-query endpoint: revoked identities never serve.
+
+        The only composition that may reach record scan/pagination/lookup
+        from a host; it fails closed when no revoked-identity gate was
+        injected. Internal integrity readers use the unfiltered store API
+        by design (§6.2.2).
+        """
+        if self._revoked_view is None:
+            raise RuntimeError(
+                "revoked_view is required for host record queries"
+            )
+        store = self._record_store()
+        query_records = getattr(store, "query_records", None)
+        if query_records is None:
+            raise RuntimeError("record queries are unavailable on this store")
+        kwargs: dict[str, RevokedIdentityServingGate | object] = {
+            "revoked_view": self._revoked_view
+        }
+        if cursor is not None:
+            kwargs["cursor"] = cursor
+        if now is not None:
+            kwargs["now"] = now
+        if cursor_lifetime is not None:
+            kwargs["cursor_lifetime"] = cursor_lifetime
+        return query_records(query, **kwargs)
 
     def list_records(
         self,
@@ -409,6 +455,7 @@ class MemoryPlaneService:
             and item.domain in planned_domains
             and not item.source_kind.startswith("memory_evolution")
             and self._matches_scope(item, RetrievalScope(session_id=session_id, task_id=task_id, user_id=user_id))
+            and (self._revoked_view is None or self._revoked_view.keeps_record(item))
         }
         provider_candidates = [to_provider_stored_record(item) for item in pool.values()]
         reranked = self._reranker.rerank(

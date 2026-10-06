@@ -111,6 +111,7 @@ if TYPE_CHECKING:
     from memorii.core.memory_evolution.graph_ingestion_time_contracts import (
         TransactionGroupCommitTimeAttestation,
     )
+    from memorii.core.memory_evolution.graph_records import RevocationDirectiveRecord
     from memorii.core.memory_evolution.ingestion_time_clock import IngestionTimeClock
     from memorii.core.memory_evolution.observation_activation_runtime import (
         ActivatedObservationArtifactProofContext,
@@ -119,6 +120,10 @@ if TYPE_CHECKING:
         VerifiedTypedValuePublication,
     )
     from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedTurnPin
+    from memorii.core.semantic_ingestion.contracts import (
+        SemanticArbitrationPolicyBundle,
+    )
+    from memorii.core.semantic_ingestion.event_replay import SemanticMemoryEventBatch
 
     class _GraphV3AuthorityRequest(Protocol):
         """The store's current-authority verifier's deliberately small view."""
@@ -11669,6 +11674,15 @@ class SemanticIngestionAtomicStore:
             raise PreplanningStoreError("semantic replay state differs from genesis reconstruction")
         return persisted
 
+    @staticmethod
+    def _graph_codec_entry(codec_by_kind: dict, record_kind: str):
+        entry = codec_by_kind.get(record_kind)
+        if entry is None:
+            raise PreplanningStoreError(
+                "semantic graph codec manifest is not total over the record-kind union"
+            )
+        return entry
+
     def graph_state_snapshot(self):
         """Project the complete typed graph snapshot from canonical event authority."""
 
@@ -11703,9 +11717,9 @@ class SemanticIngestionAtomicStore:
                 record_id=item.record_id,
                 record_version=item.record_version,
                 payload=item.record,
-                codec_fingerprint=codec_by_kind[item.record_kind].codec_fingerprint,
+                codec_fingerprint=self._graph_codec_entry(codec_by_kind, item.record_kind).codec_fingerprint,
                 persistence_schema_fingerprint=(
-                    codec_by_kind[item.record_kind].payload_schema_fingerprint
+                    self._graph_codec_entry(codec_by_kind, item.record_kind).payload_schema_fingerprint
                 ),
                 record_digest=item.record_digest,
             )
@@ -18075,6 +18089,276 @@ class SemanticIngestionAtomicStore:
             event_batch=event_batch,
         )
 
+    def commit_governance_revocation(
+        self,
+        *,
+        directive: RevocationDirectiveRecord,
+        tombstones: tuple[CanonicalMemoryRecord, ...] = (),
+        tombstone_preconditions: tuple[MemoryPlanePrecondition, ...] = (),
+        policy_bundle: SemanticArbitrationPolicyBundle | None = None,
+        closure_read_set_digest: str | None = None,
+    ) -> SemanticMemoryEventBatch:
+        """Append one owner revocation directive through the full canonical commit.
+
+        The governance-owned entry the forgetting design specifies: the
+        directive is a graph record in a directly constructed delta (the
+        native group-commit precedent — no ingestion terminal, no
+        OperationKind member), and the commit drives every authority the
+        closure reads verify: the event batch, the replay state, the
+        reference ledger, the projection publication, the replay
+        checkpoint, and the replay-authority aggregate, all under one
+        CAS. Tombstone rewrites for the evolution plane ride the same
+        publication.
+        """
+
+        from hashlib import sha256 as _sha256
+
+        from memorii.core.memory_evolution.graph_records import (
+            RevocationDirectiveRecord,
+        )
+        from memorii.core.memory_evolution.reference_integrity import (
+            advance_reference_integrity,
+        )
+        from memorii.core.semantic_ingestion.contracts import (
+            SemanticGraphDelta,
+            contract_digest,
+        )
+        from memorii.core.semantic_ingestion.event_replay import (
+            advance_semantic_replay_authority,
+            build_semantic_memory_event_batch,
+            create_replay_checkpoint,
+            replay_semantic_event_batches,
+        )
+
+        assert isinstance(directive, RevocationDirectiveRecord)
+        transaction_group_id = f"governance:forget:{directive.suppression_id}"
+        operation_fence_id = _sha256(
+            b"memorii.governance-operation-fence.v1\0"
+            + directive.suppression_id.encode()
+        ).hexdigest()
+        source_id = f"governance:{directive.suppression_id[:16]}"
+        committed_at = self.authoritative_commit_timestamp()
+
+        delta_body = {
+            "kind": "semantic_graph_delta",
+            "operation_id": transaction_group_id,
+            "carriers": (),
+            "graph_records": (directive,),
+            "terminal_binding_sets": (),
+        }
+        provisional = SemanticGraphDelta.model_construct(
+            **delta_body, delta_digest="0" * 64
+        )
+        canonical_graph_delta = SemanticGraphDelta.model_validate({
+            **delta_body,
+            "delta_digest": contract_digest(
+                b"memorii.semantic-ingestion.graph-delta.v1",
+                provisional.model_dump(mode="python", exclude={"delta_digest"}),
+            ),
+        })
+        if self._semantic_freeze_guard is not None:
+            self._semantic_freeze_guard(canonical_graph_delta)
+
+        prior_authority = self.semantic_replay_authority()
+        prior_replay_state = prior_authority.graph_state
+        graph_revision_after = _sha256(
+            b"memorii.semantic-ingestion.graph-revision.v1"
+            + b"\0"
+            + prior_replay_state.graph_revision.encode()
+            + b"\0"
+            + canonical_graph_delta.delta_digest.encode()
+        ).hexdigest()
+        writer_binding = self._writers.commit_binding(self._writers.current())
+        self._writers.require_current(writer_binding)
+        canonical_event_batch = build_semantic_memory_event_batch(
+            graph_delta=canonical_graph_delta,
+            prior_state=prior_replay_state,
+            repository_id=_SEMANTIC_EVENT_REPOSITORY_ID,
+            source_id=source_id,
+            transaction_group_id=transaction_group_id,
+            operation_fence_id=operation_fence_id,
+            writer_epoch=writer_binding.expected_writer_epoch,
+            graph_revision_before=prior_replay_state.graph_revision,
+            graph_revision_after=graph_revision_after,
+            timestamp=committed_at,
+            registry=self._event_schema_registry,
+        )
+        next_state = replay_semantic_event_batches(
+            repository_id=_SEMANTIC_EVENT_REPOSITORY_ID,
+            batches=(canonical_event_batch,),
+            registry_history=self._event_schema_registry_history,
+            initial_state=prior_replay_state,
+        )
+        replay_state_record = self._memory_plane.get_record(
+            _semantic_replay_state_id()
+        )
+        reference_integrity_record = self._memory_plane.get_record(
+            _reference_integrity_ledger_id()
+        )
+        if reference_integrity_record is None:
+            # Genesis: bootstrap the active ledger from the next state --
+            # the deterministic first activation, exactly as the normal
+            # semantic bootstrap performs on its first commit.
+            from memorii.core.memory_evolution.reference_integrity import (
+                bootstrap_reference_integrity,
+            )
+
+            next_reference_integrity = bootstrap_reference_integrity(
+                next_state, completed_at=committed_at
+            )
+        else:
+            prior_reference_integrity = self.reference_integrity_snapshot()
+            next_reference_integrity = advance_reference_integrity(
+                prior_reference_integrity,
+                prior_state=prior_replay_state,
+                next_state=next_state,
+                operation_id=transaction_group_id,
+                completed_at=committed_at,
+            )
+        # A genesis installation has neither record yet; both are then
+        # created absent-gated rather than digest-gated.
+
+        authorization = self._writers._authorize_atomic(
+            writer_binding, capability=self._write_capability
+        )
+        has_claim_projections = any(
+            item.record_kind == "claim_assertion"
+            for item in next_state.materialized_records
+        )
+        if not self._projection_history.replay_bindings() and not has_claim_projections:
+            # Nothing has ever been projected and this commit carries no
+            # claim assertions: there is no projection publication to make,
+            # and the aggregate keeps the genesis bindings.
+            prepared_records = ()
+            prepared_preconditions = ()
+            projection_bindings = prior_authority.projection_history_bindings
+            from memorii.core.memory_evolution.conflict_attention import (
+                SemanticConflictReplayBinding,
+            )
+
+            conflict_binding = (
+                prior_authority.semantic_conflict_replay_binding
+                or SemanticConflictReplayBinding.genesis(
+                    _SEMANTIC_EVENT_REPOSITORY_ID
+                )
+            )
+        else:
+            read_set_digest = closure_read_set_digest or _sha256(
+                b"memorii.governance-revocation-read-set.v1\0"
+                + directive.closure_digest.encode()
+            ).hexdigest()
+            (
+                prepared_records,
+                prepared_preconditions,
+                projection_bindings,
+                conflict_binding,
+                _prepared_projection,
+            ) = self._prepare_native_projection_publication(
+                prior_state=prior_replay_state,
+                next_state=next_state,
+                canonical_event_batch=canonical_event_batch,
+                canonical_graph_delta=canonical_graph_delta,
+                pending_request=None,
+                writer_commit_binding=writer_binding,
+                operation_fences_by_transaction_group={},
+                complete_read_set_digest=read_set_digest,
+                base_snapshot_token=prior_replay_state.state_digest,
+                authorization=authorization,
+                policy_bundle=policy_bundle,
+                require_policy_bundle=True,
+            )
+        reconstructed = self._reconstruct_semantic_replay_authority(
+            graph_state=next_state,
+            bindings=(
+                *prior_authority.observation_bindings,
+                *prior_authority.progress_bindings,
+                *prior_authority.artifact_bindings,
+            ),
+        )
+        checkpoint = create_replay_checkpoint(
+            state=next_state,
+            watermark_batch=canonical_event_batch,
+            writer_epoch=writer_binding.expected_writer_epoch,
+            authority=self._checkpoint_resume_authority,
+            created_at=committed_at,
+            reconstructed_replay_authority_digest=reconstructed.authority_digest,
+            projection_history_bindings=projection_bindings,
+            semantic_conflict_replay_binding=conflict_binding,
+        )
+        aggregate = advance_semantic_replay_authority(
+            prior_authority,
+            graph_state=next_state,
+            member_bindings=(),
+            reconstructed_authority_digest=reconstructed.authority_digest,
+            latest_checkpoint=checkpoint,
+            projection_history_bindings=projection_bindings,
+            semantic_conflict_replay_binding=conflict_binding,
+        )
+        directive_index_record = CanonicalMemoryRecord(
+            memory_id=f"semantic_ingestion:revocation:{directive.suppression_id}",
+            domain=MemoryDomain.SEMANTIC,
+            text=f"revoked:{directive.suppression_id}",
+            content={
+                "suppression_id": directive.suppression_id,
+                "plan_digest": directive.scope_note_digest,
+                "revoked_targets": tuple(
+                    {
+                        "coordinate_kind": target.target_kind,
+                        "coordinate_id": _revocation_target_coordinate(target),
+                    }
+                    for target in directive.revoked_targets
+                ),
+            },
+            status=CommitStatus.COMMITTED,
+            source_kind="semantic_ingestion_revocation_directive",
+        )
+        canonical_event_records = (
+            _semantic_event_batch_record(canonical_event_batch, committed_at),
+            _semantic_replay_state_record(next_state, committed_at),
+            _reference_integrity_ledger_record(
+                next_reference_integrity, committed_at
+            ),
+            _semantic_replay_authority_record(aggregate, committed_at),
+            _semantic_checkpoint_lifecycle_record(
+                self._checkpoint_resume_authority, committed_at
+            ),
+            _semantic_registry_history_record(
+                self._event_schema_registry_history, committed_at
+            ),
+            directive_index_record,
+            *tombstones,
+        )
+        canonical_event_preconditions = (
+            RecordAbsentPrecondition(
+                memory_id=canonical_event_records[0].memory_id
+            ),
+            *(
+                (RecordDigestPrecondition(
+                    memory_id=replay_state_record.memory_id,
+                    expected_digest=record_digest(replay_state_record),
+                ),)
+                if replay_state_record is not None
+                else (RecordAbsentPrecondition(memory_id=canonical_event_records[1].memory_id),)
+            ),
+            *(
+                (RecordDigestPrecondition(
+                    memory_id=reference_integrity_record.memory_id,
+                    expected_digest=record_digest(reference_integrity_record),
+                ),)
+                if reference_integrity_record is not None
+                else (RecordAbsentPrecondition(memory_id=canonical_event_records[2].memory_id),)
+            ),
+            RecordAbsentPrecondition(memory_id=directive_index_record.memory_id),
+            *tombstone_preconditions,
+            *prepared_preconditions,
+        )
+        self._memory_plane.conditionally_write_records(
+            canonical_event_records,
+            preconditions=canonical_event_preconditions,
+            authorization=authorization,
+        )
+        return canonical_event_batch
+
     def _prepare_native_projection_publication(
         self,
         *,
@@ -21049,3 +21333,24 @@ def _mint_group_commit_seal_member(
         visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
     )
     return attestation, record
+
+
+def _revocation_target_coordinate(target: object) -> str:
+    """Return the opaque coordinate id of one directive target variant."""
+
+    from memorii.core.memory_evolution.graph_records import (
+        ClaimRevocationTarget,
+        EntityRevocationTarget,
+        RecordRevocationTarget,
+        SourceRevocationTarget,
+    )
+
+    if isinstance(target, EntityRevocationTarget):
+        return target.logical_entity_id
+    if isinstance(target, ClaimRevocationTarget):
+        return target.claim_assertion_id
+    if isinstance(target, SourceRevocationTarget):
+        return target.source_id
+    if isinstance(target, RecordRevocationTarget):
+        return target.record_id
+    raise PreplanningStoreError("revocation directive target variant is unsupported")

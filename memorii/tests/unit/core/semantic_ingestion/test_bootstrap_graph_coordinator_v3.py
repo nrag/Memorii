@@ -15,7 +15,7 @@ from memorii.core.memory_evolution.atomic_store import (
 )
 from memorii.core.memory_evolution.writer_admission import SemanticWriterAdmissionError
 from memorii.core.memory_plane.service import MemoryPlaneService
-from memorii.core.memory_plane.store import JsonlMemoryPlaneStore, _PersistedBatch
+from memorii.core.memory_plane.store import JsonlMemoryPlaneStore, PersistedBatch
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.semantic_ingestion.bootstrap_graph_coordinator import (
@@ -40,6 +40,9 @@ from memorii.core.semantic_ingestion.contracts import (
     ProviderMention,
     ProviderSemanticProposal,
     decode_semantic_contract,
+)
+from memorii.core.storage_administration.revoked_identity_view import (
+    empty_revoked_view,
 )
 from tests.fixtures.semantic_ingestion.bootstrap_graph_v3_fixture import (
     DeterministicBootstrapGraphAuthorityProviderV3,
@@ -351,6 +354,45 @@ def test_coordinator_persists_retry_or_terminal_once(monkeypatch, outcome_kind: 
     if outcome_kind == "completed":
         snapshot_after_commit = atomic.graph_state_snapshot()
         assert snapshot_after_commit == graph_snapshot
+        # The derived-index projection must carry exactly the committed
+        # typed graph state: every entity revision and governed claim in the
+        # snapshot appears as one index row with its canonical digest, and
+        # nothing else does.
+        from memorii.core.memory_evolution.graph_records import EntityRevision
+        from memorii.core.memory_evolution.semantic_index import project_semantic_index
+        from memorii.core.semantic_ingestion.contracts import ClaimAssertion
+
+        projection = project_semantic_index(snapshot_after_commit)
+        expected_entities = [
+            record
+            for record in snapshot_after_commit.records
+            if isinstance(record.payload, EntityRevision)
+        ]
+        expected_claims = [
+            record
+            for record in snapshot_after_commit.records
+            if isinstance(record.payload, ClaimAssertion)
+        ]
+        assert len(projection.entities) == len(expected_entities)
+        assert len(projection.claims) == len(expected_claims)
+        assert {row.record_digest for row in projection.entities} == {
+            record.record_digest for record in expected_entities
+        }
+        assert {row.record_digest for row in projection.claims} == {
+            record.record_digest for record in expected_claims
+        }
+        for row, record in zip(
+            sorted(projection.claims, key=lambda item: item.record_id),
+            sorted(expected_claims, key=lambda item: item.record_id),
+            strict=True,
+        ):
+            claim = record.payload
+            assert isinstance(claim, ClaimAssertion)
+            assert row.claim_assertion_id == claim.claim_assertion_id
+            if claim.claim_identity is not None:
+                assert row.subject_entity_id == (
+                    claim.claim_identity.subject_assertion_ref.logical_entity_id_at_assertion
+                )
     repeat = coordinator.coordinate(request=request, transition=transition)
     assert repeat == result
     if outcome_kind == "completed":
@@ -769,7 +811,7 @@ def test_terminal_request_reload_rejects_corrupt_jsonl_closure_after_reopen(tmp_
             f"{sha256(member['member_id'].encode('utf-8')).hexdigest()}"
         )
         batches = [
-            _PersistedBatch.model_validate_json(line)
+            PersistedBatch.model_validate_json(line)
             for line in (storage / "memory_records.jsonl").read_text(encoding="utf-8").splitlines()
         ]
         rewritten = []
@@ -785,7 +827,7 @@ def test_terminal_request_reload_rejects_corrupt_jsonl_closure_after_reopen(tmp_
                     substitute_member=substitute,
                 )) is not None
             )
-            rewritten.append(_PersistedBatch.create(
+            rewritten.append(PersistedBatch.create(
                 revision=batch.revision,
                 data_revision=batch.data_revision,
                 records=records,
@@ -1104,7 +1146,7 @@ def test_every_trigger_family_stages_seals_and_leases_prepared_bytes(root, monke
     from memorii.integrations.hermes_provider import HermesMemoryProvider
 
     service = _production_recovery_service()
-    hermes = HermesMemoryProvider(service=service)
+    hermes = HermesMemoryProvider(service=service, revoked_view=empty_revoked_view())
     ingress = _host_ingress().model_copy(
         update={"provider_identity": "scenario-test-host"}
     )

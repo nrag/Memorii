@@ -1,0 +1,58 @@
+# Release Conformance
+
+- Parent WorkPlan: [implementation index](../implementation.plan.md)
+- Work type: implementation milestone packet
+- Delivery fidelity: Level 3, bounded slice only
+- Status: active (sub-slice 2 of the generated chain landed: deterministic OpenAPI schema 99e334e2; package matrix, timing manifests, exact-release gates and CI homes remain)
+- Requirements: DUR-01 through DUR-18 (complete aggregate)
+- Dependencies: all earlier packets
+- Baseline revision: bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8 (planning snapshot)
+- Implementation base: 6f5e38b2; sub-slice head 99e334e2
+
+## Observable Acceptance
+
+A clean exact candidate installs on supported Linux/macOS, passes all real-root, process/crash/migration/host/operations families, publishes accurate runbooks/capacity evidence and receives whole-branch approval.
+
+## Owners, Contracts And Expected Files
+
+Under memorii/memorii/: CI workflows; package manifests/resources; generated OpenAPI/TS/tool artifacts; tests/ci ownership/timing; runbooks/current docs; all changed production owners.
+
+Installed-wheel/sidecar/SDK identities; complete field-aware identity mutations; generated cardinality/byte parity and reference-reducer evidence; static/unit/integration/package/platform/actual-host aggregate; exact SHA/tree/package fingerprints and separate external certification.
+
+Exact new symbols, payload/source-kind schemas, SQL catalogs, entrypoints and generated artifacts must match [identity ledger](../identity-and-changes.md) and approved design; expand the actual inventory before creating additional identifiers. [Bindings](../production_entrypoint_bindings.md) supplies current precursor -> proposed callsite/authority -> proof. Zero proposed callers cannot close this packet.
+
+## Compatibility, Migration, Rollout And Rollback
+
+Only explicit initialized/selected backend roots serve managed traffic. Preserve original domain APIs unless design declares the version boundary. No generic runtime grant, JSONL fallback, partial publication or speculative semantic truth. Relevant generation changes use exact old/new recovery and current control authority. Failed publication/validation leaves prior verified state; post-new-write downgrade requires tested compatibility or read_only forward repair. Release exposure stays limited until all allocated parent requirements close. Domain-specific obligations are in the contract above and [validation](../validation.md).
+
+## Exact Validation Commands
+
+Cwd memorii/. Interpreter is the CI-selected Python 3.11 or 3.12 environment from [gates](../gates.md), with editable `.[local,dev]` dependencies for local code tests. These **planned** new paths are not present/executed yet; create under linked approved test architecture, never add empty files just to make commands pass.
+
+```bash
+python -W error -m pytest tests/unit/core/test_runtime_release_contract.py -p no:cacheprovider
+python -W error -m pytest tests/integration/test_durable_memory_release_acceptance.py -p no:cacheprovider
+python -m ruff check memorii tests
+python -m memorii.tools.identity_hygiene --root .. --allowlist ../.agents/identity_hygiene_allowlist.json
+pyright --pythonpath "$(python -c 'import sys; print(sys.executable)')"
+```
+
+Run existing owner regressions mapped in validation.md, then every applicable live-workflow gate once on the coherent candidate (do not replace broad required coverage with these focused commands). Additional same-family tests/files are inventoried before writing. Subprocess/package/host/migration matrices remain in explicit slower tiers. Capture cwd, interpreter/dependency/SQLite versions, warnings, environment, command, exit code, logs, exact base/head and dirty-tree status. Required external/OS cases cannot be inferred from local success.
+
+## Proof, Maturity And Completion
+
+Acceptance requires the observable journey plus applicable positive/negative/boundary/retry/concurrency/crash/revocation/compatibility cases in validation.md. Failures must be asserted at real public roots, with no leaked data or partial durable state. Evidence target: implemented and locally verified for the bounded slice; CI-enforced only with actual run evidence, independently reproduced only for a separately authored reducer, operationally verified only for pinned real host/platform/restore journeys. Present maturity: specified only; historical design probes remain separate.
+
+At candidate freeze update live diff, identities, generated authority descendants, root callsites/arguments/caller counts and gates; run spec/correctness/test reviewers once for the coherent milestone. Reconcile all findings before sole-writer remediation. Record exact revision and `remaining_validated_p1_p2: []` only after proof, never prefill it. Any required missing external proof keeps that acceptance open. Parent requirements remain partial until [coverage](../coverage.md) aggregates all allocated packets and release gates.
+
+## Non-Goals
+
+No weakening policies/thresholds/coverage to pass. Fake-oracle is plumbing only. Existing component live certification stays separately required under governing policy; comparative agent-benefit/publication planning remains deferred.
+
+## Progress, Review And Closure
+
+Sub-slice 1 (2026-09-30, commit 6f5e38b2): compatibility protocol fixtures closed in the additional-harnesses packet (spec 22.2 obligation). Sub-slice 2 (2026-09-30, commit 99e334e2): memorii-runtime-schema — the deterministic OpenAPI 3.1 document for the runtime sidecar derived from the owning typed models (SidecarRequest/HarnessStateEnvelope/SidecarError), closed schemas, loopback-only server, bearer security, byte-stable sorted output for digest pinning; registered entry point; tests green.
+
+Remaining in this packet: TypeScript SDK (external prerequisite: Node/npm pin from the owner); CI homes for the integration suites and new gates (linked testing WorkPlan owns the workflow edits); shard timing-manifest refresh; installed-package matrix (wheel outside checkout, both OSes); Linux/macOS platform evidence; exact-release gate aggregation and revision-bound approval evidence; final whole-branch review.
+
+Not started. No production/test edits, validation execution or implementation review exists for this packet. No implementation base/head or approval is claimed. The index owns the single global next action.

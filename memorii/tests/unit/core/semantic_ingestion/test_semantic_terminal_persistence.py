@@ -141,7 +141,7 @@ from memorii.core.memory_plane.store import (
     JsonlMemoryPlaneStore,
     MemoryPlaneRevisionConflictError,
     MemoryPlaneStore,
-    _PersistedBatch,
+    PersistedBatch,
     record_digest,
 )
 from memorii.core.provider.service import ProviderMemoryService
@@ -173,6 +173,9 @@ from memorii.core.semantic_ingestion.event_replay import (
     replay_semantic_event_batches,
 )
 from memorii.core.semantic_ingestion.persistence import SemanticTerminalPersistenceService
+from memorii.core.storage_administration.revoked_identity_view import (
+    empty_revoked_view,
+)
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 from planning_serialized_oracle import materialize_serialized
 from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import (
@@ -937,7 +940,7 @@ def _rewrite_jsonl_snapshot(
     data_revision = int(any(record.visibility.value == "runtime_context" for record in records.values()))
     backend._replace_batches(
         [
-            _PersistedBatch.create(
+            PersistedBatch.create(
                 revision=1,
                 data_revision=data_revision,
                 records=tuple(records.values()),
@@ -4413,6 +4416,7 @@ def test_hermes_real_store_audit_views_do_not_leak_disjoint_scope_history(
     monkeypatch.setattr(store, "lineage_audit_scope_event_ids", count_scope_event_ids)
     resolver = Resolver()
     provider = HermesMemoryProvider(
+        revoked_view=empty_revoked_view(),
         service=ProviderMemoryService(
             identity_lineage_audit_reader=AtomicStoreScopedIdentityLineageAuditReader(
                 store,
@@ -8489,7 +8493,7 @@ def test_filesystem_reopen_rejects_nonbijective_clarification_recovery_closure(
             else:
                 records.append(record)
         rewritten.append(
-            _PersistedBatch.create(
+            PersistedBatch.create(
                 revision=batch.revision,
                 data_revision=batch.data_revision,
                 records=tuple(records),
@@ -8497,7 +8501,7 @@ def test_filesystem_reopen_rejects_nonbijective_clarification_recovery_closure(
         )
     if extra is not None:
         last = rewritten[-1]
-        rewritten[-1] = _PersistedBatch.create(
+        rewritten[-1] = PersistedBatch.create(
             revision=last.revision,
             data_revision=last.data_revision,
             records=(*last.records, extra),
@@ -9361,7 +9365,7 @@ def test_filesystem_reopen_rejects_malformed_terminal_artifact_batch(tmp_path) -
                 changed = True
             records.append(record)
         rewritten.append(
-            _PersistedBatch.create(
+            PersistedBatch.create(
                 revision=batch.revision,
                 data_revision=batch.data_revision,
                 records=tuple(records),
@@ -9439,7 +9443,7 @@ def test_jsonl_reopen_rejects_replay_authority_deletion_and_substitution(
                 content["member"] = member
             records.append(record.model_copy(update={"content": content}))
         rewritten.append(
-            _PersistedBatch.create(
+            PersistedBatch.create(
                 revision=batch.revision,
                 data_revision=batch.data_revision,
                 records=tuple(records),

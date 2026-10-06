@@ -16,7 +16,7 @@ from memorii.core.filesystem_storage.bundle import (
 from memorii.core.memory_evolution.ingestion_contracts import decode_typed_value
 from memorii.core.memory_plane import JsonlMemoryPlaneStore, MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
-from memorii.core.memory_plane.store import _PersistedBatch
+from memorii.core.memory_plane.store import PersistedBatch
 from memorii.core.provider.factory import (
     build_provider_memory_service_from_env as _production_factory_provider,
 )
@@ -39,6 +39,9 @@ from memorii.core.semantic_ingestion.contracts import (
     decode_semantic_contract,
 )
 from memorii.core.semantic_ingestion.event_replay import SemanticEventReplayError
+from memorii.core.storage_administration.revoked_identity_view import (
+    empty_revoked_view,
+)
 from memorii.domain.enums import CommitStatus, MemoryDomain
 from memorii.integrations.hermes_provider import (
     HermesMemoryProvider as _ProductionHermesMemoryProvider,
@@ -82,7 +85,7 @@ def test_all_normal_roots_compose_same_graph_host_bundle(
     if root == "direct":
         service = provider_service(**common)
     elif root == "factory":
-        service = build_provider_memory_service_from_env(**common)
+        service = build_provider_memory_service_from_env(**common, revoked_view=empty_revoked_view())
     elif root == "filesystem":
         service = build_filesystem_provider(tmp_path / "memorii", **common)
     else:
@@ -112,7 +115,7 @@ def test_all_normal_roots_install_builtin_graph_host_without_injection(
     if root == "direct":
         service = provider_service(**common)
     elif root == "factory":
-        service = build_provider_memory_service_from_env(**common)
+        service = build_provider_memory_service_from_env(**common, revoked_view=empty_revoked_view())
     elif root == "filesystem":
         service = build_filesystem_provider(tmp_path / "builtin-graph", **common)
     else:
@@ -378,7 +381,7 @@ def test_all_normal_roots_execute_builtin_native_graph_path_without_injection(
     if root == "direct":
         service = provider_service(**common)
     elif root == "factory":
-        service = build_provider_memory_service_from_env(**common)
+        service = build_provider_memory_service_from_env(**common, revoked_view=empty_revoked_view())
     elif root == "filesystem":
         service = build_filesystem_provider(tmp_path / "builtin-native-graph", **common)
     else:
@@ -608,7 +611,7 @@ def test_all_normal_roots_execute_graph_terminal_once(
     if root == "direct":
         service = provider_service(**common)
     elif root == "factory":
-        service = build_provider_memory_service_from_env(**common)
+        service = build_provider_memory_service_from_env(**common, revoked_view=empty_revoked_view())
     elif root == "filesystem":
         service = build_filesystem_provider(tmp_path / "memorii-executable", **common)
     else:
@@ -776,7 +779,7 @@ def test_filesystem_root_rejects_persisted_source_observation_member_corruption(
         for record in plane.list_records()
     )
     backend._replace_batches([
-        _PersistedBatch.create(
+        PersistedBatch.create(
             revision=1,
             data_revision=int(any(
                 record.visibility.value == "runtime_context" for record in records
@@ -924,6 +927,7 @@ def test_public_root_scope_revocation_immediately_before_group_cas_is_durable(
             ), lane_calls
         if root == "factory":
             return build_provider_memory_service_from_env(
+                revoked_view=empty_revoked_view(),
                 memory_plane=memory_plane, **common
             ), lane_calls
         if root == "hermes":
@@ -1024,7 +1028,7 @@ def test_unrelated_foreign_write_does_not_conflict_with_group_cas(
             **common,
         )
     elif root == "factory":
-        service = build_provider_memory_service_from_env(memory_plane=memory_plane, **common)
+        service = build_provider_memory_service_from_env(memory_plane=memory_plane, **common, revoked_view=empty_revoked_view())
     elif root == "hermes":
         service = hermes_provider(
             service=provider_service(memory_plane=memory_plane, **common)
@@ -1409,7 +1413,10 @@ def test_direct_root_leaves_multi_fact_source_effect_free() -> None:
         ),
         abstained=False,
     )
-    normalization, _lane_calls = _v3_normalization_host_builder(proposal=proposal)
+    normalization, _lane_calls = _v3_normalization_host_builder(
+        proposal=proposal,
+        source_text="Atlas owns Bob. Carol owns Dan. Erin owns Finn.",
+    )
     conflict_calls: list[str] = []
     successful_calls: list[str] = []
     service = provider_service(

@@ -45,6 +45,9 @@ from memorii.core.semantic_ingestion.production_authority import (
     build_installed_capability_monitoring_authorities,
 )
 from memorii.core.semantic_ingestion.source_normalization_host import SourceNormalizationHostBundleBuilder
+from memorii.core.storage_administration.revoked_identity_view import (
+    RevokedIdentityServingGate,
+)
 from memorii.core.work_state.service import WorkStateService
 
 _DEFAULT_DECISION_STATE_SERVICE = object()
@@ -84,8 +87,16 @@ def build_provider_memory_service_from_env(
     installed_capability_monitoring_configuration: object | None = None,
     ontology_observer_capability: OntologyObserverCapability | None = None,
     ontology_observer_authorizer: Callable[[AuthenticatedIngressContext, ObserverBindingIdentity], bool] | None = None,
+    revoked_view: RevokedIdentityServingGate,
 ) -> ProviderMemoryService:
-    """Build the source-only governed-source admission provider composition without ambient model dependencies."""
+    """Build the source-only governed-source admission provider composition without ambient model dependencies.
+
+    The revoked-identity serving gate is required: composition roots must
+    derive it from the installation control root (RefreshingRevokedIdentityView)
+    or state an explicit empty view for ephemeral planes. Absence is a
+    composition error that fails closed; it never silently means
+    "nothing revoked".
+    """
 
     audit_values = (
         identity_lineage_atomic_store,
@@ -131,6 +142,7 @@ def build_provider_memory_service_from_env(
         )
         audit_reader = AtomicStoreScopedIdentityLineageAuditReader(
             identity_lineage_atomic_store,
+            revoked_view=revoked_view,
             tenant_partition_id=identity_lineage_tenant_partition_id,
             scope_revalidator=lambda scope, server_time: (
                 audit_authorizer.revalidate_identity_lineage_audit_scope(
@@ -163,6 +175,7 @@ def build_provider_memory_service_from_env(
         verified_capability_monitoring_authorities=verified_capability_monitoring_authorities,
         ontology_observer_capability=ontology_observer_capability,
         ontology_observer_authorizer=ontology_observer_authorizer,
+        revoked_view=revoked_view,
     )
 
 

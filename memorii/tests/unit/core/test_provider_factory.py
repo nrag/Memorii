@@ -4,6 +4,9 @@ from itertools import combinations
 
 import pytest
 from memorii.core.provider import factory as provider_factory
+from memorii.core.storage_administration.revoked_identity_view import (
+    empty_revoked_view,
+)
 from memorii.core.work_state.service import WorkStateService
 
 
@@ -11,13 +14,16 @@ def test_production_factory_constructs_only_source_admission_dependencies() -> N
     work_states = WorkStateService()
     service = provider_factory.build_provider_memory_service_from_env(
         work_state_service=work_states,
+        revoked_view=empty_revoked_view(),
     )
     assert service._memory_evolution_service is None
     assert not hasattr(service, "_evolution_coordinator")
 
 
 def test_production_factory_exposes_no_reconciliation_path() -> None:
-    service = provider_factory.build_provider_memory_service_from_env()
+    service = provider_factory.build_provider_memory_service_from_env(
+        revoked_view=empty_revoked_view()
+    )
     assert service.reconcile_memory_evolution() == []
 
 
@@ -57,5 +63,6 @@ def test_identity_lineage_factory_rejects_every_partial_dependency_set(
 
     with pytest.raises(ValueError, match="audit composition is incomplete"):
         provider_factory.build_provider_memory_service_from_env(
-            **{key: value for key, value in values.items() if key in present}
+            revoked_view=empty_revoked_view(),
+            **{key: value for key, value in values.items() if key in present},
         )

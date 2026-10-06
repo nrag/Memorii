@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.PredicateTrustRule.v1","implementation_source_digest":"06f662fba24161bb83d3c8615d455d199fd7cc7eb7da23a832bd45dbfcbf3190","role":"decoder","schema_id":"PredicateTrustRule","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.PredicateTrustRule.v1","implementation_source_digest":"5c0662ff92b4cf1f26425bad745d07218098899dd009817d2c73d763c3cb199b","role":"decoder","schema_id":"PredicateTrustRule","schema_version":"1","typed_root_kind":"model"}

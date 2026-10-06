@@ -354,6 +354,7 @@ _NEVER_ELIGIBLE_LIFECYCLE_STATES = frozenset(
         RecordLifecycleState.CANDIDATE,
         RecordLifecycleState.INVALIDATED,
         RecordLifecycleState.ARCHIVED,
+        RecordLifecycleState.REVOKED,
         RecordLifecycleState.UNKNOWN,
     }
 )

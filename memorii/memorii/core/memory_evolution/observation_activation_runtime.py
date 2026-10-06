@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import Literal
@@ -68,6 +69,7 @@ from memorii.core.memory_evolution.observation_ledger_contracts import (
 )
 from memorii.core.memory_evolution.observation_replay_contracts import ObservationReplayState
 from memorii.core.memory_evolution.typed_value_artifact_integrity import (
+    IntegrityCheckedTypedValueArtifact,
     TrustedTypedValueArtifactVerificationKey,
     registered_self_digest_preimage,
     registered_signature_only_message,
@@ -283,6 +285,50 @@ DEFAULT_OBSERVATION_ARTIFACT_LIMITS = ProtectedTypedValueArtifactReaderLimits(
 )
 _LIMITS = DEFAULT_OBSERVATION_ARTIFACT_LIMITS
 
+# Process-lifetime verification proofs for the registered-artifact hot paths
+# (ledger replay, governed-write admission, emission self-check). This hoists
+# the per-runtime proof discipline of ObservationActivationRuntime.selected_value
+# to module scope: the key binds the artifact bytes and the complete publication
+# chain, so any input or authority change misses and re-verifies from scratch.
+# Caller schema/binding/type/publication checks run unconditionally on every
+# hit, so a hit can never widen what a caller accepts. Verifier-dependent
+# outcomes (an explicit verification key) and non-default reader limits are
+# never cached. Bounded LRU; failures are not cached.
+_PROOF_CACHE_ENTRIES = 4096
+_PROOF_CACHE: OrderedDict[tuple[bytes, tuple[str, ...]], IntegrityCheckedTypedValueArtifact] = OrderedDict()
+
+
+def _verify_registered_artifact_proofed(
+    raw: bytes,
+    *,
+    history: ProtectedTypedValueRegistryHistory,
+    limits: ProtectedTypedValueArtifactReaderLimits,
+    verification_key: TrustedTypedValueArtifactVerificationKey | None,
+) -> IntegrityCheckedTypedValueArtifact:
+    cacheable = verification_key is None and limits is _LIMITS
+    key = (raw, _history_publication_digests(history))
+    if cacheable:
+        cached = _PROOF_CACHE.get(key)
+        if cached is not None:
+            _PROOF_CACHE.move_to_end(key)
+            return cached
+    checked = verify_protected_typed_value_artifact_integrity(
+        raw, history=history, route=TypedValueRegistryReadRoute.INTERNAL_REPLAY,
+        limits=limits, verification_key=verification_key,
+    )
+    if cacheable:
+        _PROOF_CACHE[key] = checked
+        _PROOF_CACHE.move_to_end(key)
+        while len(_PROOF_CACHE) > _PROOF_CACHE_ENTRIES:
+            _PROOF_CACHE.popitem(last=False)
+    return checked
+
+
+def _history_publication_digests(history: ProtectedTypedValueRegistryHistory) -> tuple[str, ...]:
+    return tuple(
+        item.publication_manifest.publication_digest for item in history.publications
+    )
+
 
 def legacy_terminal_inventory_digest(snapshot: tuple[CanonicalMemoryRecord, ...]) -> str:
     """Commit the exact retired control/root set, excluding locator aliases."""
@@ -343,9 +389,8 @@ def validate_registered_artifact(
     verification_key: TrustedTypedValueArtifactVerificationKey | None = None,
     publication: VerifiedTypedValuePublication | None = None,
 ) -> BaseModel:
-    checked = verify_protected_typed_value_artifact_integrity(
-        raw, history=history, route=TypedValueRegistryReadRoute.INTERNAL_REPLAY, limits=limits,
-        verification_key=verification_key,
+    checked = _verify_registered_artifact_proofed(
+        raw, history=history, limits=limits, verification_key=verification_key,
     )
     value = checked.materialization.materialized.value
     expected = _ROOT_TYPES.get(schema_id)
@@ -484,8 +529,8 @@ def emit_registered_observation_artifact(
     selected = _entry(history, schema_id, publication)
     binding = _binding(selected)
     raw = _registered_artifact(value, schema_id, history, publication, limits)
-    checked = verify_protected_typed_value_artifact_integrity(
-        raw, history=history, route=TypedValueRegistryReadRoute.INTERNAL_REPLAY, limits=limits,
+    checked = _verify_registered_artifact_proofed(
+        raw, history=history, limits=limits, verification_key=None,
     )
     if checked.materialization.checked_artifact.binding != binding or type(checked.materialization.materialized.value) is not expected:
         raise ObservationActivationRuntimeError("registered observation artifact publication is substituted")

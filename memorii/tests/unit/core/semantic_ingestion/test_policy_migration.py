@@ -26,7 +26,7 @@ from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import (
     JsonlMemoryPlaneStore,
     MemoryPlaneRevisionConflictError,
-    _PersistedBatch,
+    PersistedBatch,
 )
 from memorii.core.semantic_ingestion.authorization import (
     SemanticAuthorizationAuthorityRepository,
@@ -215,7 +215,7 @@ def _substitute_persisted_authority(
                 changed = True
             records.append(record)
         rewritten.append(
-            _PersistedBatch.create(
+            PersistedBatch.create(
                 revision=batch.revision,
                 data_revision=batch.data_revision,
                 records=tuple(records),

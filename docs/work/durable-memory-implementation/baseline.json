@@ -1,0 +1,32 @@
+{
+  "head": "bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8",
+  "branch": "codex/learned-ontology-implementation",
+  "main_merge_base": "5716ba1143a124f98df4c9701f1420a4ee71b0f2",
+  "design_sha256": "22e29f90ab90fa9b67b489d8f293b4a9ecbe4e5bf1dad7c0d6d3f2a7697706ad",
+  "input_hashes": {
+    "AGENTS.md": "359300032e28685832013163136389184b5fc0d51eada5f325610cf1f1428e8e",
+    ".agents/PLANS.md": "fdb23e0e5a26cd2be178bd237bdbf3b14378dc35aa2e3c84dcae778b89992f67",
+    ".agents/skills/implement-design/SKILL.md": "b93a15ae8a4931c5b248e6e4c5a581e954fcf354fa49e8ffd87ac52d4d7915e0",
+    "docs/design/durable_execution_and_solver_runtime.md": "22e29f90ab90fa9b67b489d8f293b4a9ecbe4e5bf1dad7c0d6d3f2a7697706ad",
+    "docs/design/memorii_spec.md": "5d24a08e7ca048c85d75aef7eb8eb264e9a869cadcd0ebd5d07d7e368f1d6cc5",
+    "docs/design/memorii_storage_details.md": "9ce9b03722be2344d93847f425a04a9a147369c900a32b1ceed21bb34ffb1f37",
+    "docs/design/event_model.md": "9ce93e4a826f3e47b2e41fa06d2ec1e40bb0cad2475fa0527d9bb2c9ab3acdec",
+    "docs/IMPLEMENTATION_RULES.md": "c962791b8ba6e3dcf7f59778151299f74821a1a152bc387a2e78a6fad7e41dea",
+    "docs/design/learned_ontology.md": "e14eb84533f285af0db3017b7f00192959ad152dab555b62c78cb579262dd533",
+    "docs/design/learned_ontology_hermes_and_legacy_addendum.md": "ff978554b15f64b8e41684a652e8f5ccb4f57854d217a7b924c7f27e2c94e80f",
+    "docs/development/static_tooling.md": "b6870b6fb0a89d10f9ae33355bed40506ffef81c7444a01a5e281806fe6b9bd8",
+    "docs/development/benchmark_certification.md": "1531a904846f28ff485b2cc77bdf388fc06c57cff2768faf7b4a5e9ba87327b5",
+    "memorii/pyproject.toml": "2f937c927bef0ae4093b3c74fe92582fdd4f68ede7a53a2deec5b4bb126303b5",
+    ".agents/identity_hygiene_allowlist.json": "0a4e6719c409b894d28c65f609fca0701ea82170dc985fef34c7422321681e9b"
+  },
+  "local_runtime": {
+    "python": "3.12.14",
+    "sqlite": "3.53.4",
+    "pydantic": "2.13.4",
+    "pytest": "9.0.3",
+    "ruff": "0.15.21",
+    "pyright": "1.1.411",
+    "cryptography": "50.0.1"
+  },
+  "status": "planning_snapshot_not_release_evidence"
+}

@@ -117,7 +117,7 @@ from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import (
     InMemoryMemoryPlaneStore,
     JsonlMemoryPlaneStore,
-    _PersistedBatch,
+    PersistedBatch,
     record_digest,
 )
 from memorii.core.provider.factory import build_provider_memory_service_from_env
@@ -218,6 +218,9 @@ from memorii.core.semantic_ingestion.source_preparation import (
     AtomicStorePreparedSourceRepository,
     InMemoryPreparedSourceRepository,
     TextPreparationService,
+)
+from memorii.core.storage_administration.revoked_identity_view import (
+    empty_revoked_view,
 )
 from memorii.domain.enums import (
     CommitStatus,
@@ -882,9 +885,18 @@ class _UnusedNormalizationQuoteAuthority:
 
 
 class _SingleTextQuoteAuthority:
+    """Resolve quotes against exactly one known source text.
+
+    The builder states the text; multi-fact fixtures must pass their own
+    turn content or quote resolution fail-closes (by design).
+    """
+
+    def __init__(self, text: str = "Atlas owner is Bob.") -> None:
+        self._text = text
+
     def resolve(self, quote, context, owned):
         del owned
-        text = "Atlas owner is Bob."
+        text = self._text
         start = text.find(quote, context.projection_span.start, context.projection_span.end)
         if start < 0 or text.find(quote, start + 1, context.projection_span.end) >= 0:
             raise ValueError("fixture quote must resolve exactly once")
@@ -899,7 +911,7 @@ class _SingleTextQuoteAuthority:
         )
 
     def verify_quote(self, *, projection_digest, quote, span):
-        if projection_digest != span.projection_digest or "Atlas owner is Bob."[span.projection_span.start:span.projection_span.end] != quote:
+        if projection_digest != span.projection_digest or self._text[span.projection_span.start:span.projection_span.end] != quote:
             raise ValueError("fixture quote is not exact")
 
 
@@ -907,10 +919,15 @@ def _v3_normalization_host_builder(
     *,
     proposal: ProviderSemanticProposal | None = None,
     proposal_ref: list[ProviderSemanticProposal] | None = None,
+    source_text: str = "Atlas owner is Bob.",
 ) -> tuple[SourceNormalizationHostBundleBuilder, dict[str, int]]:
     """Build a complete V3-only host bundle for the ordinary provider root."""
     proposal_value = proposal or ProviderSemanticProposal(abstained=True)
-    quotes = _UnusedNormalizationQuoteAuthority() if proposal is None else _SingleTextQuoteAuthority()
+    quotes = (
+        _UnusedNormalizationQuoteAuthority()
+        if proposal is None
+        else _SingleTextQuoteAuthority(source_text)
+    )
     calls = {"proposal": 0, "stanza": 0, "spacy": 0, "predicate": 0, "temporal": 0}
 
     def selected_proposal() -> ProviderSemanticProposal:
@@ -1260,14 +1277,14 @@ def test_builtin_local_capability_wires_provider_hermes_and_filesystem_without_e
             now_provider=lambda: TEST_NOW,
             host_bootstrap_capability=_built_in_local_capability(),
             host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
-        )
-    )
+        ), revoked_view=empty_revoked_view())
     filesystem = build_filesystem_provider(
         tmp_path / "builtin-local",
         host_bootstrap_capability=_built_in_local_capability(),
         host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
     )
     factory = build_provider_memory_service_from_env(
+        revoked_view=empty_revoked_view(),
         memory_plane=MemoryPlaneService(),
         now_provider=lambda: TEST_NOW,
         host_bootstrap_capability=_built_in_local_capability(),
@@ -1319,6 +1336,7 @@ def test_configured_public_roots_construct_the_real_normalization_execution_owne
         source_normalization_host_bundle_builder=_v3_normalization_host_builder()[0],
     )
     factory = build_provider_memory_service_from_env(
+        revoked_view=empty_revoked_view(),
         memory_plane=MemoryPlaneService(),
         now_provider=lambda: TEST_NOW,
         host_bootstrap_capability=_built_in_local_capability(),
@@ -1333,6 +1351,7 @@ def test_configured_public_roots_construct_the_real_normalization_execution_owne
         source_normalization_host_bundle_builder=_v3_normalization_host_builder()[0],
     )
     hermes = HermesMemoryProvider(
+        revoked_view=empty_revoked_view(),
         host_bootstrap_capability=_built_in_local_capability(),
         host_bootstrap_material_verifier=verifier,
         source_normalization_host_bundle_builder=_v3_normalization_host_builder()[0],
@@ -2089,7 +2108,7 @@ def test_framework_neutral_and_hermes_adapters_share_coverage_contract() -> None
         adapter=AuthenticatedSourceAdapter(service),
         issue_ingress=lambda _submission: _host_ingress(),
     )
-    hermes = HermesMemoryProvider(service)
+    hermes = HermesMemoryProvider(service, revoked_view=empty_revoked_view())
     ingress = _host_ingress()
 
     generic.submit(
@@ -3564,7 +3583,7 @@ def test_builtin_capability_trust_domains_cannot_cross_any_default_root(tmp_path
         ProviderMemoryService(
             memory_plane=MemoryPlaneService(), host_bootstrap_capability=scenario
         ),
-        HermesMemoryProvider(host_bootstrap_capability=scenario)._service,
+        HermesMemoryProvider(host_bootstrap_capability=scenario, revoked_view=empty_revoked_view())._service,
         build_filesystem_provider(
             tmp_path / "scenario-domain-default-filesystem",
             host_bootstrap_capability=scenario,
@@ -3675,8 +3694,7 @@ def test_hermes_empty_turn_content_is_evidence_only_without_semantic_preparation
                 host_bootstrap_material_verifier=(
                     DeterministicTestHostBootstrapMaterialVerifier()
                 ),
-            )
-        )
+            ), revoked_view=empty_revoked_view())
 
     result = hermes.sync_turn(
         user_content,
@@ -3801,7 +3819,7 @@ def _filesystem_hermes_integrity_composition(root):
     assert len(holder) == 1 and len(capability.transports) == 1
     return (
         service,
-        HermesMemoryProvider(service),
+        HermesMemoryProvider(service, revoked_view=empty_revoked_view()),
         service._memory_plane,
         holder[0],
         lifecycle,
@@ -3820,7 +3838,7 @@ def _rewrite_jsonl_snapshot(
     data_revision = int(any(record.visibility.value == "runtime_context" for record in records.values()))
     backend._replace_batches(
         [
-            _PersistedBatch.create(
+            PersistedBatch.create(
                 revision=1,
                 data_revision=data_revision,
                 records=tuple(records.values()),
@@ -4101,7 +4119,7 @@ def test_memory_write_preflights_ingress_before_writer_creation(hermes: bool) ->
         memory_plane=plane, now_provider=lambda: TEST_NOW,
         authenticated_ingress_resolver=resolver,
     )
-    root = HermesMemoryProvider(service) if hermes else service
+    root = HermesMemoryProvider(service, revoked_view=empty_revoked_view()) if hermes else service
     if hermes:
         def invoke(ingress):
             return root.on_memory_write("write", "memory", "Atlas", operation_id="write", task_id="task:one", user_id="user:alice", authenticated_host_ingress=ingress)
@@ -4123,6 +4141,7 @@ def test_configured_hermes_constructs_write_free_then_creates_once_after_authent
     plane = MemoryPlaneService()
     resolver = _SwitchingIngressResolver()
     hermes = HermesMemoryProvider(
+        revoked_view=empty_revoked_view(),
         service=None,
         memory_plane=plane,
         host_bootstrap_capability=_built_in_local_capability(resolver=resolver),
@@ -4741,7 +4760,7 @@ def test_hermes_root_preserves_existing_durable_writer_and_skips_writes_without_
         now_provider=lambda: TEST_NOW,
         authenticated_ingress_resolver=resolver,
     )
-    hermes = HermesMemoryProvider(service=service)
+    hermes = HermesMemoryProvider(service=service, revoked_view=empty_revoked_view())
 
     # Absent ingress through the Hermes root writes nothing.
     hermes.sync_turn(
@@ -4775,6 +4794,7 @@ def test_composed_roots_write_nothing_without_resolved_ingress(root, tmp_path) -
     )
     if root == "factory":
         service = build_provider_memory_service_from_env(
+            revoked_view=empty_revoked_view(),
             memory_plane=plane, now_provider=lambda: TEST_NOW
         )
     else:

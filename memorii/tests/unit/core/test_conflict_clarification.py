@@ -52,6 +52,9 @@ from memorii.core.memory_evolution.ingestion_contracts import (
 )
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.storage_administration.revoked_identity_view import (
+    empty_revoked_view,
+)
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 
 
@@ -1341,7 +1344,7 @@ def test_failed_receipt_writes_nothing_corrected_retry_commits_and_exact_retry_s
 
     stale_arguments = dict(arguments)
     stale_arguments["operation_id"] = "operation-stale"
-    stale = HermesMemoryProvider(service).handle_tool_call_with_attention(
+    stale = HermesMemoryProvider(service, revoked_view=empty_revoked_view()).handle_tool_call_with_attention(
         "memorii_resolve_conflict", stale_arguments, authenticated_host_ingress=host
     )
     assert stale.legacy_result.ok is True
@@ -1425,7 +1428,7 @@ def test_resolution_rejects_detached_source_proof_with_zero_durable_effects(
         conflict_revision=seeded.conflict_revision,
         candidate_id=seeded.candidate_ids[0],
     )
-    result = HermesMemoryProvider(service).handle_tool_call_with_attention(
+    result = HermesMemoryProvider(service, revoked_view=empty_revoked_view()).handle_tool_call_with_attention(
         "memorii_resolve_conflict",
         request.model_dump(mode="json", exclude={"user_confirmation_receipt"}),
         authenticated_host_ingress=host,
@@ -1506,7 +1509,7 @@ def test_resolution_rejects_invalid_confirmation_with_zero_durable_effects(
         mode="json", exclude={"user_confirmation_receipt"}
     )
     arguments["user_confirmation_receipt"] = "receipt"
-    result = HermesMemoryProvider(service).handle_tool_call_with_attention(
+    result = HermesMemoryProvider(service, revoked_view=empty_revoked_view()).handle_tool_call_with_attention(
         "memorii_resolve_conflict",
         arguments,
         authenticated_host_ingress=host,
@@ -1547,7 +1550,7 @@ def test_default_provider_adapter_does_not_treat_file_submission_as_canonical_wo
     )
     _sync_and_bind_user_source(service, source, host)
     request = _request()
-    result = HermesMemoryProvider(service).handle_tool_call_with_attention(
+    result = HermesMemoryProvider(service, revoked_view=empty_revoked_view()).handle_tool_call_with_attention(
         "memorii_resolve_conflict",
         request.model_dump(mode="json", exclude={"user_confirmation_receipt"}),
         authenticated_host_ingress=host,

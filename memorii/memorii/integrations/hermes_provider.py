@@ -56,6 +56,9 @@ from memorii.core.semantic_ingestion.production_authority import (
     VerifiedProductionHostAuthority,
 )
 from memorii.core.semantic_ingestion.source_normalization_host import SourceNormalizationHostBundleBuilder
+from memorii.core.storage_administration.revoked_identity_view import (
+    RevokedIdentityServingGate,
+)
 from memorii.domain.enums import SourceModality
 from memorii.integrations.provider_interface import MemoryProviderInterface
 
@@ -71,6 +74,7 @@ class HermesMemoryProvider(MemoryProviderInterface):
         memory_plane: MemoryPlaneService | None = None,
         storage_root: str | None = None,
         scoped_read_authority: ScopedHostReadAuthority | None = None,
+        revoked_view: RevokedIdentityServingGate | None = None,
         verified_capability_monitoring_authorities: tuple[
             VerifiedCapabilityMonitoringAuthority, ...
         ] = (),
@@ -106,8 +110,16 @@ class HermesMemoryProvider(MemoryProviderInterface):
                 now_provider=now_provider,
             )
         else:
+            if revoked_view is None:
+                raise ValueError(
+                    "revoked_view is required when composing from a bare"
+                    " memory plane: derive it from the installation control"
+                    " root (RefreshingRevokedIdentityView) or state an"
+                    " explicit empty view for ephemeral planes"
+                )
             self._service = build_provider_memory_service_from_env(
                 memory_plane=memory_plane,
+                revoked_view=revoked_view,
                 host_bootstrap_capability=host_bootstrap_capability,
                 host_bootstrap_material_verifier=host_bootstrap_material_verifier,
                 source_normalization_host_bundle_builder=source_normalization_host_bundle_builder,

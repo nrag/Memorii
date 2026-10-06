@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.GraphRecordMutation.v1","implementation_source_digest":"185f837aa2d5497f51c4951e3f9d5baf530141c7c2949bf0356d08339f48a677","role":"decoder","schema_id":"GraphRecordMutation","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.GraphRecordMutation.v1","implementation_source_digest":"38898a51f104274936eb5bbc96ea6da8e5c4189758da4df67d1faea2126f33b4","role":"decoder","schema_id":"GraphRecordMutation","schema_version":"1","typed_root_kind":"model"}

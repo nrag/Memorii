@@ -6,6 +6,7 @@ from memorii.core.memory_plane.models import (
     from_provider_stored_record,
 )
 from memorii.core.memory_plane.service import MemoryPlaneService, RuntimeRetrievalTrace
+from memorii.core.memory_plane.sqlite_store import SqliteMemoryPlaneStore
 from memorii.core.memory_plane.store import (
     JsonlMemoryPlaneStore,
     MemoryPlaneCorruptionError,
@@ -23,4 +24,5 @@ __all__ = [
     "MemoryPlaneService",
     "MemoryPlaneUnitOfWork",
     "RuntimeRetrievalTrace",
+    "SqliteMemoryPlaneStore",
 ]

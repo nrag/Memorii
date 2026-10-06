@@ -24,6 +24,9 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapGraphPlanAtomicWriteRequestV3,
     decode_bootstrap_graph_atomic_member_payload_v3,
 )
+from memorii.core.storage_administration.revoked_identity_view import (
+    empty_revoked_view,
+)
 from tests.fixtures.semantic_ingestion.bootstrap_graph_v3_fixture import (
     DeterministicBootstrapGraphAuthorityProviderV3,
 )
@@ -218,6 +221,7 @@ def test_graph_scenario_replays_without_effects_in_memory(
         )
     elif root == "factory":
         service = build_provider_memory_service_from_env(
+            revoked_view=empty_revoked_view(),
             memory_plane=memory_plane, **common
         )
     elif root == "hermes":

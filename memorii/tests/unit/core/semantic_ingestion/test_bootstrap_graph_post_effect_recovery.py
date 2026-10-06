@@ -28,6 +28,9 @@ from memorii.core.semantic_ingestion.contracts import (
     ProviderSemanticProposal,
     decode_semantic_contract,
 )
+from memorii.core.storage_administration.revoked_identity_view import (
+    empty_revoked_view,
+)
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 from tests.fixtures.semantic_ingestion.bootstrap_graph_v3_fixture import (
     DeterministicBootstrapGraphAuthorityProviderV3,
@@ -91,6 +94,7 @@ def _graph_service(
         ),
         host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
         source_normalization_host_bundle_builder=builder,
+        revoked_view=empty_revoked_view(),
         **kwargs,
     )
     if not built_in:
@@ -700,6 +704,7 @@ def test_builtin_recovery_preserves_group_identity_after_lease_reclaim(
             DeterministicTestHostBootstrapMaterialVerifier()
         ),
         source_normalization_host_bundle_builder=builder,
+        revoked_view=empty_revoked_view(),
     )
     if root == "factory":
         service = build_provider_memory_service_from_env(**common)
@@ -783,6 +788,7 @@ def test_builtin_recovery_preserves_group_identity_after_lease_reclaim(
                 DeterministicTestHostBootstrapMaterialVerifier()
             ),
             source_normalization_host_bundle_builder=reopened_builder,
+            revoked_view=empty_revoked_view(),
         )
         if root == "factory":
             repeated_service = build_provider_memory_service_from_env(

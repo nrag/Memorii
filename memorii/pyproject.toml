@@ -17,6 +17,9 @@ dependencies = [
 ]
 
 [project.scripts]
+memorii-consume = "memorii.tools.runtime_consume:main"
+memorii-operator = "memorii.tools.runtime_operator:main"
+memorii-runtime-schema = "memorii.tools.runtime_schema_export:main"
 memorii-acceptance-evaluate = "acceptance.cli:main"
 memorii-acceptance-authority-publish = "acceptance.authority_cli:main"
 memorii-semantic-ingestion-revocation-publish = "acceptance.revocation_cli:main"

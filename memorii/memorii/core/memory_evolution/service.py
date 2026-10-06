@@ -81,6 +81,9 @@ from memorii.core.memory_evolution.validation import MemoryEvolutionValidator
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import MemoryPlanePrecondition, MemoryPlaneRevisionConflictError
+from memorii.core.storage_administration.revoked_identity_view import (
+    RevokedIdentityServingGate,
+)
 from memorii.domain.enums import CommitStatus, MemoryDomain, TemporalValidityStatus
 
 CompletionRecordFactory = Callable[[MemoryEvolutionResult], tuple[CanonicalMemoryRecord, ...]]
@@ -114,6 +117,7 @@ class MemoryEvolutionService:
         query_analyzer: QueryAnalyzer | None = None,
         temporal_anchor_catalog: TemporalAnchorCatalog | None = None,
         now_provider: Callable[[], datetime] | None = None,
+        revoked_view: RevokedIdentityServingGate | None = None,
     ) -> None:
         self._memory_plane = memory_plane
         self._predicates = predicate_registry or PredicateRegistry()
@@ -132,9 +136,11 @@ class MemoryEvolutionService:
         self._graph_projector = graph_projector or MemoryGraphProjector()
         self._graph_store = graph_store or MemoryGraphStore(memory_plane=memory_plane)
         self._graph_validator = graph_validator or MemoryGraphValidator()
+        self._revoked_view = revoked_view
         self._graph_queries = MemoryGraphQueryService(
             graph_store=self._graph_store,
             now_provider=self._now_provider,
+            revoked_view=self._revoked_view,
         )
         self._query_analyzer = query_analyzer or EnglishLexicalQueryAnalyzer()
         self._temporal_anchor_catalog = temporal_anchor_catalog or TemporalAnchorCatalog()
@@ -160,6 +166,7 @@ class MemoryEvolutionService:
             query_analyzer=self._query_analyzer,
             temporal_anchor_catalog=self._temporal_anchor_catalog,
             now_provider=self._now_provider,
+            revoked_view=revoked_view,
         )
 
     def evolve_records(

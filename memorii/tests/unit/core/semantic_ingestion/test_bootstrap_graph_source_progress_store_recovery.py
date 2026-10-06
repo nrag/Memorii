@@ -28,7 +28,7 @@ from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import (
     InMemoryMemoryPlaneStore,
     JsonlMemoryPlaneStore,
-    _PersistedBatch,
+    PersistedBatch,
 )
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
@@ -397,7 +397,7 @@ def _persist_corrupt_plan_checkpoint(
     assert isinstance(backend, JsonlMemoryPlaneStore)
     backend._replace_batches(
         [
-            _PersistedBatch.create(
+            PersistedBatch.create(
                 revision=1,
                 data_revision=int(
                     any(

@@ -1,0 +1,27 @@
+{
+  "kind": "planning_artifact_snapshot_not_product_evidence",
+  "design_sha256": "9f73f06ff2153439ed970f953b3679bdc4e9b60448248d2d5f5e64f947624a2d",
+  "files": {
+    "authority-inventory.json": "4b8869f399e05dbbf482b4e32a84d017306de1472c1ca416d15dedb5d926f7e6",
+    "baseline.json": "d8ed0d74da503a3ab453effb8a52ada22a5a0180d9a03d10546373f26984fe7a",
+    "coverage.md": "dfef4ff121b20ebd0dd88bc9730e2985a98db83a029dd238ec54335c59076659",
+    "design-identity-inventory.md": "2f2ba03c9b6bd5239c77b711641f10396c9e71bd998f4a6fddf5876b91c3764e",
+    "gates.md": "59b3207a706cd74dcb6c22ba48ff2d8c912c03d9e5ec6a74631955c8a2a702dd",
+    "identity-and-changes.md": "6deada4a0575479a001452076b5bc66e6e759034986536e5e57137a66c546559",
+    "implementation.plan.md": "7368e08b10d99077f10fe73fdfb03c1e4011d849e6706cc156a25f4d995d51f6",
+    "milestones/additional-harnesses.plan.md": "2a7216d45716b31be49982c6a3f2bb79bedfb6d616dadf3b46a1286254f72307",
+    "milestones/harness-state.plan.md": "35990d05fce3ced7eda69926025bc56c1700c512c59d446225bbfcc145cb4c72",
+    "milestones/legacy-migration.plan.md": "14eedd10a36d5cc1fd6444d39b8a5f9997524c3e58f90394accd3d555482e3de",
+    "milestones/operator-controls.plan.md": "dac54dbc6ccdd5c9a13c820984ce7c53b7ec3dac60955b165dbaa375a439ebe3",
+    "milestones/release-conformance.plan.md": "b3b1d8a3eb9c62bee181ed0c8b63caf272baa2fe098316afcd30ea40509a19b2",
+    "milestones/runtime-recovery.plan.md": "2332fe42c42ae83e4291a5f2b0ea920e14e9c9c98c54366d6552c9276862f2ef",
+    "milestones/semantic-ontology.plan.md": "114ce14c0f6a98ee0ab7dbe8a0fb1d2d36ed19d872d23da8a97867e454648e2c",
+    "milestones/storage-foundation.plan.md": "245841d1e2b45bc6ede7539e217858388e12ab40f067a2ce21c5612879f7a82d",
+    "planning-review.md": "674e032ea1799fdaa6db68334b65cdcd7f010a2f9960efcbf8be6e4fefe1e9cd",
+    "production_entrypoint_bindings.md": "950830be062ab98b399c6334d85931b25c721c65385ea5f55c19c003e3cbf006",
+    "resume.md": "75e13612f5c67e7d49ae4bc89693980d5d8b544eeacb767e6cfa5dac0c990caa",
+    "validation.md": "4f287088511a7fab680b3f3ef7d13c7a249a03ec9e0e2eedd03e643046ee0665",
+    "workflow-inventory.json": "a83fbffe2a684a18822f183788a3c8093c171576ee4cac4b30e1c8eafeab8bc3",
+    "codec-inventory.json": "87dad49d7c2045a35289bd5791d6933bbde691c0de1581406bb6bad568913e8d"
+  }
+}

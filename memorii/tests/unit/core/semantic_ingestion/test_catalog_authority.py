@@ -15,7 +15,7 @@ from memorii.core.memory_evolution.writer_admission import (
 )
 from memorii.core.memory_plane import JsonlMemoryPlaneStore, MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
-from memorii.core.memory_plane.store import InMemoryMemoryPlaneStore, _PersistedBatch
+from memorii.core.memory_plane.store import InMemoryMemoryPlaneStore, PersistedBatch
 from memorii.core.semantic_ingestion.catalog_authority import (
     AuthenticatedPrincipalAgent,
     CatalogAuthorityError,
@@ -545,7 +545,7 @@ def test_seed_startup_action_denies_foreign_version_after_jsonl_reopen(tmp_path)
         previous = batches[-1]
         store._replace_batches([
             *batches,
-                _PersistedBatch.create(
+                PersistedBatch.create(
                     revision=previous.revision + 1,
                     data_revision=previous.data_revision,
                 records=(_catalog_version_test_record(foreign),),

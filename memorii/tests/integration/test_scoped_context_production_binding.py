@@ -52,6 +52,9 @@ from memorii.core.scoped_context.service import (
     ScopedSnapshotDecodeError,
     ScopedStructuredDependencyError,
 )
+from memorii.core.storage_administration.revoked_identity_view import (
+    empty_revoked_view,
+)
 from memorii.domain.enums import CommitStatus, MemoryDomain, SourceType, TemporalValidityStatus
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 
@@ -74,7 +77,7 @@ def test_real_roots_forward_scoped_authority(root: str, tmp_path) -> None:
     else:
         plane = MemoryPlaneService()
         plane.write_records((record,))
-        provider = HermesMemoryProvider(memory_plane=plane, scoped_read_authority=authority)
+        provider = HermesMemoryProvider(memory_plane=plane, scoped_read_authority=authority, revoked_view=empty_revoked_view())
     result = provider.retrieve_context(_request(), opaque_host_ingress=handle)
     assert result.status.value == "partial_optional"
     assert result.authority_binding_receipt is not None
@@ -115,7 +118,7 @@ def test_real_roots_admit_only_answer_temporal_queries_without_execution_dispatc
     else:
         plane = MemoryPlaneService()
         plane.write_records((record,))
-        provider = HermesMemoryProvider(memory_plane=plane, scoped_read_authority=authority)
+        provider = HermesMemoryProvider(memory_plane=plane, scoped_read_authority=authority, revoked_view=empty_revoked_view())
 
     analysis_calls = 0
     execution_calls = 0
@@ -160,7 +163,7 @@ def _root_with_record(root: str, tmp_path, authority):
         return bundle.build_provider_memory_service(scoped_read_authority=authority), bundle.memory_plane_store
     plane = MemoryPlaneService()
     plane.write_records((record,))
-    return HermesMemoryProvider(memory_plane=plane, scoped_read_authority=authority), plane
+    return HermesMemoryProvider(memory_plane=plane, scoped_read_authority=authority, revoked_view=empty_revoked_view()), plane
 
 
 def _provider_with_records(root: str, tmp_path, authority, records: tuple[CanonicalMemoryRecord, ...]):
@@ -170,7 +173,7 @@ def _provider_with_records(root: str, tmp_path, authority, records: tuple[Canoni
         return bundle.build_provider_memory_service(scoped_read_authority=authority)
     plane = MemoryPlaneService()
     plane.write_records(records)
-    return HermesMemoryProvider(memory_plane=plane, scoped_read_authority=authority)
+    return HermesMemoryProvider(memory_plane=plane, scoped_read_authority=authority, revoked_view=empty_revoked_view())
 
 
 def _all_record_grant(authority, records: tuple[CanonicalMemoryRecord, ...], now: datetime):
@@ -326,7 +329,7 @@ def _evolved_root(root: str, tmp_path):
         bundle = FilesystemStorageBundle.from_root(tmp_path / "store")
         return bundle.build_memory_plane_service(), lambda authority: bundle.build_provider_memory_service(scoped_read_authority=authority)
     plane = MemoryPlaneService()
-    return plane, lambda authority: HermesMemoryProvider(memory_plane=plane, scoped_read_authority=authority)
+    return plane, lambda authority: HermesMemoryProvider(memory_plane=plane, scoped_read_authority=authority, revoked_view=empty_revoked_view())
 
 
 @pytest.mark.integration
@@ -817,10 +820,10 @@ def test_jsonl_reopen_requires_new_process_authority_and_preserves_bytes(root: s
     handle = authority.provision(host_task_id="task", host_state_id="state", rows=(ScopedNamespaceGrantRow(domain=MemoryDomain.SEMANTIC, task_id="task"),), expires_at=now + timedelta(minutes=1))
     bundle = FilesystemStorageBundle.from_root(storage_root)
     bundle.memory_plane_store.write_records((CanonicalMemoryRecord(memory_id="semantic:one", domain=MemoryDomain.SEMANTIC, text="value", status=CommitStatus.COMMITTED, task_id="task", source_kind="test"),))
-    provider = bundle.build_provider_memory_service(scoped_read_authority=authority) if root == "filesystem" else HermesMemoryProvider(storage_root=str(storage_root), scoped_read_authority=authority)
+    provider = bundle.build_provider_memory_service(scoped_read_authority=authority) if root == "filesystem" else HermesMemoryProvider(storage_root=str(storage_root), scoped_read_authority=authority, revoked_view=empty_revoked_view())
     receipt = provider.retrieve_context(_request(), opaque_host_ingress=handle).authority_binding_receipt
     before = (storage_root / "memory_plane" / "memory_records.jsonl").read_bytes()
-    script = """import json, sys\nfrom datetime import UTC, datetime, timedelta\nfrom memorii.core.filesystem_storage.bundle import FilesystemStorageBundle\nfrom memorii.core.scoped_context.authority import InProcessScopedReadAuthority, ScopedNamespaceGrantRow\nfrom memorii.core.scoped_context.contracts import ScopedContextBudget, ScopedContextRequest, ScopedRecordReference\nfrom memorii.domain.enums import MemoryDomain\nfrom memorii.integrations.hermes_provider import HermesMemoryProvider\nroot, kind, stale = sys.argv[1:]\nnow=datetime(2026,1,2,tzinfo=UTC)\na=InProcessScopedReadAuthority(now_provider=lambda:now)\nr=ScopedContextRequest(host_task_id='task',host_state_id='state',declared_complete_mandatory_set=True,mandatory_record_references=(ScopedRecordReference(record_id='semantic:one',purpose='state'),),optional_query=None,optional_domains=(),budget=ScopedContextBudget(max_mandatory_items=1,max_optional_items=1,max_optional_omission_ids=1,max_rendered_utf8_bytes=1000),reference_time=now)\np=FilesystemStorageBundle.from_root(root).build_provider_memory_service(scoped_read_authority=a) if kind=='filesystem' else HermesMemoryProvider(storage_root=root,scoped_read_authority=a)\nstale_status=p.retrieve_context(r,opaque_host_ingress=stale).status.value\nh=a.provision(host_task_id='task',host_state_id='state',rows=(ScopedNamespaceGrantRow(domain=MemoryDomain.SEMANTIC,task_id='task'),),expires_at=now+timedelta(minutes=1))\nprint(json.dumps([stale_status,p.retrieve_context(r,opaque_host_ingress=h).status.value]))\n"""
+    script = """import json, sys\nfrom datetime import UTC, datetime, timedelta\nfrom memorii.core.filesystem_storage.bundle import FilesystemStorageBundle\nfrom memorii.core.scoped_context.authority import InProcessScopedReadAuthority, ScopedNamespaceGrantRow\nfrom memorii.core.scoped_context.contracts import ScopedContextBudget, ScopedContextRequest, ScopedRecordReference\nfrom memorii.domain.enums import MemoryDomain\nfrom memorii.core.storage_administration.revoked_identity_view import empty_revoked_view\nfrom memorii.integrations.hermes_provider import HermesMemoryProvider\nroot, kind, stale = sys.argv[1:]\nnow=datetime(2026,1,2,tzinfo=UTC)\na=InProcessScopedReadAuthority(now_provider=lambda:now)\nr=ScopedContextRequest(host_task_id='task',host_state_id='state',declared_complete_mandatory_set=True,mandatory_record_references=(ScopedRecordReference(record_id='semantic:one',purpose='state'),),optional_query=None,optional_domains=(),budget=ScopedContextBudget(max_mandatory_items=1,max_optional_items=1,max_optional_omission_ids=1,max_rendered_utf8_bytes=1000),reference_time=now)\np=FilesystemStorageBundle.from_root(root).build_provider_memory_service(scoped_read_authority=a) if kind=='filesystem' else HermesMemoryProvider(storage_root=root,scoped_read_authority=a, revoked_view=empty_revoked_view())\nstale_status=p.retrieve_context(r,opaque_host_ingress=stale).status.value\nh=a.provision(host_task_id='task',host_state_id='state',rows=(ScopedNamespaceGrantRow(domain=MemoryDomain.SEMANTIC,task_id='task'),),expires_at=now+timedelta(minutes=1))\nprint(json.dumps([stale_status,p.retrieve_context(r,opaque_host_ingress=h).status.value]))\n"""
     completed = subprocess.run([sys.executable, "-c", script, str(storage_root), root, receipt.handle_id], check=True, capture_output=True, text=True)
     assert json.loads(completed.stdout) == ["denied", "partial_optional"]
     assert (storage_root / "memory_plane" / "memory_records.jsonl").read_bytes() == before
@@ -843,7 +846,7 @@ def test_real_roots_exclude_parents_with_noncurrent_source_closure(root: str, va
     else:
         plane = MemoryPlaneService()
         plane.write_records((source, parent))
-        provider = HermesMemoryProvider(memory_plane=plane, scoped_read_authority=authority)
+        provider = HermesMemoryProvider(memory_plane=plane, scoped_read_authority=authority, revoked_view=empty_revoked_view())
     assert provider.retrieve_context(_request().model_copy(update={"reference_time": now}), opaque_host_ingress=handle).status.value == "mandatory_unresolved"
     optional = provider.retrieve_context(_request().model_copy(update={"mandatory_record_references": (), "optional_query": "value", "optional_domains": (MemoryDomain.SEMANTIC,), "reference_time": now}), opaque_host_ingress=handle)
     assert any(item.reason.value == "provenance_unavailable" for item in optional.omissions)
@@ -1078,11 +1081,11 @@ def test_production_roots_fail_closed_without_authority_or_prefetch_fallback(roo
     authority = InProcessScopedReadAuthority(now_provider=lambda: now)
     handle = authority.provision(host_task_id="task", host_state_id="state", rows=(ScopedNamespaceGrantRow(domain=MemoryDomain.SEMANTIC, task_id="task"),), expires_at=now + timedelta(minutes=1))
     if root == "factory":
-        provider = build_provider_memory_service_from_env(memory_plane=plane)
+        provider = build_provider_memory_service_from_env(memory_plane=plane, revoked_view=empty_revoked_view())
     elif root == "filesystem":
         provider = FilesystemStorageBundle.from_root(tmp_path / "store").build_provider_memory_service(memory_plane=plane)
     else:
-        provider = HermesMemoryProvider(memory_plane=plane)
+        provider = HermesMemoryProvider(memory_plane=plane, revoked_view=empty_revoked_view())
     service = provider._service if root == "hermes" else provider
     reads = 0
     def no_snapshot():
