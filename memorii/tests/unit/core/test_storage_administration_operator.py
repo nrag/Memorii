@@ -70,6 +70,9 @@ def test_cli_stages_a_reviewed_restore_with_an_owner_only_key(tmp_path: Path, ca
         assert main(stage) == 0
         assert json.loads(capsys.readouterr().out) == {"status": "staged", "path": str(staging)}
         assert (staging / "partition.sqlite3").is_file()
+        assert main([*cli, "restore-verify-stage", "--plan-file", str(plan), "--staging-root", str(staging)]) == 0
+        attestation = json.loads(capsys.readouterr().out)
+        assert attestation["plan_digest"] == json.loads(plan.read_bytes())["plan_digest"]
         assert service.acquire_verified_snapshot() == before
     finally:
         service.close()
@@ -457,6 +460,94 @@ def test_restore_plan_rejects_archive_substitution(tmp_path: Path) -> None:
         assert not staging.exists()
     finally:
         service.close()
+
+
+@pytest.mark.parametrize(
+    ("change", "refusal"),
+    [
+        ("owner", "owner capability"),
+        ("plan", "reviewed restore plan"),
+        ("attestation", "attestation signature is invalid"),
+        ("database", "bytes differ from the attestation"),
+        ("sidecar", "contains a live sidecar"),
+        ("staged_suppression", "bytes differ from the attestation"),
+        ("live_suppression", "suppression watermark changed"),
+        ("control", "live restore watermark changed"),
+    ],
+)
+def test_staged_restore_revalidation_after_reopen(
+    tmp_path: Path, change: str, refusal: str,
+) -> None:
+    from memorii.core.storage_administration.operator_backup import BackupRestoreOperator
+    from memorii.core.storage_administration.suppression_journal import (
+        SuppressionCoordinate,
+        SuppressionRecord,
+        write_suppression_record,
+    )
+
+    def record_suppression(control_root: Path, identifier: str) -> None:
+        write_suppression_record(
+            control_root,
+            SuppressionRecord(
+                suppression_id=identifier * 64,
+                plan_digest="a" * 64,
+                closure_digest="b" * 64,
+                scope_note="restore staging test",
+                suppressed=(SuppressionCoordinate(coordinate_kind="task", coordinate_id=f"task:{identifier}"),),
+                applied_at_unix=1,
+            ),
+        )
+
+    operator, service, capability = _fenced_operator(tmp_path)
+    root = service.installation_root
+    archive = tmp_path / "archive"
+    staging = tmp_path / "staged"
+    recovery_key = b"k" * 32
+    with service:
+        record_suppression(root / "control", "c")
+        backups = BackupRestoreOperator(operator)
+        manifest = backups.create_backup(
+            capability=capability, archive_root=archive, reason="restore staging", recovery_key=recovery_key,
+        )
+        plan = backups.plan_restore(capability=capability, archive_root=archive, data_loss_acknowledged=False)
+        before = service.acquire_verified_snapshot()
+        backups.apply_restore(capability=capability, plan=plan, staging_root=staging, recovery_key=recovery_key)
+
+    with StorageAdministrationService(root) as reopened:
+        backups = BackupRestoreOperator(StorageAdministrationOperator(reopened))
+        attestation = backups.verify_staged_restore(capability=capability, plan=plan, staging_root=staging)
+        assert attestation.source_publication.payload_digest() == manifest.publication_digest
+        assert attestation.source_control_tip_digest == manifest.control_tip_digest
+        assert attestation.archive_manifest_digest == manifest.manifest_digest
+        assert reopened.acquire_verified_snapshot() == before
+
+        if change == "owner":
+            capability = capability.model_copy(update={"capability_digest": "0" * 64})
+        elif change == "plan":
+            plan = plan.model_copy(update={"data_loss_acknowledged": True})
+            plan = plan.model_copy(update={"plan_digest": plan.unsigned_digest()})
+        elif change == "attestation":
+            altered = attestation.model_copy(update={"data_loss_acknowledged": True})
+            (staging / "restore-staging-attestation.json").write_text(altered.model_dump_json())
+        elif change == "database":
+            with (staging / "partition.sqlite3").open("ab") as handle:
+                handle.write(b"changed")
+        elif change == "sidecar":
+            (staging / "partition.sqlite3-wal").write_bytes(b"changed")
+        elif change == "staged_suppression":
+            record_suppression(staging, "d")
+        elif change == "live_suppression":
+            record_suppression(root / "control", "d")
+        elif change == "control":
+            StorageAdministrationOperator(reopened).change_mode(
+                ModeChangeRequest(
+                    target_mode="active", expected_control_revision=plan.expected_control_revision,
+                    reason="changed after staging",
+                ),
+                capability=capability,
+            )
+        with pytest.raises(OperatorError, match=refusal):
+            backups.verify_staged_restore(capability=capability, plan=plan, staging_root=staging)
 
 
 def test_restore_staging_refuses_decrypted_history_mismatch(

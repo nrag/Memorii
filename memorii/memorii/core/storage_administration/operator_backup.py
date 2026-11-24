@@ -7,7 +7,7 @@ pair against the captured signed tuple and control journal tip, encrypts
 participants with a wrapped content key, and atomically publishes the archive.
 Restore plans bind the verified archive and the current live watermark.
 Staging verifies the decrypted pair before copying current suppression evidence
-and publishing an inert staging directory.
+and publishing an inert, signed staging directory.
 """
 from __future__ import annotations
 
@@ -19,8 +19,9 @@ import sqlite3
 import tempfile
 import time
 from contextlib import closing
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -32,6 +33,7 @@ from memorii.core.persistence.contracts import (
     canonical_json_digest,
     empty_pointer_set_digest,
 )
+from memorii.core.persistence.key_owner import RESTORE_STAGING_SIGNATURE_PURPOSE
 from memorii.core.persistence.runtime_journal import RuntimeJournalError, verify_runtime_history
 from memorii.core.storage_administration.operator import (
     OperatorError,
@@ -46,9 +48,11 @@ from memorii.stores.sqlite.partition import PartitionDataRepository
 _BACKUP_MARKER = "backup-complete.json"
 _RECOVERY_BUNDLE = "control-recovery-bundle.json"
 _RECOVERY_ANCHOR = "recovery-anchor.json"
+_RESTORE_ATTESTATION = "restore-staging-attestation.json"
 _SIGNING_PURPOSE = "memorii.installation-backup-manifest.v1"
 _CHUNK = 1 << 20
 _ALLOWED_PARTICIPANTS = ("control", "partition")
+_Digest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 
 
 class BackupParticipant(BaseModel):
@@ -121,6 +125,35 @@ class RestorePlan(BaseModel):
         return canonical_json_digest(self.model_dump(exclude={"plan_digest"}))
 
 
+class RestoreStagingAttestation(BaseModel):
+    """Installation-signed evidence for an inert and review-bound restore."""
+
+    attestation_version: Literal[1] = 1
+    plan_digest: _Digest
+    archive_manifest_digest: _Digest
+    source_publication: RuntimePublicationState
+    source_control_tip_digest: _Digest
+    expected_publication_digest: _Digest
+    expected_control_revision: int = Field(ge=1)
+    expected_control_tip_digest: _Digest
+    data_loss_acknowledged: bool
+    control_snapshot_digest: _Digest
+    partition_snapshot_digest: _Digest
+    suppression_snapshot_digest: _Digest
+    signer_key_id: str = Field(min_length=1)
+    signature: str = Field(pattern=r"^[0-9a-f]{128}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    def unsigned_digest(self) -> str:
+        payload = self.model_dump(mode="json", exclude={"signature"})
+        return _canonical_digest(payload)
+
+
+def _canonical_digest(value: object) -> str:
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -130,6 +163,33 @@ def _sha256_file(path: Path) -> str:
                 break
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _snapshot_digest(path: Path) -> str:
+    for extension in ("-wal", "-shm", "-journal"):
+        sidecar = path.with_name(path.name + extension)
+        if sidecar.is_symlink() or sidecar.exists():
+            raise OperatorError("integrity_error: staged SQLite snapshot contains a live sidecar")
+    if path.is_symlink() or not path.is_file():
+        raise OperatorError("integrity_error: staged SQLite snapshot must be a regular file")
+    return _sha256_file(path)
+
+
+def _suppression_snapshot_digest(directory: Path) -> str:
+    if directory.is_symlink() or (directory.exists() and not directory.is_dir()):
+        raise OperatorError("integrity_error: suppression snapshot must be a directory")
+    entries: list[tuple[str, str]] = []
+    for path in sorted(directory.glob("forget-*.json")):
+        if path.is_symlink() or not path.is_file():
+            raise OperatorError("integrity_error: suppression snapshot must contain regular journal files")
+        entries.append((path.name, _sha256_file(path)))
+    return _canonical_digest(entries)
+
+
+@dataclass(frozen=True)
+class _VerifiedBackup:
+    publication: RuntimePublicationState
+    control_tip_digest: str
 
 
 def _sqlite_backup(source: Path, destination: Path) -> None:
@@ -479,22 +539,95 @@ class BackupRestoreOperator:
                     base64.b64decode(participant.nonce), ciphertext, None,
                 )
                 _atomic_write(staging / f"{participant.participant_id}.sqlite3", plaintext)
-            restored_digest = _verify_staged_backup(service, staging, manifest)
+            source = _verify_staged_backup(service, staging, manifest)
+            control_snapshot_digest = _snapshot_digest(staging / "control.sqlite3")
+            partition_snapshot_digest = _snapshot_digest(staging / "partition.sqlite3")
             with service.verified_operation_context() as (state, finalized):
                 self._require_restore_watermark(service, plan, state, finalized)
-                if not plan.data_loss_acknowledged and restored_digest != finalized.payload_digest():
+                if not plan.data_loss_acknowledged and source.publication.payload_digest() != finalized.payload_digest():
                     raise OperatorError("conflict: staged backup is older than the live publication")
                 # Stage current suppression evidence rather than the older
                 # control snapshot's view of eligible records.
                 current_suppressions = service.installation_root / "control" / "suppressions"
+                suppression_snapshot_digest = _suppression_snapshot_digest(current_suppressions)
+                staging_suppressions = staging / "suppressions"
                 if current_suppressions.is_dir():
-                    staging_suppressions = staging / "suppressions"
                     staging_suppressions.mkdir(mode=0o700)
                     for journal in sorted(current_suppressions.glob("forget-*.json")):
                         _atomic_write(staging_suppressions / journal.name, journal.read_bytes())
+                if _suppression_snapshot_digest(staging_suppressions) != suppression_snapshot_digest:
+                    raise OperatorError("conflict: suppression evidence changed during restore staging")
+                unsigned = RestoreStagingAttestation(
+                    plan_digest=plan.plan_digest,
+                    archive_manifest_digest=manifest.manifest_digest,
+                    source_publication=source.publication,
+                    source_control_tip_digest=source.control_tip_digest,
+                    expected_publication_digest=plan.expected_publication_digest,
+                    expected_control_revision=plan.expected_control_revision,
+                    expected_control_tip_digest=plan.expected_control_tip_digest,
+                    data_loss_acknowledged=plan.data_loss_acknowledged,
+                    control_snapshot_digest=control_snapshot_digest,
+                    partition_snapshot_digest=partition_snapshot_digest,
+                    suppression_snapshot_digest=suppression_snapshot_digest,
+                    signer_key_id=service._signer_key_id,
+                    signature="0" * 128,
+                )
+                signature = service._signing.sign(
+                    unsigned.signer_key_id, RESTORE_STAGING_SIGNATURE_PURPOSE, unsigned.unsigned_digest(),
+                )
+                attestation = unsigned.model_copy(update={"signature": signature})
+                _atomic_write(staging / _RESTORE_ATTESTATION, (attestation.model_dump_json() + "\n").encode())
                 os.replace(staging, staging_root)
                 _sync_directory(staging_root.parent)
         return staging_root
+
+    def verify_staged_restore(
+        self, *, capability: OwnerCapability, plan: RestorePlan, staging_root: Path,
+    ) -> RestoreStagingAttestation:
+        """Revalidate inert staging against the reviewed plan and live watermark."""
+        service = self._operator._administration
+        require_owner_capability(service, capability)
+        if plan.plan_digest != plan.unsigned_digest():
+            raise OperatorError("conflict: restore plan digest does not match reviewed inputs")
+        if staging_root.is_symlink() or not staging_root.is_dir():
+            raise OperatorError("integrity_error: restore staging must be a directory")
+        attestation_path = staging_root / _RESTORE_ATTESTATION
+        if attestation_path.is_symlink() or not attestation_path.is_file():
+            raise OperatorError("integrity_error: restore staging attestation is missing")
+        try:
+            attestation = RestoreStagingAttestation.model_validate_json(attestation_path.read_bytes())
+            valid = attestation.signer_key_id == service._signer_key_id and service._signing.verify(
+                attestation.signer_key_id,
+                RESTORE_STAGING_SIGNATURE_PURPOSE,
+                attestation.unsigned_digest(),
+                attestation.signature,
+            )
+            if not valid:
+                raise OperatorError("integrity_error: restore staging attestation signature is invalid")
+            if (
+                attestation.plan_digest != plan.plan_digest
+                or attestation.archive_manifest_digest != plan.archive_manifest_digest
+                or attestation.source_publication.installation_id != plan.installation_id
+                or attestation.expected_publication_digest != plan.expected_publication_digest
+                or attestation.expected_control_revision != plan.expected_control_revision
+                or attestation.expected_control_tip_digest != plan.expected_control_tip_digest
+                or attestation.data_loss_acknowledged != plan.data_loss_acknowledged
+            ):
+                raise OperatorError("conflict: staging does not match the reviewed restore plan")
+            if (
+                _snapshot_digest(staging_root / "control.sqlite3") != attestation.control_snapshot_digest
+                or _snapshot_digest(staging_root / "partition.sqlite3") != attestation.partition_snapshot_digest
+                or _suppression_snapshot_digest(staging_root / "suppressions") != attestation.suppression_snapshot_digest
+            ):
+                raise OperatorError("integrity_error: staged restore bytes differ from the attestation")
+            with service.verified_operation_context() as (state, finalized):
+                self._require_restore_watermark(service, plan, state, finalized)
+                live_suppressions = service.installation_root / "control" / "suppressions"
+                if _suppression_snapshot_digest(live_suppressions) != attestation.suppression_snapshot_digest:
+                    raise OperatorError("conflict: live suppression watermark changed after staging")
+        except (OSError, ValidationError) as exc:
+            raise OperatorError("integrity_error: restore staging evidence could not be verified") from exc
+        return attestation
 
     @staticmethod
     def _require_restore_watermark(
@@ -517,7 +650,7 @@ class BackupRestoreOperator:
 
 def _verify_staged_backup(
     service: StorageAdministrationService, staging: Path, manifest: InstallationBackupManifest,
-) -> str:
+) -> _VerifiedBackup:
     """Verify the decrypted pair against one signed backup watermark."""
     try:
         with (
@@ -528,6 +661,7 @@ def _verify_staged_backup(
             state = control.read_control_state()
             repository = f"{manifest.installation_id}:default-partition"
             finalized = control.read_publication_state(repository)
+            control_tip_digest = control.next_journal_position()[1]
             trust_entries = control.list_trust_entries()
             trust_digest = (
                 canonical_json_digest({"entries": [entry.model_dump_json() for entry in trust_entries]})
@@ -545,7 +679,7 @@ def _verify_staged_backup(
                 or finalized.eligibility_epoch != state.eligibility_epoch
                 or finalized.trust_registry_digest != trust_digest
                 or control.read_pending_intent(repository) is not None
-                or manifest.control_tip_digest not in (None, control.next_journal_position()[1])
+                or manifest.control_tip_digest not in (None, control_tip_digest)
                 or manifest.publication_digest not in (None, finalized.payload_digest())
             ):
                 raise OperatorError("integrity_error: staged control does not match the backup watermark")
@@ -572,7 +706,7 @@ def _verify_staged_backup(
                         service._signer_key_id, purpose, digest, signature,
                     ),
                 )
-            return finalized.payload_digest()
+            return _VerifiedBackup(publication=finalized, control_tip_digest=control_tip_digest)
     except (ControlJournalChainError, RuntimeJournalError, ValidationError, sqlite3.DatabaseError) as exc:
         raise OperatorError("integrity_error: staged backup verification failed") from exc
 
@@ -665,5 +799,6 @@ __all__ = [
     "BackupRestoreOperator",
     "InstallationBackupManifest",
     "RestorePlan",
+    "RestoreStagingAttestation",
     "boot_restored_installation",
 ]

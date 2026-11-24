@@ -52,6 +52,9 @@ def main(argv: list[str] | None = None) -> int:
     stage.add_argument("--plan-file", type=Path, required=True)
     stage.add_argument("--staging-root", type=Path, required=True)
     stage.add_argument("--recovery-key-file", type=Path, required=True, help="Owner-only file with the 32-byte raw key")
+    verify_stage = backup_sub.add_parser("restore-verify-stage", help="Reverify an inert restore stage against the reviewed plan")
+    verify_stage.add_argument("--plan-file", type=Path, required=True)
+    verify_stage.add_argument("--staging-root", type=Path, required=True)
 
     forget = commands.add_parser("forget", help="Logical forget planning and apply")
     forget_sub = forget.add_subparsers(dest="forget_command", required=True)
@@ -190,6 +193,19 @@ def main(argv: list[str] | None = None) -> int:
             if arguments.backup_command == "verify":
                 manifest = backups.verify_backup(archive_root=arguments.archive_root)
                 print(manifest.model_dump_json())
+                return 0
+            if arguments.backup_command == "restore-verify-stage":
+                from pydantic import ValidationError
+
+                owner = require_capability()
+                try:
+                    plan = RestorePlan.model_validate_json(arguments.plan_file.read_bytes())
+                except (ValidationError, OSError) as exc:
+                    raise OperatorError("invalid_request: restore plan could not be read") from exc
+                attestation = backups.verify_staged_restore(
+                    capability=owner, plan=plan, staging_root=arguments.staging_root,
+                )
+                print(attestation.model_dump_json())
                 return 0
             if arguments.backup_command == "restore-stage":
                 from cryptography.exceptions import InvalidTag
