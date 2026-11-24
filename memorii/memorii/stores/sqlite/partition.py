@@ -29,11 +29,12 @@ if TYPE_CHECKING:
     from memorii.core.persistence.contracts import MaterializationCatalogEntry
     from memorii.core.semantic_ingestion.ontology_index import OntologyIndexProjection
 
-PARTITION_SCHEMA_VERSION = 4
+PARTITION_SCHEMA_VERSION = 5
 _INITIAL_PARTITION_SCHEMA_VERSION = 1
 _CONSOLIDATION_SCHEMA_VERSION = 2
 _DELIVERY_SCHEMA_VERSION = 3
 _RUNTIME_HISTORY_SCHEMA_VERSION = 4
+_RUNTIME_SOURCE_RELEASE_SCHEMA_VERSION = 5
 _DEFAULT_BUSY_TIMEOUT_MS = 5_000
 
 _SCHEMA_STATEMENTS = (
@@ -301,6 +302,7 @@ _DELIVERY_CATALOGS = (
     ("runtime_target_receipts", "delivery_id", "record_json"),
 )
 _SKILL_CANDIDATE_CATALOG = ("runtime_skill_candidates", "candidate_id", "record_json")
+_RUNTIME_SOURCE_RELEASE_CATALOG = ("runtime_source_release_grants", "grant_id", "record_json")
 _CURRENT_DELIVERY_CATALOGS = (*_DELIVERY_CATALOGS, _SKILL_CANDIDATE_CATALOG)
 DeliveryCatalog = Literal[
     "writeback_decisions", "runtime_work_projections", "runtime_target_receipts", "runtime_skill_candidates",
@@ -389,6 +391,10 @@ _MATERIALIZATION_CATALOGS_BY_VERSION = {
     _RUNTIME_HISTORY_SCHEMA_VERSION: (
         *_INITIAL_MATERIALIZATION_CATALOGS, _CONSOLIDATION_CATALOG, *_DELIVERY_CATALOGS,
         _SKILL_CANDIDATE_CATALOG, *_RUNTIME_EVENT_INDEX_CATALOGS,
+    ),
+    _RUNTIME_SOURCE_RELEASE_SCHEMA_VERSION: (
+        *_INITIAL_MATERIALIZATION_CATALOGS, _CONSOLIDATION_CATALOG, *_DELIVERY_CATALOGS,
+        _SKILL_CANDIDATE_CATALOG, *_RUNTIME_EVENT_INDEX_CATALOGS, _RUNTIME_SOURCE_RELEASE_CATALOG,
     ),
 }
 _CATALOG_SEED_DOMAIN = b"memorii.materialization-catalog.v1\x00"
@@ -578,6 +584,10 @@ class PartitionDataRepository:
             self._has_catalog(connection, name) for name in _RUNTIME_HISTORY_TABLES
         ):
             raise sqlite3.DatabaseError("runtime history catalog is outside the declared partition schema")
+        if version < _RUNTIME_SOURCE_RELEASE_SCHEMA_VERSION and self._has_catalog(
+            connection, _RUNTIME_SOURCE_RELEASE_CATALOG[0],
+        ):
+            raise sqlite3.DatabaseError("runtime source release catalog is outside the declared partition schema")
         entries: list[MaterializationCatalogEntry] = []
         for catalog, key_expression, payload_column in catalogs:
             rows = connection.execute(
@@ -638,6 +648,16 @@ class PartitionDataRepository:
         return PartitionDataRepository.read_schema_version(connection) >= _RUNTIME_HISTORY_SCHEMA_VERSION
 
     @staticmethod
+    def supports_runtime_source_release(connection: sqlite3.Connection) -> bool:
+        return PartitionDataRepository.read_schema_version(connection) >= _RUNTIME_SOURCE_RELEASE_SCHEMA_VERSION
+
+    @staticmethod
+    def _runtime_row_layouts(connection: sqlite3.Connection) -> Iterator[tuple[str, tuple[tuple[str, ...], tuple[str, ...]]]]:
+        yield from _RUNTIME_ROW_LAYOUTS.items()
+        if PartitionDataRepository.supports_runtime_source_release(connection):
+            yield _RUNTIME_SOURCE_RELEASE_CATALOG[0], ((_RUNTIME_SOURCE_RELEASE_CATALOG[1],), ())
+
+    @staticmethod
     def verification_cookie(connection: sqlite3.Connection) -> tuple[int, int]:
         # SQLite's data_version advances for other connections. The local
         # change count invalidates a cached acquisition for this connection.
@@ -671,7 +691,7 @@ class PartitionDataRepository:
         )
         triggers: list[str] = []
         try:
-            for catalog, (keys, indexed) in _RUNTIME_ROW_LAYOUTS.items():
+            for catalog, (keys, indexed) in self._runtime_row_layouts(connection):
                 triggers.extend(self._capture_runtime_catalog(connection, catalog, keys, indexed))
             yield changes
             observed: dict[tuple[str, str], RuntimeRowChange] = {}
@@ -735,7 +755,7 @@ class PartitionDataRepository:
 
     @staticmethod
     def runtime_materialized_rows(connection: sqlite3.Connection) -> Iterator[RuntimeMaterializedRow]:
-        for catalog, (keys, indexed) in _RUNTIME_ROW_LAYOUTS.items():
+        for catalog, (keys, indexed) in PartitionDataRepository._runtime_row_layouts(connection):
             columns = ", ".join((*keys, *indexed, "record_json"))
             for row in connection.execute(f"SELECT {columns} FROM {catalog}"):
                 yield RuntimeMaterializedRow(
@@ -866,6 +886,42 @@ class PartitionDataRepository:
             if known_catalog == catalog:
                 return key
         raise ValueError("unsupported delivery catalog")
+
+    @staticmethod
+    def read_runtime_source_release_grant(connection: sqlite3.Connection, grant_id: str) -> str | None:
+        row = connection.execute(
+            "SELECT record_json FROM runtime_source_release_grants WHERE grant_id = ?", (grant_id,),
+        ).fetchone()
+        return None if row is None else str(row[0])
+
+    @staticmethod
+    def read_active_runtime_source_release_grants(
+        connection: sqlite3.Connection, *, task_prefix: str, limit: int,
+    ) -> tuple[str, ...]:
+        rows = connection.execute(
+            "SELECT record_json FROM runtime_source_release_grants"
+            " WHERE grant_id GLOB ? AND json_extract(record_json, '$.status') = 'active'"
+            " ORDER BY grant_id LIMIT ?",
+            (task_prefix + "*", limit),
+        )
+        return tuple(str(row[0]) for row in rows)
+
+    @staticmethod
+    def write_runtime_source_release_grant(
+        connection: sqlite3.Connection, *, grant_id: str, record_json: str, previous_json: str | None,
+    ) -> None:
+        if previous_json is None:
+            connection.execute(
+                "INSERT INTO runtime_source_release_grants (grant_id, record_json) VALUES (?, ?)",
+                (grant_id, record_json),
+            )
+            return
+        updated = connection.execute(
+            "UPDATE runtime_source_release_grants SET record_json = ? WHERE grant_id = ? AND record_json = ?",
+            (record_json, grant_id, previous_json),
+        )
+        if updated.rowcount != 1:
+            raise sqlite3.DatabaseError("runtime source release grant no longer matches its previous state")
 
     def read_publication_row(self, connection: sqlite3.Connection) -> sqlite3.Row | None:
         return connection.execute(
@@ -1331,6 +1387,11 @@ class PartitionDataRepository:
                 self._install_delivery_catalogs(connection)
             if PARTITION_SCHEMA_VERSION >= _RUNTIME_HISTORY_SCHEMA_VERSION:
                 self._install_runtime_history(connection)
+            if PARTITION_SCHEMA_VERSION >= _RUNTIME_SOURCE_RELEASE_SCHEMA_VERSION:
+                connection.execute(
+                    "CREATE TABLE runtime_source_release_grants ("
+                    " grant_id TEXT PRIMARY KEY NOT NULL, record_json TEXT NOT NULL)"
+                )
             connection.execute(
                 "INSERT INTO memory_revision_state (id, write_revision, data_revision)"
                 " VALUES (1, 0, 0)"
