@@ -39,3 +39,5 @@ Qualify the reference capacity workload through installed owners once the fixtur
 ## Gate Changes
 
 The continuation uses the existing durable-runtime-integration job for `test_runtime_journal.py` and `test_managed_candidate_delivery.py`. They exercise the signed transaction, reopen and recovery paths, so they belong with the existing installed managed sidecar and runtime checks. This extends the selection without changing its 15-minute timeout or other gates. Local macOS runs used `pytest -W error -p no:cacheprovider` with Python 3.12. The GitHub job remains the Linux Python 3.11 owner.
+
+The storage integration job now covers exact-current restore selection and stale handle fencing through `test_partition_generation_selection.py`. The runtime integration job covers the embedded host projection read through `test_managed_work_projection_recall.py`, including out-of-order target effects, reopen and origin-grant revocation.

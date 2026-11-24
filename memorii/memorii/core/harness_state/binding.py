@@ -26,10 +26,15 @@ from memorii.core.harness_state.service import (
     RuntimeReadGrant,
 )
 from memorii.core.persistence.runtime_repository import RuntimeStateRepository
-from memorii.core.storage_administration.service import StorageAdministrationService
+from memorii.core.storage_administration.service import (
+    InstallationIntegrityError,
+    StorageAdministrationError,
+    StorageAdministrationService,
+)
 
 if TYPE_CHECKING:
     from memorii.core.harness_state.writeback_decision import WritebackDecisionService
+    from memorii.core.work_state.runtime_projection_read import ManagedWorkProjectionReader
 
 
 class RuntimeTaskBinding(BaseModel):
@@ -69,6 +74,18 @@ class HermesRuntimeStatePorts:
         credentials = SidecarCredentialStore(self._administration.installation_root / "control" / "credentials")
         return WritebackDecisionService(self._administration, credentials, credential)
 
+    def host_work_projection(
+        self, *, credential: str, grant: RuntimeReadGrant,
+    ) -> ManagedWorkProjectionReader:
+        """Bind the host-only managed recall port to a provisioned finite grant."""
+        from memorii.core.harness_state.credentials import SidecarCredentialStore
+        from memorii.core.work_state.runtime_projection_read import ManagedWorkProjectionReader
+
+        credentials = SidecarCredentialStore(self._administration.installation_root / "control" / "credentials")
+        return ManagedWorkProjectionReader(
+            self._administration, credentials=credentials, secret=credential, grant=grant,
+        )
+
     def runtime_prefetch_text(
         self,
         *,
@@ -99,9 +116,14 @@ class HermesRuntimeStatePorts:
             epoch=1,
             expires_at=moment + self._grant_ttl,
         )
-        return self._service.read_state(
-            task_id=binding.installation_task_id, grant=grant, now=moment
-        )
+        try:
+            return self._service.read_state(
+                task_id=binding.installation_task_id, grant=grant, now=moment
+            )
+        except InstallationIntegrityError as exc:
+            raise HarnessStateError("integrity_error: managed runtime state could not be verified") from exc
+        except StorageAdministrationError as exc:
+            raise HarnessStateError("unavailable: reopen the managed runtime state port") from exc
 
     def tool_state_summary(self, *, principal: str) -> dict[str, object]:
         """Model-tool state view: durable when bound, plainly otherwise."""

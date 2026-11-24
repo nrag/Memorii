@@ -232,6 +232,36 @@ def stage_work_projection(
     return entry
 
 
+def require_current_projection_authority(
+    administration: StorageAdministrationService,
+    grants: ManagedHostCommandAuthority,
+    entry: ManagedWorkProjectionDelivery,
+    state: InstallationControlState,
+    finalized: RuntimePublicationState,
+    now: datetime,
+) -> None:
+    """Verify the original proof and its current grant under the owner's fence."""
+    if not administration.verify_operation_origin(entry.origin):
+        raise DeliveryTransitionError("integrity_error: invalid signed projection origin")
+    binding = entry.delivery.request.authority
+    resolved = grants.resolve_persisted_binding_in_verified_context(
+        credential_id=binding.credential_id,
+        principal=binding.principal,
+        grant_id=binding.grant_id,
+        grant_epoch=binding.grant_epoch,
+        request=entry.command,
+        state=state,
+        finalized=finalized,
+        now=now,
+    )
+    if (
+        resolved.client_namespace != binding.client_namespace
+        or resolved.client_namespace != binding.host_binding_id
+        or not resolved.permits_work_projection(entry.projection.scope.task_id)
+    ):
+        raise HostCommandAuthorityError("denied: current grant does not authorize projection")
+
+
 class ManagedWorkProjectionWorker:
     """Enrolled local worker. An effect requires current grant and a live claim."""
 
@@ -267,7 +297,7 @@ class ManagedWorkProjectionWorker:
                 repository.apply_managed_work_projection_delivery(connection, entry.with_delivery(result))
                 return None
             try:
-                self._require_projection_authority(entry, state, finalized, now)
+                require_current_projection_authority(self._administration, self._grants, entry, state, finalized, now)
             except HostCommandAuthorityError as exc:
                 if not str(exc).startswith(("denied:", "not_found:")):
                     raise
@@ -306,7 +336,7 @@ class ManagedWorkProjectionWorker:
                 repository.apply_managed_work_projection_delivery(connection, entry.with_delivery(rejected))
                 return None
             try:
-                self._require_projection_authority(entry, state, finalized, now)
+                require_current_projection_authority(self._administration, self._grants, entry, state, finalized, now)
             except HostCommandAuthorityError as exc:
                 if (
                     not str(exc).startswith(("denied:", "not_found:"))
@@ -349,33 +379,6 @@ class ManagedWorkProjectionWorker:
             return self._publish(claim.delivery_id, apply)
         except _DeliveredProjection as recovered:
             return recovered.receipt
-
-    def _require_projection_authority(
-        self,
-        entry: ManagedWorkProjectionDelivery,
-        state: InstallationControlState,
-        finalized: RuntimePublicationState,
-        now: datetime,
-    ) -> None:
-        if not self._administration.verify_operation_origin(entry.origin):
-            raise DeliveryTransitionError("integrity_error: invalid signed projection origin")
-        binding = entry.delivery.request.authority
-        resolved = self._grants.resolve_persisted_binding_in_verified_context(
-            credential_id=binding.credential_id,
-            principal=binding.principal,
-            grant_id=binding.grant_id,
-            grant_epoch=binding.grant_epoch,
-            request=entry.command,
-            state=state,
-            finalized=finalized,
-            now=now,
-        )
-        if (
-            resolved.client_namespace != binding.client_namespace
-            or resolved.client_namespace != binding.host_binding_id
-            or not resolved.permits_work_projection(entry.projection.scope.task_id)
-        ):
-            raise HostCommandAuthorityError("denied: current grant does not authorize projection")
 
     def _publish(
         self,
