@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import sqlite3
-import stat
-import struct
+import subprocess
+import sys
 from collections import deque
 from collections.abc import Iterator, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from itertools import zip_longest
-from sys import platform
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -107,11 +106,6 @@ _PAYLOAD_DOMAIN = b"memorii.memory-record-payload.v1\x00"
 _CHUNK_BYTES = 256 * 1024
 _MAX_QUEUED_PAYLOAD_BYTES = 4 * 1024 * 1024
 _MAX_PENDING_HASHES = 4
-_DARWIN_READ_AHEAD_LIMIT = 6 * 1024**3
-_DARWIN_READ_AHEAD_SPAN = 32 * 1024**2
-# Darwin sys/fcntl.h defines F_RDADVISE and struct radvisory (off_t, int).
-_DARWIN_READ_ADVICE = 44
-_DARWIN_READ_RANGE = struct.Struct("@qi4x")
 _RecordInput = tuple[str, str, str, str, str]
 
 
@@ -251,28 +245,22 @@ def _bounded_payload_rows(connection: sqlite3.Connection) -> sqlite3.Cursor:
 
 
 def _advise_raw_read_ahead(connection: sqlite3.Connection) -> None:
-    if platform != "darwin":
+    if sys.platform != "darwin":
         return
-    import fcntl
-
     database = next((row[2] for row in connection.execute("PRAGMA database_list") if row[1] == "main"), "")
     if not database:
         return
+    # Closing another descriptor for the inode in this process can release
+    # SQLite's process-owned POSIX locks. The helper owns its descriptor.
     try:
-        descriptor = os.open(database, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
-        try:
-            info = os.fstat(descriptor)
-            if not stat.S_ISREG(info.st_mode):
-                return
-            limit = min(info.st_size, _DARWIN_READ_AHEAD_LIMIT)
-            for offset in range(0, limit, _DARWIN_READ_AHEAD_SPAN):
-                length = min(_DARWIN_READ_AHEAD_SPAN, limit - offset)
-                fcntl.fcntl(descriptor, _DARWIN_READ_ADVICE, _DARWIN_READ_RANGE.pack(offset, length))
-        finally:
-            os.close(descriptor)
-    except OSError:
-        # Advice can be unsupported or the path unavailable. Only the
-        # existing SQLite snapshot below supplies authenticated bytes.
+        helper = Path(__file__).with_name("darwin_read_ahead.py").absolute()
+        subprocess.run(
+            [sys.executable, "-I", "-S", str(helper), database],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            timeout=2, check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        # Advice is optional. The SQLite snapshot supplies authenticated bytes.
         return
 
 
