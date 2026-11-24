@@ -30,6 +30,7 @@ from memorii.core.persistence.runtime_contracts import (
     SolverJustificationRecord,
     SolverRunRecord,
     TaskRecord,
+    canonical_runtime_digest,
 )
 from memorii.core.persistence.runtime_repository import RuntimeStateRepository
 from memorii.core.storage_administration.revoked_identity_view import (
@@ -224,6 +225,7 @@ def stage_task_lifecycle_archive(
 class RuntimeCheckpointManifest(BaseModel):
     """Canonical manifest of one checkpoint's members."""
 
+    format_version: Literal[1, 2] = 1
     repository_id: str = Field(min_length=1)
     runtime_revision: int = Field(ge=1)
     task_count: int = Field(ge=0)
@@ -267,6 +269,8 @@ class RuntimeCheckpoint(BaseModel):
 
 
 def compute_checkpoint_manifest_digest(manifest: RuntimeCheckpointManifest) -> str:
+    if manifest.format_version == 2:
+        return canonical_runtime_digest((CHECKPOINT_SIGNATURE_PURPOSE, manifest.model_dump(mode="json")))
     import hashlib
 
     payload = ":".join(
@@ -281,6 +285,19 @@ def compute_checkpoint_manifest_digest(manifest: RuntimeCheckpointManifest) -> s
         )
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _checkpoint_member_digest(
+    tasks: tuple[TaskRecord, ...],
+    runs: tuple[SolverRunRecord, ...],
+    overlays: tuple[RuntimeOverlayVersion, ...],
+    justifications: tuple[SolverJustificationRecord, ...],
+) -> str:
+    return canonical_runtime_digest((
+        "memorii.runtime-checkpoint-members.v2",
+        tuple(tuple(record.model_dump(mode="json") for record in records)
+              for records in (tasks, runs, overlays, justifications)),
+    ))
 
 
 class ResumeStatus(str):
@@ -322,68 +339,42 @@ def create_runtime_checkpoint(
     already-open transaction (the publication path); otherwise the
     repository opens its own read transaction as before.
     """
-    import hashlib
     import uuid
 
-    if connection is not None:
-        import sqlite3 as _sqlite3
-
-        rows = connection.execute(
-            "SELECT record_json FROM runtime_tasks"
-        ).fetchall()
-        tasks = tuple(
-            TaskRecord.model_validate_json(str(row[0])) for row in rows
-        )
-        solver_runs: list[SolverRunRecord] = []
-        overlays: list[RuntimeOverlayVersion] = []
-        justifications: list[SolverJustificationRecord] = []
-        for task in tasks:
-            for run in repository.list_solver_runs_in(connection, task.task_id):
-                solver_runs.append(run)
-                overlays.extend(repository.list_overlays_in(connection, run.solver_id))
-                justifications.extend(
-                    repository.list_justifications_in(connection, run.solver_id)
-                )
-        member_source = (tasks, solver_runs, overlays, justifications)
-        revision = repository.read_runtime_revision_in(connection)
-        del _sqlite3
-    else:
-        tasks = repository.list_tasks()
-        solver_runs = []
-        overlays = []
-        justifications = []
-        for task in tasks:
-            for run in repository.list_solver_runs(task.task_id):
-                solver_runs.append(run)
-                overlays.extend(repository.list_overlays(run.solver_id))
-                justifications.extend(repository.list_justifications(run.solver_id))
-        member_source = None
-        revision = repository.runtime_revision()
-    if member_source is not None:
-        tasks, solver_runs, overlays, justifications = member_source
-    member_digest = hashlib.sha256(
-        (
-            "|".join(sorted(task.task_id for task in tasks))
-            + "|"
-            + "|".join(sorted(run.solver_id for run in solver_runs))
-            + "|"
-            + "|".join(sorted(o.version_id for o in overlays))
-            + "|"
-            + "|".join(sorted(j.justification_id for j in justifications))
-        ).encode("utf-8")
-    ).hexdigest()
+    if connection is None:
+        with repository.partition.transaction(write=False) as snapshot:
+            return create_runtime_checkpoint(
+                repository, signer_key_id=signer_key_id, sign=sign, checkpoint_id=checkpoint_id,
+                now=now, connection=snapshot,
+            )
+    rows = connection.execute("SELECT record_json FROM runtime_tasks ORDER BY task_id").fetchall()
+    tasks = tuple(TaskRecord.model_validate_json(row[0]) for row in rows)
+    solver_runs = tuple(sorted(
+        (run for task in tasks for run in repository.list_solver_runs_in(connection, task.task_id)),
+        key=lambda run: run.solver_id,
+    ))
+    overlays = tuple(sorted(
+        (overlay for run in solver_runs for overlay in repository.list_overlays_in(connection, run.solver_id)),
+        key=lambda overlay: overlay.version_id,
+    ))
+    justifications = tuple(sorted(
+        (item for run in solver_runs for item in repository.list_justifications_in(connection, run.solver_id)),
+        key=lambda item: item.justification_id,
+    ))
+    revision = repository.read_runtime_revision_in(connection)
     if revision < 1:
         raise RuntimeCheckpointError(
             "a checkpoint requires at least one committed runtime revision"
         )
     manifest = RuntimeCheckpointManifest(
+        format_version=2,
         repository_id="default",
         runtime_revision=revision,
         task_count=len(tasks),
         solver_run_count=len(solver_runs),
         overlay_count=len(overlays),
         justification_count=len(justifications),
-        member_digest=member_digest,
+        member_digest=_checkpoint_member_digest(tasks, solver_runs, overlays, justifications),
     )
     digest = compute_checkpoint_manifest_digest(manifest)
     signature = sign(CHECKPOINT_SIGNATURE_PURPOSE, digest)  # type: ignore[call-arg]
@@ -393,12 +384,7 @@ def create_runtime_checkpoint(
         created_at=now or datetime.now(UTC),
         signer_key_id=signer_key_id,
         signature=signature,
-        tasks=tuple(sorted(tasks, key=lambda task: task.task_id)),
-        solver_runs=tuple(sorted(solver_runs, key=lambda run: run.solver_id)),
-        overlays=tuple(sorted(overlays, key=lambda overlay: overlay.version_id)),
-        justifications=tuple(
-            sorted(justifications, key=lambda item: item.justification_id)
-        ),
+        tasks=tasks, solver_runs=solver_runs, overlays=overlays, justifications=justifications,
     )
 
 
@@ -408,6 +394,12 @@ def verify_runtime_checkpoint(
     verify: object,
 ) -> None:
     """Fail closed on signature, purpose or manifest mismatch."""
+    if checkpoint.manifest.format_version != 2:
+        raise RuntimeCheckpointError("integrity_error: checkpoint has no authenticated member content")
+    if checkpoint.manifest.member_digest != _checkpoint_member_digest(
+        checkpoint.tasks, checkpoint.solver_runs, checkpoint.overlays, checkpoint.justifications,
+    ):
+        raise RuntimeCheckpointError("integrity_error: checkpoint member content differs from manifest")
     digest = compute_checkpoint_manifest_digest(checkpoint.manifest)
     ok = verify(checkpoint.signer_key_id, CHECKPOINT_SIGNATURE_PURPOSE, digest, checkpoint.signature)  # type: ignore[call-arg]
     if not ok:
