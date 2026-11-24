@@ -15,6 +15,7 @@ import sys
 
 
 def build_openapi_document() -> dict[str, object]:
+    from memorii.core.harness_state.consolidation_read import ConsolidationReadPage, ConsolidationReadRequest
     from memorii.core.harness_state.consumer import SpoolRecord
     from memorii.core.harness_state.envelope import HarnessStateEnvelope
     from memorii.core.harness_state.sidecar import (
@@ -44,6 +45,32 @@ def build_openapi_document() -> dict[str, object]:
         },
         "servers": [{"url": "http://127.0.0.1", "description": "loopback only"}],
         "paths": {
+            "/v1/consolidation/read": {
+                "post": {
+                    "operationId": "readConsolidation",
+                    "security": [{"bearerAuth": []}],
+                    "requestBody": {
+                        "required": True,
+                        "content": {"application/json": {
+                            "schema": {"$ref": "#/components/schemas/ConsolidationReadRequest"},
+                        }},
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Scoped sealed consolidation result page",
+                            "content": {"application/json": {
+                                "schema": {"$ref": "#/components/schemas/ConsolidationReadPage"},
+                            }},
+                        },
+                        "default": {
+                            "description": "Closed error envelope",
+                            "content": {"application/json": {
+                                "schema": {"$ref": "#/components/schemas/SidecarError"},
+                            }},
+                        },
+                    },
+                }
+            },
             "/v1/operations/prepare": {
                 "post": {
                     "operationId": "prepareRuntimeCommand",
@@ -157,6 +184,8 @@ def build_openapi_document() -> dict[str, object]:
                 "SidecarIntakeRequest": schema(SidecarIntakeRequest),
                 "RuntimeCommandRequest": schema(RuntimeCommandRequest),
                 "OperationOrigin": schema(OperationOrigin),
+                "ConsolidationReadRequest": schema(ConsolidationReadRequest),
+                "ConsolidationReadPage": schema(ConsolidationReadPage),
                 "SpoolRecord": schema(SpoolRecord),
                 "HarnessStateEnvelope": schema(HarnessStateEnvelope),
                 "SidecarError": schema(SidecarError),

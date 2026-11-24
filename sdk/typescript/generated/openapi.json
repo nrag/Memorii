@@ -1,6 +1,753 @@
 {
   "components": {
     "schemas": {
+      "ConsolidationReadPage": {
+        "$defs": {
+          "ArchivePackage": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "archive_package",
+                "default": "archive_package",
+                "title": "Kind",
+                "type": "string"
+              },
+              "reference": {
+                "$ref": "#/$defs/ArchivePackageRef"
+              }
+            },
+            "required": [
+              "reference"
+            ],
+            "title": "ArchivePackage",
+            "type": "object"
+          },
+          "ArchivePackageRef": {
+            "additionalProperties": false,
+            "properties": {
+              "checkpoint_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Checkpoint Digest",
+                "type": "string"
+              },
+              "checkpoint_id": {
+                "title": "Checkpoint Id",
+                "type": "string"
+              },
+              "installation_id": {
+                "title": "Installation Id",
+                "type": "string"
+              },
+              "manifest_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Manifest Digest",
+                "type": "string"
+              },
+              "manifest_id": {
+                "title": "Manifest Id",
+                "type": "string"
+              },
+              "origin_revision": {
+                "minimum": 0,
+                "title": "Origin Revision",
+                "type": "integer"
+              },
+              "partition_id": {
+                "title": "Partition Id",
+                "type": "string"
+              },
+              "task_id": {
+                "title": "Task Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "installation_id",
+              "partition_id",
+              "task_id",
+              "origin_revision",
+              "checkpoint_id",
+              "checkpoint_digest",
+              "manifest_id",
+              "manifest_digest"
+            ],
+            "title": "ArchivePackageRef",
+            "type": "object"
+          },
+          "ConsolidationOfferStatus": {
+            "additionalProperties": false,
+            "properties": {
+              "decision_status": {
+                "enum": [
+                  "offered",
+                  "accepted",
+                  "declined"
+                ],
+                "title": "Decision Status",
+                "type": "string"
+              },
+              "delivery_status": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "pending",
+                      "delivering",
+                      "delivered",
+                      "rejected",
+                      "needs_reconciliation"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Delivery Status"
+              },
+              "offer_version": {
+                "minimum": 1,
+                "title": "Offer Version",
+                "type": "integer"
+              },
+              "output_id": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Output Id",
+                "type": "string"
+              },
+              "payload_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Payload Digest",
+                "type": "string"
+              }
+            },
+            "required": [
+              "output_id",
+              "offer_version",
+              "payload_digest",
+              "decision_status"
+            ],
+            "title": "ConsolidationOfferStatus",
+            "type": "object"
+          },
+          "ConsolidationOmission": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "episodic_summary",
+                  "skill_candidate",
+                  "semantic_candidate",
+                  "user_candidate"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "reason": {
+                "enum": [
+                  "insufficient_evidence",
+                  "policy_denied"
+                ],
+                "title": "Reason",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "reason"
+            ],
+            "title": "ConsolidationOmission",
+            "type": "object"
+          },
+          "ConsolidationOutput": {
+            "additionalProperties": false,
+            "properties": {
+              "ordinal": {
+                "minimum": 0,
+                "title": "Ordinal",
+                "type": "integer"
+              },
+              "output_id": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Output Id",
+                "type": "string"
+              },
+              "payload": {
+                "discriminator": {
+                  "mapping": {
+                    "archive_package": "#/$defs/ArchivePackage",
+                    "episodic_summary": "#/$defs/EpisodicSummary",
+                    "semantic_candidate": "#/$defs/SemanticCandidate",
+                    "skill_candidate": "#/$defs/SkillCandidate",
+                    "unresolved_follow_up_summary": "#/$defs/UnresolvedFollowUpSummary",
+                    "user_candidate": "#/$defs/UserCandidate"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/EpisodicSummary"
+                  },
+                  {
+                    "$ref": "#/$defs/SkillCandidate"
+                  },
+                  {
+                    "$ref": "#/$defs/SemanticCandidate"
+                  },
+                  {
+                    "$ref": "#/$defs/UserCandidate"
+                  },
+                  {
+                    "$ref": "#/$defs/UnresolvedFollowUpSummary"
+                  },
+                  {
+                    "$ref": "#/$defs/ArchivePackage"
+                  }
+                ],
+                "title": "Payload"
+              },
+              "payload_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Payload Digest",
+                "type": "string"
+              }
+            },
+            "required": [
+              "output_id",
+              "ordinal",
+              "payload_digest",
+              "payload"
+            ],
+            "title": "ConsolidationOutput",
+            "type": "object"
+          },
+          "ConsolidationReadEntry": {
+            "additionalProperties": false,
+            "properties": {
+              "offer": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ConsolidationOfferStatus"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "output": {
+                "$ref": "#/$defs/ConsolidationOutput"
+              }
+            },
+            "required": [
+              "output"
+            ],
+            "title": "ConsolidationReadEntry",
+            "type": "object"
+          },
+          "ConsolidationSourceReference": {
+            "additionalProperties": false,
+            "properties": {
+              "source_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Source Digest",
+                "type": "string"
+              },
+              "source_id": {
+                "title": "Source Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "source_id",
+              "source_digest"
+            ],
+            "title": "ConsolidationSourceReference",
+            "type": "object"
+          },
+          "EpisodicSummary": {
+            "additionalProperties": false,
+            "properties": {
+              "execution_node_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Execution Node Id"
+              },
+              "kind": {
+                "const": "episodic_summary",
+                "default": "episodic_summary",
+                "title": "Kind",
+                "type": "string"
+              },
+              "provenance": {
+                "const": "derived",
+                "default": "derived",
+                "title": "Provenance",
+                "type": "string"
+              },
+              "solver_run_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Solver Run Id"
+              },
+              "source_refs": {
+                "default": [],
+                "items": {
+                  "$ref": "#/$defs/ConsolidationSourceReference"
+                },
+                "maxItems": 64,
+                "title": "Source Refs",
+                "type": "array"
+              },
+              "summary": {
+                "title": "Summary",
+                "type": "string"
+              }
+            },
+            "required": [
+              "summary"
+            ],
+            "title": "EpisodicSummary",
+            "type": "object"
+          },
+          "FollowUpItem": {
+            "additionalProperties": false,
+            "properties": {
+              "node_id": {
+                "title": "Node Id",
+                "type": "string"
+              },
+              "reason": {
+                "title": "Reason",
+                "type": "string"
+              },
+              "source_refs": {
+                "default": [],
+                "items": {
+                  "$ref": "#/$defs/ConsolidationSourceReference"
+                },
+                "maxItems": 64,
+                "title": "Source Refs",
+                "type": "array"
+              }
+            },
+            "required": [
+              "node_id",
+              "reason"
+            ],
+            "title": "FollowUpItem",
+            "type": "object"
+          },
+          "SemanticCandidate": {
+            "additionalProperties": false,
+            "properties": {
+              "abstraction": {
+                "title": "Abstraction",
+                "type": "string"
+              },
+              "execution_node_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Execution Node Id"
+              },
+              "kind": {
+                "const": "semantic_candidate",
+                "default": "semantic_candidate",
+                "title": "Kind",
+                "type": "string"
+              },
+              "provenance": {
+                "const": "derived",
+                "default": "derived",
+                "title": "Provenance",
+                "type": "string"
+              },
+              "solver_run_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Solver Run Id"
+              },
+              "source_refs": {
+                "default": [],
+                "items": {
+                  "$ref": "#/$defs/ConsolidationSourceReference"
+                },
+                "maxItems": 64,
+                "title": "Source Refs",
+                "type": "array"
+              }
+            },
+            "required": [
+              "abstraction"
+            ],
+            "title": "SemanticCandidate",
+            "type": "object"
+          },
+          "SkillCandidate": {
+            "additionalProperties": false,
+            "properties": {
+              "execution_node_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Execution Node Id"
+              },
+              "kind": {
+                "const": "skill_candidate",
+                "default": "skill_candidate",
+                "title": "Kind",
+                "type": "string"
+              },
+              "provenance": {
+                "const": "derived",
+                "default": "derived",
+                "title": "Provenance",
+                "type": "string"
+              },
+              "solver_run_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Solver Run Id"
+              },
+              "source_refs": {
+                "default": [],
+                "items": {
+                  "$ref": "#/$defs/ConsolidationSourceReference"
+                },
+                "maxItems": 64,
+                "title": "Source Refs",
+                "type": "array"
+              },
+              "steps": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 32,
+                "minItems": 1,
+                "title": "Steps",
+                "type": "array"
+              },
+              "summary": {
+                "title": "Summary",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              }
+            },
+            "required": [
+              "title",
+              "summary",
+              "steps"
+            ],
+            "title": "SkillCandidate",
+            "type": "object"
+          },
+          "UnresolvedFollowUpSummary": {
+            "additionalProperties": false,
+            "properties": {
+              "items": {
+                "default": [],
+                "items": {
+                  "$ref": "#/$defs/FollowUpItem"
+                },
+                "maxItems": 32,
+                "title": "Items",
+                "type": "array"
+              },
+              "kind": {
+                "const": "unresolved_follow_up_summary",
+                "default": "unresolved_follow_up_summary",
+                "title": "Kind",
+                "type": "string"
+              },
+              "truncated": {
+                "default": false,
+                "title": "Truncated",
+                "type": "boolean"
+              }
+            },
+            "title": "UnresolvedFollowUpSummary",
+            "type": "object"
+          },
+          "UserCandidate": {
+            "additionalProperties": false,
+            "properties": {
+              "execution_node_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Execution Node Id"
+              },
+              "kind": {
+                "const": "user_candidate",
+                "default": "user_candidate",
+                "title": "Kind",
+                "type": "string"
+              },
+              "preference": {
+                "title": "Preference",
+                "type": "string"
+              },
+              "provenance": {
+                "const": "derived",
+                "default": "derived",
+                "title": "Provenance",
+                "type": "string"
+              },
+              "solver_run_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Solver Run Id"
+              },
+              "source_refs": {
+                "default": [],
+                "items": {
+                  "$ref": "#/$defs/ConsolidationSourceReference"
+                },
+                "maxItems": 64,
+                "title": "Source Refs",
+                "type": "array"
+              },
+              "valid_from": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Valid From"
+              },
+              "valid_to": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Valid To"
+              }
+            },
+            "required": [
+              "preference"
+            ],
+            "title": "UserCandidate",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "continuation_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Continuation Cursor"
+          },
+          "omissions": {
+            "items": {
+              "$ref": "#/$defs/ConsolidationOmission"
+            },
+            "maxItems": 32,
+            "title": "Omissions",
+            "type": "array"
+          },
+          "origin_revision": {
+            "minimum": 0,
+            "title": "Origin Revision",
+            "type": "integer"
+          },
+          "outputs": {
+            "items": {
+              "$ref": "#/$defs/ConsolidationReadEntry"
+            },
+            "maxItems": 32,
+            "title": "Outputs",
+            "type": "array"
+          },
+          "protocol_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Protocol Version",
+            "type": "integer"
+          },
+          "result_id": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Result Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result_id",
+          "origin_revision",
+          "outputs",
+          "omissions"
+        ],
+        "title": "ConsolidationReadPage",
+        "type": "object"
+      },
+      "ConsolidationReadRequest": {
+        "$defs": {
+          "ConsolidationReadBinding": {
+            "additionalProperties": false,
+            "description": "Optional echo of the installed host's resolved coordinates.",
+            "properties": {
+              "client_namespace": {
+                "maxLength": 512,
+                "minLength": 1,
+                "title": "Client Namespace",
+                "type": "string"
+              },
+              "installation_id": {
+                "maxLength": 512,
+                "minLength": 1,
+                "title": "Installation Id",
+                "type": "string"
+              },
+              "task_id": {
+                "maxLength": 512,
+                "minLength": 1,
+                "title": "Task Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "installation_id",
+              "client_namespace",
+              "task_id"
+            ],
+            "title": "ConsolidationReadBinding",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "maxLength": 16384,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cursor"
+          },
+          "host_binding": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ConsolidationReadBinding"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "origin_operation_id": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Origin Operation Id",
+            "type": "string"
+          },
+          "page_size": {
+            "default": 10,
+            "maximum": 32,
+            "minimum": 1,
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "protocol_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Protocol Version",
+            "type": "integer"
+          },
+          "task_id": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "origin_operation_id"
+        ],
+        "title": "ConsolidationReadRequest",
+        "type": "object"
+      },
       "HarnessStateEnvelope": {
         "$defs": {
           "HarnessOutputBlock": {
@@ -1400,6 +2147,48 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/v1/consolidation/read": {
+      "post": {
+        "operationId": "readConsolidation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsolidationReadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsolidationReadPage"
+                }
+              }
+            },
+            "description": "Scoped sealed consolidation result page"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SidecarError"
+                }
+              }
+            },
+            "description": "Closed error envelope"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/v1/operations/prepare": {
       "post": {
         "operationId": "prepareRuntimeCommand",

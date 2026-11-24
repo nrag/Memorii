@@ -17,7 +17,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     # Imported lazily at runtime: the storage layer must not trigger the
@@ -27,9 +27,10 @@ if TYPE_CHECKING:
     from memorii.core.persistence.contracts import MaterializationCatalogEntry
     from memorii.core.semantic_ingestion.ontology_index import OntologyIndexProjection
 
-PARTITION_SCHEMA_VERSION = 2
+PARTITION_SCHEMA_VERSION = 3
 _INITIAL_PARTITION_SCHEMA_VERSION = 1
 _CONSOLIDATION_SCHEMA_VERSION = 2
+_DELIVERY_SCHEMA_VERSION = 3
 _DEFAULT_BUSY_TIMEOUT_MS = 5_000
 
 _SCHEMA_STATEMENTS = (
@@ -291,6 +292,13 @@ _CONSOLIDATION_SCHEMA_STATEMENT = """
     )
 """
 
+_DELIVERY_CATALOGS = (
+    ("writeback_decisions", "decision_id", "record_json"),
+    ("runtime_work_projections", "delivery_id", "record_json"),
+    ("runtime_target_receipts", "delivery_id", "record_json"),
+)
+DeliveryCatalog = Literal["writeback_decisions", "runtime_work_projections", "runtime_target_receipts"]
+
 # Authoritative materialized catalogs covered by the signed manifest. The
 # fold is canonical: per-row digest over (primary key, payload), chained in
 # the catalog's primary-key order from a domain-separated per-catalog seed.
@@ -359,6 +367,9 @@ _CONSOLIDATION_CATALOG = ("consolidation_results", "result_id", "record_json")
 _MATERIALIZATION_CATALOGS_BY_VERSION = {
     _INITIAL_PARTITION_SCHEMA_VERSION: _INITIAL_MATERIALIZATION_CATALOGS,
     _CONSOLIDATION_SCHEMA_VERSION: (*_INITIAL_MATERIALIZATION_CATALOGS, _CONSOLIDATION_CATALOG),
+    _DELIVERY_SCHEMA_VERSION: (
+        *_INITIAL_MATERIALIZATION_CATALOGS, _CONSOLIDATION_CATALOG, *_DELIVERY_CATALOGS,
+    ),
 }
 _CATALOG_SEED_DOMAIN = b"memorii.materialization-catalog.v1\x00"
 
@@ -502,6 +513,10 @@ class PartitionDataRepository:
         catalogs = _MATERIALIZATION_CATALOGS_BY_VERSION[version]
         if version == _INITIAL_PARTITION_SCHEMA_VERSION and self._has_consolidation_catalog(connection):
             raise sqlite3.DatabaseError("consolidation catalog is outside the declared partition schema")
+        if version < _DELIVERY_SCHEMA_VERSION and any(
+            self._has_catalog(connection, name) for name, _, _ in _DELIVERY_CATALOGS
+        ):
+            raise sqlite3.DatabaseError("delivery catalog is outside the declared partition schema")
         entries: list[MaterializationCatalogEntry] = []
         for catalog, key_expression, payload_column in catalogs:
             rows = connection.execute(
@@ -544,8 +559,12 @@ class PartitionDataRepository:
 
     @staticmethod
     def _has_consolidation_catalog(connection: sqlite3.Connection) -> bool:
+        return PartitionDataRepository._has_catalog(connection, "consolidation_results")
+
+    @staticmethod
+    def _has_catalog(connection: sqlite3.Connection, name: str) -> bool:
         return connection.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'consolidation_results'"
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,),
         ).fetchone() is not None
 
     def stage_consolidation_schema_upgrade(self, connection: sqlite3.Connection) -> None:
@@ -568,6 +587,65 @@ class PartitionDataRepository:
     @staticmethod
     def _install_consolidation_catalog(connection: sqlite3.Connection) -> None:
         connection.execute(_CONSOLIDATION_SCHEMA_STATEMENT)
+
+    def stage_delivery_schema_upgrade(self, connection: sqlite3.Connection) -> None:
+        """Install delivery catalogs only before staged generation publication."""
+        if not connection.in_transaction or self.read_publication_row(connection) is not None:
+            raise sqlite3.DatabaseError("schema upgrade requires an unpublished staging transaction")
+        if self.read_schema_version(connection) != _CONSOLIDATION_SCHEMA_VERSION:
+            raise sqlite3.DatabaseError("delivery upgrade requires the consolidation partition format")
+        self._install_delivery_catalogs(connection)
+        connection.execute(
+            "UPDATE partition_schema SET value = ? WHERE key = 'schema_version'",
+            (str(_DELIVERY_SCHEMA_VERSION),),
+        )
+
+    @staticmethod
+    def _install_delivery_catalogs(connection: sqlite3.Connection) -> None:
+        for catalog, key, payload in _DELIVERY_CATALOGS:
+            connection.execute(
+                f"CREATE TABLE {catalog} ({key} TEXT PRIMARY KEY NOT NULL, {payload} TEXT NOT NULL)"
+            )
+
+    @staticmethod
+    def require_delivery_catalogs(connection: sqlite3.Connection) -> None:
+        if PartitionDataRepository.read_schema_version(connection) < _DELIVERY_SCHEMA_VERSION:
+            raise sqlite3.DatabaseError("delivery partition schema upgrade required")
+
+    @staticmethod
+    def read_delivery_record(
+        connection: sqlite3.Connection,
+        *,
+        catalog: DeliveryCatalog,
+        record_id: str,
+    ) -> str | None:
+        PartitionDataRepository.require_delivery_catalogs(connection)
+        key = PartitionDataRepository._delivery_catalog_key(catalog)
+        row = connection.execute(
+            f"SELECT record_json FROM {catalog} WHERE {key} = ?", (record_id,),
+        ).fetchone()
+        return None if row is None else str(row[0])
+
+    @staticmethod
+    def insert_delivery_record(
+        connection: sqlite3.Connection,
+        *,
+        catalog: DeliveryCatalog,
+        record_id: str,
+        record_json: str,
+    ) -> None:
+        PartitionDataRepository.require_delivery_catalogs(connection)
+        key = PartitionDataRepository._delivery_catalog_key(catalog)
+        connection.execute(
+            f"INSERT INTO {catalog} ({key}, record_json) VALUES (?, ?)", (record_id, record_json),
+        )
+
+    @staticmethod
+    def _delivery_catalog_key(catalog: str) -> str:
+        for known_catalog, key, _ in _DELIVERY_CATALOGS:
+            if known_catalog == catalog:
+                return key
+        raise ValueError("unsupported delivery catalog")
 
     def read_publication_row(self, connection: sqlite3.Connection) -> sqlite3.Row | None:
         return connection.execute(
@@ -868,7 +946,7 @@ class PartitionDataRepository:
         connection: sqlite3.Connection,
         *,
         table: str,
-        match: tuple[str, object, ...] = (),
+        match: tuple[tuple[str, object], ...] = (),
     ) -> Sequence[sqlite3.Row]:
         if table not in _RUNTIME_UPSERT_TABLES:
             raise sqlite3.DatabaseError(f"unknown runtime catalog: {table}")
@@ -886,7 +964,7 @@ class PartitionDataRepository:
         connection: sqlite3.Connection,
         *,
         table: str,
-        match: tuple[str, object, ...],
+        match: tuple[tuple[str, object], ...],
     ) -> sqlite3.Row | None:
         rows = self.read_runtime_rows(connection, table=table, match=match)
         return rows[0] if rows else None
@@ -1026,8 +1104,10 @@ class PartitionDataRepository:
                 return
             for statement in _SCHEMA_STATEMENTS:
                 connection.execute(statement)
-            if PARTITION_SCHEMA_VERSION == _CONSOLIDATION_SCHEMA_VERSION:
+            if PARTITION_SCHEMA_VERSION >= _CONSOLIDATION_SCHEMA_VERSION:
                 self._install_consolidation_catalog(connection)
+            if PARTITION_SCHEMA_VERSION >= _DELIVERY_SCHEMA_VERSION:
+                self._install_delivery_catalogs(connection)
             connection.execute(
                 "INSERT INTO memory_revision_state (id, write_revision, data_revision)"
                 " VALUES (1, 0, 0)"

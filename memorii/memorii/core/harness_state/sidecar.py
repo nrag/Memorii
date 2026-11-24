@@ -22,6 +22,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from memorii.core.harness_state.consolidation_read import (
+    ConsolidationReadError,
+    ConsolidationReadRequest,
+    ConsolidationReadService,
+    authenticated_consolidation_reader,
+)
 from memorii.core.harness_state.consumer import (
     ConsumerDeliveryError,
     HostEventDelivery,
@@ -139,6 +145,7 @@ class RuntimeSidecar:
         grant_factory: Callable[[str], RuntimeReadGrant],
         intake_factory: Callable[[str], HostIntakeBinding] | None = None,
         managed_intake_factory: Callable[[str], ManagedHostIntakeBinding | None] | None = None,
+        consolidation_reader_factory: Callable[[str], ConsolidationReadService] | None = None,
         grant_registry: GrantEpochRegistry | None = None,
         revoked_view: RevokedIdentityServingGate | None = None,
     ) -> None:
@@ -149,6 +156,7 @@ class RuntimeSidecar:
         if intake_factory is not None and managed_intake_factory is not None:
             raise ValueError("managed and legacy intake bindings are mutually exclusive")
         self._managed_intake_factory = managed_intake_factory
+        self._consolidation_reader_factory = consolidation_reader_factory
         # The revocation registry composes by default from the installation
         # control state so a revoked grant fails closed on every served path.
         if grant_registry is None:
@@ -210,6 +218,9 @@ class RuntimeSidecar:
             credentials=credentials,
             grant_factory=grant_factory,
             managed_intake_factory=managed_binding,
+            consolidation_reader_factory=lambda secret: authenticated_consolidation_reader(
+                administration, credentials, secret, grant_factory,
+            ),
         )
 
     def _principal_for(self, secret: str) -> str | None:
@@ -346,6 +357,30 @@ class RuntimeSidecar:
             return _error(503, "unavailable", None)
         return 200, proof.model_dump_json().encode()
 
+    def handle_consolidation_read_request(
+        self, *, bearer_token: str | None, origin: str | None, body: bytes, host: str | None = None
+    ) -> tuple[int, bytes]:
+        """Read sealed outputs under the current authenticated host scope."""
+        if origin is not None or host not in (None, "127.0.0.1", "localhost", "::1"):
+            return _error(403, "denied", None)
+        secret = bearer_token or ""
+        if self._principal_for(secret) is None:
+            return _error(401, "unauthenticated", None)
+        reader_factory = self._consolidation_reader_factory
+        if reader_factory is None:
+            return _error(503, "unavailable", None)
+        if len(body) > _MAXIMUM_INTAKE_BYTES:
+            return _error(400, "invalid_request", None)
+        try:
+            request = ConsolidationReadRequest.model_validate_json(body)
+        except ValueError:
+            return _error(400, "invalid_request", None)
+        try:
+            result = reader_factory(secret).read(request)
+        except ConsolidationReadError as exc:
+            return _error(_ERROR_STATUS[exc.code], exc.code, None)
+        return 200, result.model_dump_json().encode()
+
     def _handle_managed_intake(
         self, secret: str, body: bytes, operation_origin: str | None
     ) -> tuple[int, bytes]:
@@ -420,12 +455,16 @@ def build_sidecar_handler(sidecar: RuntimeSidecar) -> type[BaseHTTPRequestHandle
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:  # noqa: N802 - http.server API
-            if self.path == "/v1/operations/prepare":
+            if self.path in ("/v1/operations/prepare", "/v1/consolidation/read"):
                 length = _safe_content_length(self.headers.get("Content-Length"), _MAXIMUM_INTAKE_BYTES)
                 if length is None:
                     self._respond(*_error(400, "invalid_request", None))
                     return
-                self._respond(*sidecar.handle_prepare_request(
+                handle = (
+                    sidecar.handle_prepare_request if self.path == "/v1/operations/prepare"
+                    else sidecar.handle_consolidation_read_request
+                )
+                self._respond(*handle(
                     bearer_token=self.headers.get("Authorization", "").removeprefix("Bearer ") or None,
                     origin=self.headers.get("Origin"),
                     body=self.rfile.read(length) if length else b"",

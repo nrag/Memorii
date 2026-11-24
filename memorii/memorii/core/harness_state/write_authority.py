@@ -58,6 +58,7 @@ class HostCommandGrant(BaseModel):
     allowed_kinds: tuple[RuntimeCommandKind, ...] = Field(min_length=1)
     allowed_operation_ids: tuple[str, ...] = ()
     allowed_task_ids: tuple[str, ...] = ()
+    allowed_projection_task_ids: tuple[str, ...] = ()
     epoch: int = Field(default=1, ge=1)
     expires_at: datetime
     installation_id: str = Field(min_length=1)
@@ -84,6 +85,7 @@ class HostCommandGrant(BaseModel):
             raise ValueError("start_task authority must be granted separately")
         if self.expires_at.tzinfo is None:
             raise ValueError("expires_at must be timezone-aware")
+        _validate_projection_tasks(self.allowed_task_ids, self.allowed_projection_task_ids)
         return self
 
 
@@ -97,6 +99,7 @@ class HostCommandGrantRequest(BaseModel):
     allowed_kinds: tuple[RuntimeCommandKind, ...] = Field(min_length=1)
     allowed_operation_ids: tuple[str, ...] = ()
     allowed_task_ids: tuple[str, ...] = ()
+    allowed_projection_task_ids: tuple[str, ...] = ()
     expires_at: datetime
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -120,6 +123,7 @@ class HostCommandGrantRequest(BaseModel):
             raise ValueError("start_task authority must be granted separately")
         if self.expires_at.tzinfo is None:
             raise ValueError("expires_at must be timezone-aware")
+        _validate_projection_tasks(self.allowed_task_ids, self.allowed_projection_task_ids)
         return self
 
 
@@ -133,8 +137,20 @@ class ResolvedHostCommandAuthority(BaseModel):
     client_namespace: str
     installation_id: str
     data_generation_id: str
+    allowed_projection_task_ids: tuple[str, ...] = ()
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    def permits_work_projection(self, task_id: str) -> bool:
+        return task_id in self.allowed_projection_task_ids
+
+
+def _validate_projection_tasks(command_tasks: tuple[str, ...], projection_tasks: tuple[str, ...]) -> None:
+    if (
+        len(set(projection_tasks)) != len(projection_tasks)
+        or not set(projection_tasks).issubset(command_tasks)
+    ):
+        raise ValueError("projection scope must be unique and inside the explicit command task scope")
 
 
 class _RegistryPayload(BaseModel):
@@ -321,6 +337,36 @@ class ManagedHostCommandAuthority:
             now=now,
         )
 
+    def resolve_consolidation_reader_in_verified_context(
+        self,
+        *,
+        credential: IssuedCredential,
+        task_id: str,
+        origin_operation_id: str,
+        state: InstallationControlState,
+        finalized: RuntimePublicationState,
+        now: datetime,
+    ) -> ResolvedHostCommandAuthority:
+        """Resolve the origin namespace after the caller checks its read grant."""
+        payload = self._read_payload()
+        matches = tuple(
+            grant for grant in payload.grants
+            if grant.credential_id == credential.credential_id
+            and grant.principal == credential.principal
+            and grant.installation_id == state.installation_id
+            and grant.data_generation_id == finalized.data_generation_id
+            and grant.expires_at > now
+            and payload.revoked.get(grant.grant_id, grant.epoch) == grant.epoch
+            and task_id in grant.allowed_task_ids
+            and (not grant.allowed_operation_ids or origin_operation_id in grant.allowed_operation_ids)
+            and {"pause_task", "complete_task"}.intersection(grant.allowed_kinds)
+        )
+        if not matches:
+            raise HostCommandAuthorityError("denied: consolidation origin authority is unavailable")
+        if len(matches) != 1:
+            raise HostCommandAuthorityError("unsupported_configuration: ambiguous consolidation origin authority")
+        return self._resolved(matches[0])
+
     def resolve_persisted_namespace_in_verified_context(
         self,
         *,
@@ -413,6 +459,7 @@ class ManagedHostCommandAuthority:
             client_namespace=grant.client_namespace,
             installation_id=grant.installation_id,
             data_generation_id=grant.data_generation_id,
+            allowed_projection_task_ids=grant.allowed_projection_task_ids,
         )
 
     @staticmethod
@@ -425,6 +472,7 @@ class ManagedHostCommandAuthority:
             client_namespace=grant.client_namespace,
             installation_id=grant.installation_id,
             data_generation_id=grant.data_generation_id,
+            allowed_projection_task_ids=grant.allowed_projection_task_ids,
         )
 
     def _grant_for(self, grant_id: str) -> HostCommandGrant:

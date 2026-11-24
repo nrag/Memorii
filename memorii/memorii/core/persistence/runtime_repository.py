@@ -12,7 +12,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from memorii.core.persistence.managed_delivery import RuntimeTargetReceipt
     from memorii.core.persistence.runtime_api import RuntimeOutboxDelivery
+    from memorii.core.work_state.runtime_projection import ManagedWorkProjectionDelivery
 
 import json as re
 import sqlite3
@@ -490,6 +492,8 @@ class RuntimeStateRepository:
         )
         if not rows:
             return None
+        if _is_managed_work_projection(str(rows[0]["record_json"])):
+            return None
         return RuntimeOutboxDelivery.model_validate_json(str(rows[0]["record_json"]))
 
     def list_outbox_deliveries(
@@ -503,9 +507,90 @@ class RuntimeStateRepository:
         entries = tuple(
             RuntimeOutboxDelivery.model_validate_json(str(row["record_json"]))
             for row in rows
+            if not _is_managed_work_projection(str(row["record_json"]))
         )
         # Drainable surface: only pending rows, in primary-key order.
         return tuple(entry for entry in entries if entry.status == "pending")
+
+    def get_managed_work_projection_delivery(
+        self, connection: sqlite3.Connection, delivery_id: str,
+    ) -> ManagedWorkProjectionDelivery | None:
+        from memorii.core.work_state.runtime_projection import ManagedWorkProjectionDelivery
+
+        self._partition.require_delivery_catalogs(connection)
+        row = self._partition.read_runtime_row(
+            connection, table="runtime_outbox_deliveries", match=(("delivery_id", delivery_id),),
+        )
+        if row is None:
+            return None
+        record = str(row["record_json"])
+        if not _is_managed_work_projection(record):
+            raise RuntimeStateError("needs_reconciliation: outbox row has no managed projection payload")
+        entry = ManagedWorkProjectionDelivery.model_validate_json(record)
+        if entry.delivery.request.delivery_id != delivery_id:
+            raise RuntimeStateError("integrity_error: projection delivery key mismatch")
+        return entry
+
+    def apply_managed_work_projection_delivery(
+        self, connection: sqlite3.Connection, entry: ManagedWorkProjectionDelivery,
+    ) -> None:
+        delivery_id = entry.delivery.request.delivery_id
+        existing = self.get_managed_work_projection_delivery(connection, delivery_id)
+        if existing == entry:
+            return
+        if existing is None and (entry.delivery.version != 1 or entry.delivery.progress.status != "pending"):
+            raise RuntimeStateError("conflict: new projection delivery must be pending at version one")
+        if existing is not None and (
+            existing.delivery.request != entry.delivery.request
+            or existing.origin != entry.origin
+            or existing.command != entry.command
+            or existing.projection != entry.projection
+            or existing.delivery.generation_id != entry.delivery.generation_id
+            or existing.delivery.version + 1 != entry.delivery.version
+        ):
+            raise RuntimeStateError("conflict: divergent projection payload or version")
+        self._partition.upsert_runtime_row(
+            connection, table="runtime_outbox_deliveries",
+            keys=("delivery_id",), values=(delivery_id,), record_json=entry.model_dump_json(),
+        )
+
+    def insert_work_projection_effect(
+        self, connection: sqlite3.Connection, entry: ManagedWorkProjectionDelivery,
+        receipt: RuntimeTargetReceipt,
+    ) -> None:
+        """Type-owned target effect and receipt inside the same signed transaction."""
+        delivery_id = entry.delivery.request.delivery_id
+        self._partition.insert_delivery_record(
+            connection, catalog="runtime_work_projections",
+            record_id=delivery_id, record_json=entry.projection.model_dump_json(),
+        )
+        self._partition.insert_delivery_record(
+            connection, catalog="runtime_target_receipts",
+            record_id=delivery_id, record_json=receipt.model_dump_json(),
+        )
+
+    def verify_work_projection_effect(
+        self, connection: sqlite3.Connection, entry: ManagedWorkProjectionDelivery,
+        receipt: RuntimeTargetReceipt,
+    ) -> None:
+        from memorii.core.persistence.managed_delivery import RuntimeTargetReceipt
+        from memorii.core.work_state.runtime_projection import ManagedWorkProjection
+
+        delivery_id = entry.delivery.request.delivery_id
+        projection = self._partition.read_delivery_record(
+            connection, catalog="runtime_work_projections", record_id=delivery_id,
+        )
+        target = self._partition.read_delivery_record(
+            connection, catalog="runtime_target_receipts", record_id=delivery_id,
+        )
+        if (
+            projection is None or target is None
+            or ManagedWorkProjection.model_validate_json(projection) != entry.projection
+            or RuntimeTargetReceipt.model_validate_json(target) != receipt
+            or receipt.effect.record_id != delivery_id
+            or receipt.effect.record_digest != entry.projection.digest()
+        ):
+            raise RuntimeStateError("integrity_error: projection target effect or receipt is incomplete")
 
     def apply_command_receipt(
         self, connection: sqlite3.Connection, receipt: RuntimeCommandReceipt,
@@ -532,6 +617,11 @@ class RuntimeStateRepository:
         return tuple(model.model_validate_json(row["record_json"]) for row in rows)
 
 
+def _is_managed_work_projection(record_json: str) -> bool:
+    raw = re.loads(record_json)
+    return isinstance(raw, dict) and raw.get("record_type") == "managed_work_projection"
+
+
 def publish_runtime_change(
     administration: StorageAdministrationService,
     apply: Callable[[sqlite3.Connection, RuntimeStateRepository], None],
@@ -550,12 +640,10 @@ def publish_runtime_change(
 
     from memorii.core.persistence.contracts import (
         BatchPosition,
-        GenesisPosition,
         PartitionRevisionVector,
         RuntimeMaterializationManifest,
         RuntimePublicationIntent,
         RuntimePublicationState,
-        empty_pointer_set_digest,
     )
     from memorii.core.storage_administration.service import (
         InstallationIntegrityError,
@@ -618,8 +706,8 @@ def publish_runtime_change(
                 ),
                 memory_write_revision=memory_write,
                 memory_data_revision=memory_data,
-                semantic_position=GenesisPosition(),
-                ontology_pointer_digest=empty_pointer_set_digest(),
+                semantic_position=finalized.vector.semantic_position,
+                ontology_pointer_digest=finalized.vector.ontology_pointer_digest,
             )
             unsigned = RuntimePublicationState(
                 installation_id=state.installation_id,

@@ -20,9 +20,12 @@ from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+
+if TYPE_CHECKING:
+    from memorii.core.harness_state.write_authority import ResolvedHostCommandAuthority
 
 from memorii.core.consolidation.runtime_outputs import (
     ArchivePackage,
@@ -529,6 +532,7 @@ class ResolvedRuntimeCommandAuthority:
 
     principal: str
     client_namespace: str
+    projection_grant: ResolvedHostCommandAuthority | None = None
 
 
 CommandAuthorityPurpose = Literal["prepare", "dispatch", "release", "historical_release"]
@@ -632,8 +636,10 @@ class ManagedRuntimeCommandService:
         service = RuntimeCommandService(
             self._administration, client_namespace=coordinate.client_namespace
         )
+        projection_grant: ResolvedHostCommandAuthority | None = None
 
         def validate(state: InstallationControlState, finalized: RuntimePublicationState) -> None:
+            nonlocal projection_grant
             self._require_active(state)
             authority = self._require_authority(request, "dispatch", coordinate, state, finalized)
             self._validate_proof(request, operation_origin, authority, finalized)
@@ -643,16 +649,27 @@ class ManagedRuntimeCommandService:
                 operation_origin_namespace(coordinate), coordinate.operation_id
             ) is not None:
                 raise _ManagedReceiptAppeared
+            projection_grant = authority.projection_grant
+
+        def apply(connection: sqlite3.Connection, repository: RuntimeStateRepository) -> None:
+            service._apply_command(
+                connection, repository, request, coordinate.request_digest,
+                operation_origin=operation_origin,
+            )
+            if projection_grant is not None:
+                from memorii.core.work_state.runtime_projection import stage_work_projection
+
+                stage_work_projection(
+                    connection, repository, command=request, origin=operation_origin,
+                    grant=projection_grant, runtime_revision=repository.read_runtime_revision_in(connection),
+                )
 
         # If a duplicate raced with publication, release its receipt through
         # the same checks as an ordinary retry.
         with suppress(_ManagedReceiptAppeared):
             publish_runtime_change(
                 self._administration,
-                lambda connection, repository: service._apply_command(
-                    connection, repository, request, coordinate.request_digest,
-                    operation_origin=operation_origin,
-                ),
+                apply,
                 operation_binding=f"runtime_command:{request.kind}",
                 validate_authority=validate,
             )

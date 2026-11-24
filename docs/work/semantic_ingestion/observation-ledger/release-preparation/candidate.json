@@ -1,6 +1,6 @@
 {
   "files": {
-    ".github/workflows/pr-gates.yml": "e0bc6d3f356a6be4232ad3f5f92baadf963eb718f0aec54a6ce0cec96ecbc328",
+    ".github/workflows/pr-gates.yml": "43b21e71b0544cbb3c149d751da967d0ba966690a79dc1b42ebcbb894579f0a1",
     "acceptance/__init__.py": "adbb769f003c08d46e26ff769de38c76f15e3e09b1bee8cb53e3c3886f8aa91d",
     "acceptance/arithmetic.py": "0958fd3aff008ba15b309bd7f4e037bb4e139672f85b51807bfacc562a0528cd",
     "acceptance/authority_cli.py": "4132ae05df5601c4f0a0098b177291c3dc9b722d9250620de4247bbb763eb135",
@@ -1913,11 +1913,11 @@
     "docs/design/durable_execution_and_solver_runtime.md": "63f90df2a4e822df430c32b209f03a671379189bc8e999e19d7f12ac5fbf94fe",
     "docs/design/semantic_forgetting.md": "f75f7b80f6a019839c0450a2c0497722cb49ceeaf780c5599a77e99fb5503889",
     "memorii/memorii/core/harness_state/service.py": "a1692b86652e27e09adef76325f2e28d330a883d79164e2e4a2807bc05c2c17f",
-    "memorii/memorii/core/harness_state/sidecar.py": "aa8cb145eacd5052285e362ea30d45879c9899f15c36bb038e20a9534e7672a5",
+    "memorii/memorii/core/harness_state/sidecar.py": "60bd006ee91bca58ea65099e85ac59fa0c0d678d08626131bf2c3ddd4c51e88e",
     "memorii/memorii/core/memory_evolution/revocation_tombstones.py": "5f0c4b6bff0803f46a551697fdf51fc6246dc69727752531a16aa63ff25ac77c",
     "memorii/memorii/core/persistence/contracts.py": "faa50c7841417b97f40b162b5c2b6e20e7cf6d8e94f8c412975f140ba2420e76",
     "memorii/memorii/core/persistence/runtime_checkpoint.py": "5b1d6923f65ef9ae0ed52568a0c2c5f3c342a23cf1361ab1c80c506ebdfa414d",
-    "memorii/memorii/core/persistence/runtime_repository.py": "b0e6d811d5c003ffe64ea6cd46fdba1853fc8f5dcd1cf56b836e4620ca75dc3e",
+    "memorii/memorii/core/persistence/runtime_repository.py": "51f04aaef34e4c22dfd004d1949e02d7f4b4b826a8370e03b5dd4737d4182be9",
     "memorii/memorii/core/semantic_ingestion/structured_fact_read.py": "c09535515f09db15330412e8fa49b19157b4eb6c21961a131adbbe35595513c4",
     "memorii/memorii/core/storage_administration/operator.py": "2687e96980bf7e9b817acb94ac75576b3e3770c8a6a1ff6c9c0e82a21f083907",
     "memorii/memorii/core/storage_administration/operator_governance.py": "5e8e952899d5b48843de7795632ec6ed3c8aa2685b143cca1e5b7d65e92cf2f4",

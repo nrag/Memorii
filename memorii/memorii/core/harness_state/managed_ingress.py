@@ -59,7 +59,7 @@ def authenticated_host_commands(
             if code == "unsupported_configuration":
                 raise RuntimeCommandError("unsupported_configuration: ambiguous command authority") from exc
             return None
-        return ResolvedRuntimeCommandAuthority(resolved.principal, resolved.client_namespace)
+        return ResolvedRuntimeCommandAuthority(resolved.principal, resolved.client_namespace, resolved)
 
     return ManagedRuntimeCommandService(administration, authorize=authorize)
 
@@ -94,6 +94,6 @@ def spooled_host_commands(
             )
         except HostCommandAuthorityError:
             return None
-        return ResolvedRuntimeCommandAuthority(resolved.principal, resolved.client_namespace)
+        return ResolvedRuntimeCommandAuthority(resolved.principal, resolved.client_namespace, resolved)
 
     return ManagedRuntimeCommandService(administration, authorize=authorize)

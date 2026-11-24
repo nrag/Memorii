@@ -13,6 +13,7 @@ import urllib.error
 import urllib.request
 from typing import Literal
 
+from memorii.core.harness_state.consolidation_read import ConsolidationReadPage, ConsolidationReadRequest
 from memorii.core.harness_state.consumer import SpoolRecord
 from memorii.core.harness_state.envelope import HarnessStateEnvelope
 from memorii.core.harness_state.sidecar import SidecarIntakeRequest, SidecarRequest
@@ -58,6 +59,12 @@ class RuntimeStateClient:
         """Prepare a new intent. Persist this proof with the command before submitting."""
         return OperationOrigin.model_validate_json(
             self._post("/v1/operations/prepare", command.model_dump_json())
+        )
+
+    def read_consolidation(self, request: ConsolidationReadRequest) -> ConsolidationReadPage:
+        """Read the scoped output page tied to the original command receipt."""
+        return ConsolidationReadPage.model_validate_json(
+            self._post("/v1/consolidation/read", request.model_dump_json())
         )
 
     def submit_operation(

@@ -130,6 +130,59 @@ export interface OperationOrigin {
   signature: string;
 }
 
+export interface ConsolidationReadRequest {
+  protocol_version?: 1;
+  task_id: string;
+  origin_operation_id: string;
+  host_binding?: { installation_id: string; client_namespace: string; task_id: string } | null;
+  cursor?: string | null;
+  page_size?: number;
+}
+
+export interface ConsolidationSourceReference {
+  source_id: string;
+  source_digest: string;
+}
+
+interface DerivedCandidate {
+  source_refs: ConsolidationSourceReference[];
+  solver_run_id?: string | null;
+  execution_node_id?: string | null;
+  provenance: "derived";
+}
+
+export type ConsolidationPayload =
+  | (DerivedCandidate & { kind: "episodic_summary"; summary: string })
+  | (DerivedCandidate & { kind: "skill_candidate"; title: string; summary: string; steps: string[] })
+  | (DerivedCandidate & { kind: "semantic_candidate"; abstraction: string })
+  | (DerivedCandidate & { kind: "user_candidate"; preference: string; valid_from?: string | null; valid_to?: string | null })
+  | { kind: "unresolved_follow_up_summary"; truncated: boolean; items: {
+    node_id: string; reason: string; source_refs: ConsolidationSourceReference[];
+  }[] }
+  | { kind: "archive_package"; reference: {
+    installation_id: string; partition_id: string; task_id: string; origin_revision: number;
+    checkpoint_id: string; checkpoint_digest: string; manifest_id: string; manifest_digest: string;
+  } };
+
+export interface ConsolidationReadPage {
+  protocol_version: 1;
+  result_id: string;
+  origin_revision: number;
+  outputs: {
+    output: { output_id: string; ordinal: number; payload_digest: string; payload: ConsolidationPayload };
+    offer: {
+      output_id: string; offer_version: number; payload_digest: string;
+      decision_status: "offered" | "accepted" | "declined";
+      delivery_status: "pending" | "delivering" | "delivered" | "rejected" | "needs_reconciliation" | null;
+    } | null;
+  }[];
+  omissions: {
+    kind: "episodic_summary" | "skill_candidate" | "semantic_candidate" | "user_candidate";
+    reason: "insufficient_evidence" | "policy_denied";
+  }[];
+  continuation_cursor?: string | null;
+}
+
 export interface SpoolRecord {
   operation_id: string;
   producer_binding: string;
@@ -195,6 +248,10 @@ export class RuntimeStateClient {
   /** Prepare a new intent and retain the returned proof for all retries. */
   async prepareOperation(command: RuntimeCommand): Promise<OperationOrigin> {
     return this.post<OperationOrigin>("/v1/operations/prepare", JSON.stringify(command));
+  }
+
+  async readConsolidation(request: ConsolidationReadRequest): Promise<ConsolidationReadPage> {
+    return this.post<ConsolidationReadPage>("/v1/consolidation/read", JSON.stringify(request));
   }
 
   /** Submit an immutable prepared intent to managed intake. */

@@ -1,4 +1,8 @@
 export type {
+  ConsolidationPayload,
+  ConsolidationReadPage,
+  ConsolidationReadRequest,
+  ConsolidationSourceReference,
   HarnessOutputBlock,
   HarnessStateEnvelope,
   EnvelopeStatus,
