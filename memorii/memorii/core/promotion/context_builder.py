@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
+from memorii.core.memory_plane.store import is_runtime_writeback_candidate
 from memorii.core.promotion.execution_contracts import PromotionExecutionContext
 from memorii.domain.enums import CommitStatus
 
@@ -16,10 +17,14 @@ class PromotionExecutionContextBuilder:
         candidate = self._memory_plane.get_record(candidate_id)
         if candidate is None:
             raise ValueError(f"candidate not found: {candidate_id}")
-        if candidate.status != CommitStatus.CANDIDATE:
+        if candidate.status != CommitStatus.CANDIDATE or is_runtime_writeback_candidate(candidate):
             raise ValueError(f"record is not a staged candidate: {candidate_id}")
 
-        in_scope = [item for item in self._memory_plane.list_records() if self._same_scope(item, candidate)]
+        in_scope = [
+            item
+            for item in self._memory_plane.list_records()
+            if not is_runtime_writeback_candidate(item) and self._same_scope(item, candidate)
+        ]
         committed_in_scope = [item for item in in_scope if item.status == CommitStatus.COMMITTED]
         candidates_in_scope = [item for item in in_scope if item.status == CommitStatus.CANDIDATE and item.memory_id != candidate.memory_id]
 
@@ -52,7 +57,10 @@ class PromotionExecutionContextBuilder:
         )
 
     def list_staged_candidates(self) -> list[CanonicalMemoryRecord]:
-        return self._memory_plane.list_records(status=CommitStatus.CANDIDATE)
+        return [
+            item for item in self._memory_plane.list_records(status=CommitStatus.CANDIDATE)
+            if not is_runtime_writeback_candidate(item)
+        ]
 
     def _same_scope(self, lhs: CanonicalMemoryRecord, rhs: CanonicalMemoryRecord) -> bool:
         return (

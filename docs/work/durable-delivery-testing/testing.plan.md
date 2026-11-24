@@ -34,4 +34,8 @@ Use Python environment matching each workflow job. New dependencies or changed C
 
 ## Next Action
 
-Add committed-and-reopened replay assertions for the complete runtime event batches through the managed publication path.
+Qualify the reference capacity workload through installed owners once the fixture audit and authenticated checkpoint/tail path are complete.
+
+## Gate Changes
+
+The continuation uses the existing durable-runtime-integration job for `test_runtime_journal.py` and `test_managed_candidate_delivery.py`. They exercise the signed transaction, reopen and recovery paths, so they belong with the existing installed managed sidecar and runtime checks. This extends the selection without changing its 15-minute timeout or other gates. Local macOS runs used `pytest -W error -p no:cacheprovider` with Python 3.12. The GitHub job remains the Linux Python 3.11 owner.

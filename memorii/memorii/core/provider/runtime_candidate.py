@@ -17,13 +17,17 @@ from memorii.core.consolidation.runtime_outputs import (
     UserCandidate,
 )
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
-from memorii.core.memory_plane.store import record_digest
-from memorii.core.persistence.contracts import canonical_json_digest
+from memorii.core.memory_plane.store import (
+    RUNTIME_WRITEBACK_CANDIDATE_ID_PREFIX,
+    RUNTIME_WRITEBACK_CANDIDATE_SOURCE_KIND,
+    record_digest,
+)
 from memorii.core.persistence.managed_delivery import (
     DeliveryAuthorityBinding,
     MemoryPlaneCandidateScope,
     ProtectedSkillCandidateScope,
 )
+from memorii.core.persistence.runtime_contracts import canonical_runtime_digest
 from memorii.core.storage_administration.revoked_identity_view import RevokedIdentityServingGate
 from memorii.domain.enums import (
     CommitStatus,
@@ -73,7 +77,7 @@ class ProtectedSkillCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
 
     def digest(self) -> str:
-        return canonical_json_digest(self.model_dump(mode="json"))
+        return canonical_runtime_digest(self.model_dump(mode="json"))
 
 
 def prepare_candidate_stage(
@@ -118,7 +122,7 @@ def prepare_candidate_stage(
         raise CandidateStageError("denied: candidate requires retained source evidence")
     _require_eligible_sources(authority, payload.source_refs, current_sources, revoked, now=now)
 
-    candidate_id = f"cand:runtime:{output.output_id}"
+    candidate_id = f"{RUNTIME_WRITEBACK_CANDIDATE_ID_PREFIX}{output.output_id}"
     if revoked.is_revoked_record(candidate_id):
         raise CandidateStageError("denied: candidate record is suppressed")
     if isinstance(payload, SkillCandidate):
@@ -151,7 +155,7 @@ def prepare_candidate_stage(
             "provenance": payload.provenance,
         },
         status=CommitStatus.CANDIDATE,
-        source_kind="runtime_writeback_candidate",
+        source_kind=RUNTIME_WRITEBACK_CANDIDATE_SOURCE_KIND,
         timestamp=acceptance.accepted_at,
         valid_from=payload.valid_from if isinstance(payload, UserCandidate) else None,
         valid_to=payload.valid_to if isinstance(payload, UserCandidate) else None,

@@ -25,6 +25,8 @@ from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibil
 SEMANTIC_CHECKPOINT_SECRET_PURPOSE = "semantic-ingestion-replay-checkpoint-signing"
 _SEMANTIC_CHECKPOINT_KEY_ID = "semantic-ingestion-checkpoint-key"
 _SEMANTIC_CHECKPOINT_SIGNATURE_DOMAIN = b"memorii.semantic-replay-checkpoint-signature.v1\0"
+RUNTIME_WRITEBACK_CANDIDATE_SOURCE_KIND = "runtime_writeback_candidate"
+RUNTIME_WRITEBACK_CANDIDATE_ID_PREFIX = "cand:runtime:"
 
 
 @runtime_checkable
@@ -92,6 +94,21 @@ class MemoryPlaneGovernedWritePolicyRequiredError(RuntimeError):
 
 class MemoryPlaneWriteAuthorization:
     """Opaque authorization owned by a feature policy, not the memory plane."""
+
+
+@dataclass(frozen=True)
+class _RuntimeCandidateWriteAuthorization(MemoryPlaneWriteAuthorization):
+    """In-process authorization for one exact immutable candidate effect."""
+
+    memory_id: str
+    digest: str
+
+
+def is_runtime_writeback_candidate(record: CanonicalMemoryRecord) -> bool:
+    return (
+        record.source_kind == RUNTIME_WRITEBACK_CANDIDATE_SOURCE_KIND
+        or record.memory_id.startswith(RUNTIME_WRITEBACK_CANDIDATE_ID_PREFIX)
+    )
 
 
 @dataclass(frozen=True)
@@ -833,6 +850,24 @@ def validate_governed_write(
     current: tuple[CanonicalMemoryRecord, ...],
     authorization: MemoryPlaneWriteAuthorization | None,
 ) -> None:
+    reserved = tuple(record for record in records if is_runtime_writeback_candidate(record))
+    if reserved:
+        record = reserved[0]
+        if (
+            len(records) != 1
+            or not isinstance(authorization, _RuntimeCandidateWriteAuthorization)
+            or record.source_kind != RUNTIME_WRITEBACK_CANDIDATE_SOURCE_KIND
+            or not record.memory_id.startswith(RUNTIME_WRITEBACK_CANDIDATE_ID_PREFIX)
+            or record.status != CommitStatus.CANDIDATE
+            or record.visibility != MemoryRecordVisibility.INTERNAL_CONTROL
+            or record.is_raw_event
+            or authorization.memory_id != record.memory_id
+            or authorization.digest != record_digest(record)
+            or any(existing.memory_id == record.memory_id for existing in current)
+        ):
+            raise MemoryPlaneGovernedWritePolicyRequiredError(
+                "runtime writeback staging requires exact candidate owner authorization"
+            )
     if policy is not None:
         policy.validate(records, current, authorization)
         return
