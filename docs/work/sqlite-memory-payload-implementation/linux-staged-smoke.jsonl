@@ -1,0 +1,5 @@
+{"candidate_wheel_digest": "8e5a68b6ff26a837c72244f35979d1608adc4d7b59da1764138f7b857bd6f65b", "runner_digest": "48f93db205124511dbcd7efbd4d46985023def42bd6126cd578dddac434b4384", "type": "identity"}
+{"database_bytes": 496947200, "pause_ns": 220917553, "type": "v7_backup"}
+{"after_tuple": "cc4d7c3ab4599b2ac9343068975090034619e590ae7eeb7f27170baaa258152b", "before_tuple": "ac38e5d81449b634cc2c41db2c43fb68c4b55594e374219fceeb6a2c0350a36c", "database_bytes": 173809664, "elapsed_ns": 3808139658, "preview_digest": "f366cc0cd5567617dc1c44f66511b45c3c67d296cd353c8957a348ba597eb1b0", "type": "selected"}
+{"checkpoint_selected": false, "elapsed_ns": 242853877, "first_read_ns": 261938144, "schema_version": 8, "tuple_digest": "cc4d7c3ab4599b2ac9343068975090034619e590ae7eeb7f27170baaa258152b", "type": "acquisition"}
+{"archive_digest": "ad6244c41b419d1c7e17cc49516fd15d0c09cf02b3b930f51207a94e8ded0079", "pause_ns": 68894273, "schema_version": 8, "tuple_digest": "cc4d7c3ab4599b2ac9343068975090034619e590ae7eeb7f27170baaa258152b", "type": "backup"}

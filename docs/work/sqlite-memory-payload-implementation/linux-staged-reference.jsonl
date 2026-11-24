@@ -1,0 +1,9 @@
+{"candidate_wheel_digest": "8e5a68b6ff26a837c72244f35979d1608adc4d7b59da1764138f7b857bd6f65b", "runner_digest": "48f93db205124511dbcd7efbd4d46985023def42bd6126cd578dddac434b4384", "type": "identity"}
+{"database_bytes": 15997546496, "pause_ns": 18565517297, "type": "v7_backup"}
+{"after_tuple": "d0d4ec6b72af85f922bdc2952374178a21aee07321f7a2e80d7f4b670447cb8c", "before_tuple": "a563e7a99d7c74caac32780dad2c4f19e5816e523fa2ff80c0b72e4f3cf1d8b1", "database_bytes": 5653377024, "elapsed_ns": 400334044383, "preview_digest": "9b56bf0839a14e3ec005a7fffda43322424e2e0c1dc1707a5c25417612ac3fcd", "type": "selected"}
+{"checkpoint_selected": false, "elapsed_ns": 11114858658, "first_read_ns": 8656608826, "schema_version": 8, "tuple_digest": "d0d4ec6b72af85f922bdc2952374178a21aee07321f7a2e80d7f4b670447cb8c", "type": "acquisition"}
+{"checkpoint_selected": false, "elapsed_ns": 10951028903, "first_read_ns": 8561911215, "schema_version": 8, "tuple_digest": "d0d4ec6b72af85f922bdc2952374178a21aee07321f7a2e80d7f4b670447cb8c", "type": "acquisition"}
+{"checkpoint_selected": false, "elapsed_ns": 10871518840, "first_read_ns": 8702457295, "schema_version": 8, "tuple_digest": "d0d4ec6b72af85f922bdc2952374178a21aee07321f7a2e80d7f4b670447cb8c", "type": "acquisition"}
+{"archive_digest": "0c487dd3b50ffee862c94d56cc32c246538aedde8cf0f68a7cf04befadcbfe13", "pause_ns": 5444743734, "schema_version": 8, "tuple_digest": "d0d4ec6b72af85f922bdc2952374178a21aee07321f7a2e80d7f4b670447cb8c", "type": "backup"}
+{"archive_digest": "f4c703516baa72cc0f0c5fc8c859d6121da9811edd31cc0d298018c158adcc7f", "pause_ns": 5652137597, "schema_version": 8, "tuple_digest": "d0d4ec6b72af85f922bdc2952374178a21aee07321f7a2e80d7f4b670447cb8c", "type": "backup"}
+{"archive_digest": "996f9e50e3108346fcb35def38b5671d82ad9d509accbd5abfecc27dcc0b7560", "pause_ns": 5624135675, "schema_version": 8, "tuple_digest": "d0d4ec6b72af85f922bdc2952374178a21aee07321f7a2e80d7f4b670447cb8c", "type": "backup"}

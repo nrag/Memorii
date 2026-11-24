@@ -44,4 +44,4 @@ Implementation branch `codex/durable-delivery-implementation` is published to or
 
 ## Next Action
 
-Advance the [SQLite payload storage design](../sqlite-memory-payload-design/design.plan.md) through staged-format review so the installed raw path can measure full acquisition against the existing five-second budget.
+Close the acquisition and backup capacity gaps exposed by the [owner-staged raw SQLite trial](../sqlite-memory-payload-implementation/implementation.plan.md) before considering default activation.

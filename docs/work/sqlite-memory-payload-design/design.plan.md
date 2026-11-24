@@ -77,4 +77,4 @@ To rerun the full diagnostic, use the installed fixture driver's `_prepare` with
 
 ## Next Action
 
-Freeze and review the staged raw format contract so an owner-authorized implementation can measure complete acquisition, first read and actual backup pause on the full fixture.
+Use the [owner-staged implementation and timing](../sqlite-memory-payload-implementation/implementation.plan.md) to design and verify a generation-local checkpoint and a bounded backup fence for the raw format.
