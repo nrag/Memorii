@@ -171,10 +171,8 @@ class RuntimeSidecar:
         # The revocation registry composes by default from the installation
         # control state so a revoked grant fails closed on every served path.
         if grant_registry is None:
-            from pathlib import Path as _Path
-
             registry_root = (
-                _Path(repository._partition.database_path).parent.parent
+                repository.partition.protected_storage_root.parent
                 / "control"
                 / "grants"
             )
@@ -186,16 +184,13 @@ class RuntimeSidecar:
         # installation control state so revoked justifications never sponsor
         # a served hypothesis on any host surface.
         if revoked_view is None:
-            from pathlib import Path as _Path
-
             from memorii.core.storage_administration.revoked_identity_view import (
                 RefreshingRevokedIdentityView,
             )
 
             try:
                 revoked_view = RefreshingRevokedIdentityView(
-                    _Path(repository._partition.database_path).parent.parent
-                    / "control"
+                    repository.partition.protected_storage_root.parent / "control"
                 )
             except (OSError, ValueError):
                 revoked_view = None
@@ -276,6 +271,10 @@ class RuntimeSidecar:
         except HarnessStateError as exc:
             code = _harness_error_code(str(exc))
             return _error(_ERROR_STATUS.get(code, 400), code, None)
+        except (InstallationIntegrityError, InstallationQuarantinedError, sqlite3.DatabaseError):
+            return _error(500, "integrity_error", None)
+        except (OSError, StorageAdministrationError):
+            return _error(503, "unavailable", None)
         return 200, envelope.model_dump_json().encode("utf-8")
 
     def handle_intake_request(

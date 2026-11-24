@@ -37,6 +37,10 @@ def _capability(service: StorageAdministrationService) -> OwnerCapability:
 def test_cli_stages_a_reviewed_restore_with_an_owner_only_key(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from memorii.core.harness_state.grant_registry import GrantEpochRegistry
+    from memorii.core.harness_state.service import RuntimeReadGrant
+    from memorii.core.harness_state.sidecar import RuntimeSidecar
+    from memorii.core.persistence.runtime_repository import RuntimeStateRepository
     from memorii.core.storage_administration import operator_backup
     from memorii.core.storage_administration.generation_selection import PARTITION_GENERATION_SELECTOR
     from memorii.core.storage_administration.operator_backup import BackupRestoreOperator
@@ -44,6 +48,28 @@ def test_cli_stages_a_reviewed_restore_with_an_owner_only_key(
 
     operator, service, capability = _fenced_operator(tmp_path)
     try:
+        publish_runtime_change(
+            service,
+            lambda connection, repository: repository.apply_task(connection, TaskRecord(
+                task_id="task:restore", principal="owner:one", goal="Verify a restored read",
+                created_at=_NOW, root_execution_node_id="exec:restore",
+            )),
+            operation_binding="migrate",
+        )
+        read_grant = RuntimeReadGrant(
+            grant_id="read:restore", principal="owner:one", allowed_task_ids=("task:restore",),
+            epoch=1, expires_at=datetime(2099, 1, 1, tzinfo=UTC),
+        )
+        def read_status(reader: RuntimeSidecar) -> int:
+            return reader.handle_state_request(
+                bearer_token="reader", origin=None, body=b'{"task_id":"task:restore"}',
+            )[0]
+
+        sidecar = RuntimeSidecar(
+            RuntimeStateRepository(service.partition()), credentials={"reader": "owner:one"},
+            grant_factory=lambda _: read_grant,
+        )
+        assert read_status(sidecar) == 200
         backups = BackupRestoreOperator(operator)
         archive = tmp_path / "archive"
         recovery_key = b"k" * 32
@@ -103,9 +129,19 @@ def test_cli_stages_a_reviewed_restore_with_an_owner_only_key(
             write=False,
         ):
             pytest.fail("retained physical handles must be fenced after selection")
+        assert read_status(sidecar) == 503
         with StorageAdministrationService(service.installation_root) as reopened:
             assert reopened.acquire_verified_snapshot() == before
             assert reopened.partition_path().parent.name == activation["generation_id"]
+            reader = RuntimeSidecar(
+                RuntimeStateRepository(reopened.partition()), credentials={"reader": "owner:one"},
+                grant_factory=lambda _: read_grant,
+            )
+            assert read_status(reader) == 200
+            GrantEpochRegistry(reopened.installation_root / "control" / "grants").revoke(
+                read_grant.grant_id, reason="verify stable grant root",
+            )
+            assert read_status(reader) == 403
     finally:
         service.close()
 
