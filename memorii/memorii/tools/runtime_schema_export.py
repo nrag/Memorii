@@ -22,6 +22,7 @@ def build_openapi_document() -> dict[str, object]:
         SidecarIntakeRequest,
         SidecarRequest,
     )
+    from memorii.core.persistence.runtime_contracts import OperationOrigin, RuntimeCommandRequest
 
     def schema(model: type) -> dict[str, object]:
         return json.loads(
@@ -43,6 +44,32 @@ def build_openapi_document() -> dict[str, object]:
         },
         "servers": [{"url": "http://127.0.0.1", "description": "loopback only"}],
         "paths": {
+            "/v1/operations/prepare": {
+                "post": {
+                    "operationId": "prepareRuntimeCommand",
+                    "security": [{"bearerAuth": []}],
+                    "requestBody": {
+                        "required": True,
+                        "content": {"application/json": {
+                            "schema": {"$ref": "#/components/schemas/RuntimeCommandRequest"},
+                        }},
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Installation-signed operation origin to retain before intake",
+                            "content": {"application/json": {
+                                "schema": {"$ref": "#/components/schemas/OperationOrigin"},
+                            }},
+                        },
+                        "default": {
+                            "description": "Closed error envelope",
+                            "content": {"application/json": {
+                                "schema": {"$ref": "#/components/schemas/SidecarError"},
+                            }},
+                        },
+                    },
+                }
+            },
             "/v1/runtime/state": {
                 "post": {
                     "operationId": "readRuntimeState",
@@ -81,6 +108,13 @@ def build_openapi_document() -> dict[str, object]:
                 "post": {
                     "operationId": "submitRuntimeCommand",
                     "security": [{"bearerAuth": []}],
+                    "parameters": [{
+                        "name": "Memorii-Operation-Origin",
+                        "in": "header",
+                        "required": True,
+                        "description": "Original signed proof, encoded as ASCII JSON. Required for managed intake.",
+                        "schema": {"type": "string", "maxLength": 8192},
+                    }],
                     "requestBody": {
                         "required": True,
                         "content": {
@@ -121,6 +155,8 @@ def build_openapi_document() -> dict[str, object]:
             "schemas": {
                 "SidecarRequest": schema(SidecarRequest),
                 "SidecarIntakeRequest": schema(SidecarIntakeRequest),
+                "RuntimeCommandRequest": schema(RuntimeCommandRequest),
+                "OperationOrigin": schema(OperationOrigin),
                 "SpoolRecord": schema(SpoolRecord),
                 "HarnessStateEnvelope": schema(HarnessStateEnvelope),
                 "SidecarError": schema(SidecarError),

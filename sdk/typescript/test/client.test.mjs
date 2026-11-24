@@ -143,6 +143,43 @@ test("submitEvent maps conflict to its closed code", async () => {
   );
 });
 
+test("managed intake transports the original prepared operation proof", async () => {
+  const command = { kind: "start_task", operation_id: "op:managed", goal: "Start" };
+  const proof = {
+    coordinate: {
+      installation_id: "installation", repository_id: "repository", generation_id: "generation",
+      principal: "host\u2603", client_namespace: "namespace", operation_id: command.operation_id,
+      request_digest: "a".repeat(64),
+    },
+    signature: "b".repeat(128),
+  };
+  const requests = [];
+  const server = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    requests.push({ path: request.url, headers: request.headers, body: JSON.parse(Buffer.concat(chunks)) });
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify(request.url === "/v1/operations/prepare" ? proof : {
+      operation_id: command.operation_id, producer_binding: "namespace",
+      request_digest: proof.coordinate.request_digest, state: "pending",
+    }));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const client = new RuntimeStateClient({ baseUrl: `http://127.0.0.1:${server.address().port}`, credential: "right" });
+    const prepared = await client.prepareOperation(command);
+    assert.deepEqual(prepared, proof);
+    assert.equal((await client.submitOperation(command, prepared)).state, "pending");
+    assert.equal(requests[0].path, "/v1/operations/prepare");
+    assert.deepEqual(requests[0].body, command);
+    assert.equal(requests[1].path, "/v1/runtime/intake");
+    assert.deepEqual(requests[1].body.command, command);
+    assert.deepEqual(JSON.parse(requests[1].headers["memorii-operation-origin"]), proof);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 /** Minimal one-shot HTTP server serving a fixed response; loopback only. */
 async function serve(status, body, contentType = "application/json") {
   const server = createServer((request, response) => {

@@ -42,7 +42,7 @@ from memorii.core.persistence.runtime_repository import RuntimeStateRepository
 from memorii.core.storage_administration.revoked_identity_view import (
     RevokedIdentityServingGate,
 )
-from memorii.core.storage_administration.service import StorageAdministrationError
+from memorii.core.storage_administration.service import StorageAdministrationError, StorageAdministrationService
 
 _MAXIMUM_INTAKE_BYTES = 1 << 20
 _MAXIMUM_OPERATION_ORIGIN_BYTES = 8192
@@ -182,6 +182,34 @@ class RuntimeSidecar:
                 revoked_view = None
         self._service = HarnessStateService(
             repository, grant_registry=grant_registry, revoked_view=revoked_view
+        )
+
+    @classmethod
+    def for_managed_installation(
+        cls,
+        administration: StorageAdministrationService,
+        *,
+        credentials: SidecarCredentialStore,
+        grant_factory: Callable[[str], RuntimeReadGrant],
+        spool: ManagedRuntimeSpool,
+    ) -> RuntimeSidecar:
+        """Bind installed admission to control grants, separately from reads."""
+        from memorii.core.harness_state.managed_ingress import authenticated_host_commands
+
+        credentials.verify_permissions()
+
+        def managed_binding(secret: str) -> ManagedHostIntakeBinding | None:
+            if credentials.credential_for(secret) is None:
+                return None
+            return ManagedHostIntakeBinding(
+                spool, authenticated_host_commands(administration, credentials, secret),
+            )
+
+        return cls(
+            RuntimeStateRepository(administration.partition()),
+            credentials=credentials,
+            grant_factory=grant_factory,
+            managed_intake_factory=managed_binding,
         )
 
     def _principal_for(self, secret: str) -> str | None:

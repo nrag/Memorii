@@ -299,6 +299,7 @@ class RuntimeCommandReceipt(BaseModel):
     base_revision: int = Field(ge=0)
     current_revision: int = Field(ge=0)
     result_digest: str | None = Field(default=None, pattern=_HEX_64)
+    consolidation_result_id: str | None = Field(default=None, pattern=_HEX_64)
     operation_origin: OperationOriginCoordinate | None = None
     origin_proof_digest: str | None = Field(default=None, pattern=_HEX_64)
 
@@ -306,6 +307,10 @@ class RuntimeCommandReceipt(BaseModel):
 
     @model_validator(mode="after")
     def origin_matches_receipt(self) -> RuntimeCommandReceipt:
+        if self.consolidation_result_id is not None and (
+            self.result_digest is None or self.operation_origin is None or self.status != "committed"
+        ):
+            raise ValueError("a consolidation result requires a committed managed receipt and digest")
         coordinate = self.operation_origin
         if coordinate is None:
             if self.origin_proof_digest is not None:

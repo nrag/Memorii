@@ -22,13 +22,22 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from memorii.core.consolidation.runtime_outputs import (
+    ArchivePackage,
+    ConsolidationOmission,
+    ConsolidationOrigin,
+    ConsolidationResult,
+    UnresolvedFollowUpSummary,
+    build_consolidation_result,
+)
 from memorii.core.persistence.contracts import (
     InstallationControlState,
     RuntimePublicationState,
     canonical_json_digest,
 )
+from memorii.core.persistence.runtime_checkpoint import RuntimeCheckpointError, stage_task_lifecycle_archive
 from memorii.core.persistence.runtime_contracts import (
     ActionAttemptRecord,
     BeliefUpdateProposal,
@@ -46,9 +55,12 @@ from memorii.core.persistence.runtime_repository import (
     RuntimeStateRepository,
     publish_runtime_change,
 )
+from memorii.core.storage_administration.revoked_identity_view import RefreshingRevokedIdentityView
 from memorii.core.storage_administration.service import (
     StorageAdministrationService,
 )
+from memorii.domain.enums import ExecutionNodeStatus, ExecutionNodeType
+from memorii.domain.execution_graph.nodes import ExecutionNode
 
 _HEX_64 = r"^[0-9a-f]{64}$"
 _MANAGED_NAMESPACE_PREFIX = "origin:"
@@ -204,6 +216,11 @@ class RuntimeCommandService:
                 )
             return
         revision = repository.read_runtime_revision_in(connection)
+        result = None
+        if operation_origin is not None and request.kind in {"pause_task", "complete_task"}:
+            result = self._apply_managed_lifecycle(connection, repository, request, operation_origin.coordinate)
+        else:
+            self._apply_command_effect(connection, repository, request, operation_origin=operation_origin)
         receipt = RuntimeCommandReceipt(
             operation_id=request.operation_id,
             client_namespace=self._client_namespace,
@@ -211,6 +228,8 @@ class RuntimeCommandService:
             status="committed",
             base_revision=revision - 1,
             current_revision=revision,
+            consolidation_result_id=None if result is None else result.result_id,
+            result_digest=None if result is None else hashlib.sha256(result.canonical_bytes()).hexdigest(),
             operation_origin=(
                 None if operation_origin is None else operation_origin.coordinate
             ),
@@ -244,7 +263,82 @@ class RuntimeCommandService:
             values=(attempt.receipt_id, attempt.attempt_ordinal),
             record_json=attempt.model_dump_json(),
         )
-        self._apply_command_effect(connection, repository, request, operation_origin=operation_origin)
+
+    def _apply_managed_lifecycle(
+        self,
+        connection: sqlite3.Connection,
+        repository: RuntimeStateRepository,
+        request: RuntimeCommandRequest,
+        coordinate: OperationOriginCoordinate,
+    ) -> ConsolidationResult:
+        task = repository.get_task_in(connection, request.task_id or "")
+        revoked = RefreshingRevokedIdentityView(self._administration.installation_root / "control")
+        if task is None or task.principal != coordinate.principal or revoked.is_revoked_task(task.task_id):
+            raise RuntimeCommandError("denied: task lifecycle authority is unavailable")
+        if request.expected_revision != task.version:
+            raise RuntimeCommandError("conflict: task state moved past the expected revision")
+        if task.lifecycle != "active":
+            raise RuntimeCommandError("conflict: managed lifecycle transition requires an active task")
+        if request.kind == "complete_task":
+            evidence = request.completion_evidence
+            assert evidence is not None
+            if (
+                evidence.acceptance_results or evidence.required_artifact_refs
+                or evidence.unresolved_blocker_acknowledged or task.acceptance_criteria
+            ):
+                raise RuntimeCommandError("unsupported_configuration: completion requires an evidence owner")
+        try:
+            archive, root = stage_task_lifecycle_archive(
+                repository, connection, task=task,
+                installation_id=coordinate.installation_id,
+                partition_id=coordinate.repository_id,
+                generation_id=coordinate.generation_id,
+                signer_key_id=self._administration._signer_key_id,
+                sign=lambda purpose, message: self._administration._signing.sign(
+                    self._administration._signer_key_id, purpose, message,
+                ),
+            )
+            if request.kind == "complete_task" and (
+                root.acceptance_criteria
+                or root.status in {ExecutionNodeStatus.BLOCKED, ExecutionNodeStatus.FAILED}
+            ):
+                raise RuntimeCommandError("unsupported_configuration: root completion is not validated")
+            result = build_consolidation_result(
+                ConsolidationOrigin(
+                    installation_id=coordinate.installation_id,
+                    partition_id=coordinate.repository_id,
+                    operation_generation=coordinate.generation_id,
+                    task_id=task.task_id,
+                    client_namespace=coordinate.client_namespace,
+                    operation_id=coordinate.operation_id,
+                    request_digest=coordinate.request_digest,
+                ),
+                origin_revision=archive.manifest.origin_revision,
+                outputs=(UnresolvedFollowUpSummary(), ArchivePackage(reference=archive.reference())),
+                omissions=(
+                    ConsolidationOmission(kind="episodic_summary", reason="insufficient_evidence"),
+                    ConsolidationOmission(kind="skill_candidate", reason="insufficient_evidence"),
+                    ConsolidationOmission(kind="semantic_candidate", reason="insufficient_evidence"),
+                    ConsolidationOmission(kind="user_candidate", reason="insufficient_evidence"),
+                ),
+            )
+        except (RuntimeCheckpointError, ValidationError) as exc:
+            raise RuntimeCommandError(str(exc)) from exc
+        completed = request.kind == "complete_task"
+        repository.apply_task(connection, task.model_copy(update={
+            "lifecycle": "completed" if completed else "paused", "version": task.version + 1,
+        }))
+        repository.apply_execution_node(
+            connection,
+            task_id=task.task_id,
+            node_id=root.id,
+            node_json=root.model_copy(update={
+                "status": ExecutionNodeStatus.DONE if completed else ExecutionNodeStatus.WAITING,
+                "updated_at": datetime.now(UTC),
+            }).model_dump_json(),
+        )
+        repository.apply_consolidation_result(connection, result)
+        return result
 
     def _apply_command_effect(
         self,
@@ -267,20 +361,33 @@ class RuntimeCommandService:
                     else canonical_json_digest(operation_origin.coordinate.model_dump(mode="json"))
                 ),
             ).hex[:12]
+            created_at = datetime.now(UTC)
+            principal = self._client_namespace if operation_origin is None else operation_origin.coordinate.principal
+            root_node_id = "exec:" + task_id
             repository.apply_task(
                 connection,
                 TaskRecord(
                     task_id=task_id,
-                    principal=(
-                        self._client_namespace
-                        if operation_origin is None
-                        else operation_origin.coordinate.principal
-                    ),
+                    principal=principal,
                     goal=request.goal,
-                    created_at=datetime.now(UTC),
-                    root_execution_node_id="exec:" + task_id,
+                    created_at=created_at,
+                    root_execution_node_id=root_node_id,
                 ),
             )
+            if operation_origin is not None:
+                root = ExecutionNode(
+                    id=root_node_id,
+                    type=ExecutionNodeType.MISSION,
+                    title=request.goal,
+                    description=request.goal,
+                    status=ExecutionNodeStatus.READY,
+                    owner=principal,
+                    created_at=created_at,
+                    updated_at=created_at,
+                )
+                repository.apply_execution_node(
+                    connection, task_id=task_id, node_id=root.id, node_json=root.model_dump_json(),
+                )
             return
         task = repository.get_task_in(connection, request.task_id or "")
         if task is None:
@@ -439,8 +546,27 @@ RuntimeCommandAuthorizer = Callable[
 
 def operation_origin_namespace(coordinate: OperationOriginCoordinate) -> str:
     """Generation-scope the existing receipt index without rewriting legacy receipts."""
+    return managed_receipt_namespace(
+        installation_id=coordinate.installation_id,
+        repository_id=coordinate.repository_id,
+        generation_id=coordinate.generation_id,
+        principal=coordinate.principal,
+        client_namespace=coordinate.client_namespace,
+    )
+
+
+def managed_receipt_namespace(
+    *, installation_id: str, repository_id: str, generation_id: str, principal: str, client_namespace: str
+) -> str:
+    """Derive the receipt index for a caller whose scope is already resolved."""
     return _MANAGED_NAMESPACE_PREFIX + canonical_json_digest(
-        coordinate.model_dump(exclude={"operation_id", "request_digest"}, mode="json")
+        {
+            "installation_id": installation_id,
+            "repository_id": repository_id,
+            "generation_id": generation_id,
+            "principal": principal,
+            "client_namespace": client_namespace,
+        },
     )
 
 
@@ -572,6 +698,22 @@ class ManagedRuntimeCommandService:
                 released = self._authorize(request, "historical_release", coordinate, state, finalized)
                 if released != authority:
                     raise RuntimeCommandError("needs_reconciliation: historical receipt is held")
+            if receipt is not None and receipt.consolidation_result_id is not None:
+                revoked = RefreshingRevokedIdentityView(self._administration.installation_root / "control")
+                task = repository.get_task(request.task_id or "")
+                if task is None or task.principal != authority.principal or revoked.is_revoked_task(task.task_id):
+                    raise RuntimeCommandError("denied: task lifecycle authority is unavailable")
+                result = repository.get_consolidation_result(receipt.consolidation_result_id)
+                if (
+                    result is None
+                    or result.origin.task_id != task.task_id
+                    or result.origin_revision != receipt.current_revision
+                    or result.origin.operation_generation != coordinate.generation_id
+                    or result.origin.operation_id != coordinate.operation_id
+                    or result.origin.request_digest != coordinate.request_digest
+                    or hashlib.sha256(result.canonical_bytes()).hexdigest() != receipt.result_digest
+                ):
+                    raise RuntimeCommandError("integrity_error: consolidation receipt does not bind its sealed result")
             if for_intake and receipt is None:
                 self._require_supported(request)
                 self._require_active(state)
@@ -623,7 +765,7 @@ class ManagedRuntimeCommandService:
 
     @staticmethod
     def _require_supported(request: RuntimeCommandRequest) -> None:
-        if request.kind != "start_task":
+        if request.kind not in {"start_task", "pause_task", "complete_task"}:
             raise RuntimeCommandError(
                 "unsupported_configuration: managed result and mutation owners are not configured"
             )

@@ -3,6 +3,7 @@ export type {
   HarnessStateEnvelope,
   EnvelopeStatus,
   RecommendationKind,
+  OperationOrigin,
   RuntimeCommand,
   RuntimeCommandKind,
   RuntimeErrorCode,

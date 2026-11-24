@@ -9,49 +9,64 @@ from pathlib import Path
 
 import pytest
 from memorii.core.harness_state.consumer import ManagedRuntimeSpool
+from memorii.core.harness_state.credentials import SidecarCredentialStore
 from memorii.core.harness_state.service import RuntimeReadGrant
 from memorii.core.harness_state.sidecar import (
-    ManagedHostIntakeBinding,
     RuntimeSidecar,
     SidecarIntakeRequest,
     SidecarRequest,
     serve_loopback,
 )
-from memorii.core.persistence.runtime_api import ManagedRuntimeCommandService, ResolvedRuntimeCommandAuthority
-from memorii.core.persistence.runtime_contracts import OperationOrigin, RuntimeCommandRequest, TaskRecord
+from memorii.core.harness_state.write_authority import HostCommandGrantRequest, ManagedHostCommandAuthority
+from memorii.core.persistence.runtime_contracts import (
+    OperationOrigin,
+    RuntimeCommandReceipt,
+    RuntimeCommandRequest,
+    TaskRecord,
+)
 from memorii.core.persistence.runtime_repository import (
     RuntimeStateRepository,
     publish_runtime_change,
 )
+from memorii.core.storage_administration.operator import mint_owner_capability
 from memorii.core.storage_administration.service import StorageAdministrationService
 
 _NOW = datetime(2026, 1, 1, tzinfo=UTC)
 
 
-def test_managed_http_origin_is_retained_and_dispatches_after_spool_reopen(tmp_path: Path) -> None:
-    administration = StorageAdministrationService(tmp_path / "installation")
+def test_managed_http_origin_is_retained_and_dispatches_after_spool_reopen(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from memorii.tools.runtime_consume import main as consume
+
+    root = tmp_path / "installation"
+    administration = StorageAdministrationService(root)
     administration.initialize()
-    spool_directory = tmp_path / "managed-intake"
+    spool_directory = root / "spool" / "managed"
     spool = ManagedRuntimeSpool(spool_directory)
     command = RuntimeCommandRequest(kind="start_task", operation_id="create-task", goal="managed intake")
-    authority = ResolvedRuntimeCommandAuthority("principal:a", "host:a")
-    service = ManagedRuntimeCommandService(
-        administration,
-        authorize=lambda request, purpose, _origin, _state, _finalized: (
-            authority if request.kind == "start_task" and purpose != "historical_release" else None
+    credentials = SidecarCredentialStore(root / "control" / "runtime-credentials")
+    credential, secret = credentials.issue("principal:a")
+    ManagedHostCommandAuthority(administration).issue(
+        HostCommandGrantRequest(
+            grant_id="start",
+            principal=credential.principal,
+            credential_id=credential.credential_id,
+            client_namespace="host:a",
+            allowed_kinds=("start_task",),
+            expires_at=datetime.now(UTC) + timedelta(minutes=1),
         ),
+        capability=mint_owner_capability(administration, "owner"),
     )
-    sidecar = RuntimeSidecar(
-        RuntimeStateRepository(administration.partition()),
-        credentials={"credential:one": "principal:a"},
+    sidecar = RuntimeSidecar.for_managed_installation(
+        administration,
+        credentials=credentials,
         grant_factory=lambda principal: RuntimeReadGrant(
             grant_id="read", principal=principal, epoch=1, expires_at=_NOW,
         ),
-        managed_intake_factory=lambda secret: (
-            ManagedHostIntakeBinding(spool, service) if secret == "credential:one" else None
-        ),
+        spool=spool,
     )
-    origin_header = {"Authorization": "Bearer credential:one"}
+    origin_header = {"Authorization": f"Bearer {secret}"}
     url, server = serve_loopback(sidecar)
     try:
         with urllib.request.urlopen(urllib.request.Request(
@@ -59,7 +74,7 @@ def test_managed_http_origin_is_retained_and_dispatches_after_spool_reopen(tmp_p
         ), timeout=3) as response:
             proof = OperationOrigin.model_validate_json(response.read())
         body = SidecarIntakeRequest(command=command).model_dump_json().encode()
-        denied, _ = sidecar.handle_intake_request(bearer_token="credential:one", origin=None, body=body)
+        denied, _ = sidecar.handle_intake_request(bearer_token=secret, origin=None, body=body)
         assert denied == 403
         assert spool.pending() == ()
         with urllib.request.urlopen(urllib.request.Request(
@@ -70,11 +85,14 @@ def test_managed_http_origin_is_retained_and_dispatches_after_spool_reopen(tmp_p
         reopened = ManagedRuntimeSpool(spool_directory)
         [entry] = reopened.pending()
         assert entry.operation_origin == proof
-        first = service.dispatch(entry.delivery.command, operation_origin=entry.operation_origin)
+        args = ["--installation-root", str(root), "--managed", "--drain"]
+        assert consume(args) == 0
+        first = RuntimeCommandReceipt.model_validate_json(capsys.readouterr().out)
         assert first.status == "committed" and first.operation_origin == proof.coordinate
-        assert service.dispatch(entry.delivery.command, operation_origin=entry.operation_origin) == first
-        reopened.mark_committed(entry)
+        assert consume(args) == 0
+        assert capsys.readouterr().out == ""
         assert ManagedRuntimeSpool(spool_directory).pending() == ()
+        assert len(RuntimeStateRepository(administration.partition()).list_tasks()) == 1
     finally:
         server.shutdown()
         server.server_close()

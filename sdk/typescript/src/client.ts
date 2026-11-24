@@ -117,6 +117,19 @@ export interface RuntimeCommand {
   source_digest?: string;
 }
 
+export interface OperationOrigin {
+  coordinate: {
+    installation_id: string;
+    repository_id: string;
+    generation_id: string;
+    principal: string;
+    client_namespace: string;
+    operation_id: string;
+    request_digest: string;
+  };
+  signature: string;
+}
+
 export interface SpoolRecord {
   operation_id: string;
   producer_binding: string;
@@ -176,52 +189,32 @@ export class RuntimeStateClient {
       view: options.view ?? "summary",
       ...(options.cursor !== undefined ? { cursor: options.cursor } : {}),
     });
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    let response: Response;
-    try {
-      response = await fetch(`${this.baseUrl}/v1/runtime/state`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${this.credential}`,
-        },
-        body,
-        signal: controller.signal,
-      });
-    } catch (cause) {
-      throw new RuntimeClientError("unavailable", 0, String(cause));
-    } finally {
-      clearTimeout(timer);
-    }
-    if (!response.ok) {
-      let code: RuntimeErrorCode = "unavailable";
-      let detail: string | null = null;
-      try {
-        const parsed = (await response.json()) as Record<string, unknown>;
-        if (typeof parsed["code"] === "string") {
-          code = parsed["code"] as RuntimeErrorCode;
-        }
-        if (typeof parsed["detail"] === "string") {
-          detail = parsed["detail"];
-        }
-      } catch {
-        // non-JSON or non-object error body maps to unavailable
-      }
-      throw new RuntimeClientError(code, response.status, detail);
-    }
-    return (await response.json()) as HarnessStateEnvelope;
+    return this.post<HarnessStateEnvelope>("/v1/runtime/state", body);
   }
 
-  /**
-   * Submit one closed runtime command through the durable intake route.
-   * Producer authority is server-derived from the credential; the same
-   * operation id redelivers idempotently, a divergent duplicate
-   * dead-letters as a conflict.
-   */
+  /** Prepare a new intent and retain the returned proof for all retries. */
+  async prepareOperation(command: RuntimeCommand): Promise<OperationOrigin> {
+    return this.post<OperationOrigin>("/v1/operations/prepare", JSON.stringify(command));
+  }
+
+  /** Submit an immutable prepared intent to managed intake. */
+  async submitOperation(
+    command: RuntimeCommand,
+    operationOrigin: OperationOrigin,
+    options: { transportMessageId?: string } = {},
+  ): Promise<SpoolRecord> {
+    const header = JSON.stringify(operationOrigin).replace(
+      /[\u007f-\uffff]/g,
+      (character) => "\\u" + character.charCodeAt(0).toString(16).padStart(4, "0"),
+    );
+    return this.submitEvent(command, options, header);
+  }
+
+  /** Legacy intake carrier for hosts not yet composed with managed grants. */
   async submitEvent(
     command: RuntimeCommand,
     options: { transportMessageId?: string } = {},
+    originHeader?: string,
   ): Promise<SpoolRecord> {
     const body = JSON.stringify({
       protocol_version: 1,
@@ -230,15 +223,20 @@ export class RuntimeStateClient {
         ? { transport_message_id: options.transportMessageId }
         : {}),
     });
+    return this.post<SpoolRecord>("/v1/runtime/intake", body, originHeader);
+  }
+
+  private async post<T>(route: string, body: string, originHeader?: string): Promise<T> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     let response: Response;
     try {
-      response = await fetch(`${this.baseUrl}/v1/runtime/intake`, {
+      response = await fetch(this.baseUrl + route, {
         method: "POST",
         headers: {
           "content-type": "application/json",
           authorization: `Bearer ${this.credential}`,
+          ...(originHeader === undefined ? {} : { "Memorii-Operation-Origin": originHeader }),
         },
         body,
         signal: controller.signal,
@@ -264,6 +262,7 @@ export class RuntimeStateClient {
       }
       throw new RuntimeClientError(code, response.status, detail);
     }
-    return (await response.json()) as SpoolRecord;
+    return (await response.json()) as T;
   }
+
 }

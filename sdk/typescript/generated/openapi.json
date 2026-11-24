@@ -357,6 +357,478 @@
         "title": "HarnessStateEnvelope",
         "type": "object"
       },
+      "OperationOrigin": {
+        "$defs": {
+          "OperationOriginCoordinate": {
+            "additionalProperties": false,
+            "description": "Immutable identity of an intent prepared under a managed host binding.",
+            "properties": {
+              "client_namespace": {
+                "maxLength": 512,
+                "minLength": 1,
+                "title": "Client Namespace",
+                "type": "string"
+              },
+              "generation_id": {
+                "maxLength": 512,
+                "minLength": 1,
+                "title": "Generation Id",
+                "type": "string"
+              },
+              "installation_id": {
+                "maxLength": 512,
+                "minLength": 1,
+                "title": "Installation Id",
+                "type": "string"
+              },
+              "operation_id": {
+                "maxLength": 512,
+                "minLength": 1,
+                "title": "Operation Id",
+                "type": "string"
+              },
+              "principal": {
+                "maxLength": 512,
+                "minLength": 1,
+                "title": "Principal",
+                "type": "string"
+              },
+              "repository_id": {
+                "maxLength": 1024,
+                "minLength": 1,
+                "title": "Repository Id",
+                "type": "string"
+              },
+              "request_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Request Digest",
+                "type": "string"
+              }
+            },
+            "required": [
+              "installation_id",
+              "repository_id",
+              "generation_id",
+              "principal",
+              "client_namespace",
+              "operation_id",
+              "request_digest"
+            ],
+            "title": "OperationOriginCoordinate",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Purpose-signed operation origin, never permission to execute it.",
+        "properties": {
+          "coordinate": {
+            "$ref": "#/$defs/OperationOriginCoordinate"
+          },
+          "signature": {
+            "pattern": "^[0-9a-f]{128}$",
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": [
+          "coordinate",
+          "signature"
+        ],
+        "title": "OperationOrigin",
+        "type": "object"
+      },
+      "RuntimeCommandRequest": {
+        "$defs": {
+          "BeliefUpdateProposal": {
+            "additionalProperties": false,
+            "description": "The durable carrier of the spec's update_belief: justification-bound.",
+            "properties": {
+              "epistemic_status": {
+                "enum": [
+                  "candidate",
+                  "committed",
+                  "weakened",
+                  "suspended",
+                  "retired"
+                ],
+                "title": "Epistemic Status",
+                "type": "string"
+              },
+              "justification_id": {
+                "minLength": 1,
+                "title": "Justification Id",
+                "type": "string"
+              },
+              "kind": {
+                "const": "belief_update",
+                "default": "belief_update",
+                "title": "Kind",
+                "type": "string"
+              },
+              "node_id": {
+                "minLength": 1,
+                "title": "Node Id",
+                "type": "string"
+              },
+              "solver_id": {
+                "minLength": 1,
+                "title": "Solver Id",
+                "type": "string"
+              },
+              "strength": {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "title": "Strength",
+                "type": "number"
+              }
+            },
+            "required": [
+              "solver_id",
+              "node_id",
+              "justification_id",
+              "epistemic_status",
+              "strength"
+            ],
+            "title": "BeliefUpdateProposal",
+            "type": "object"
+          },
+          "NodeEvidenceReference": {
+            "additionalProperties": false,
+            "properties": {
+              "source_digest": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Source Digest"
+              },
+              "source_id": {
+                "minLength": 1,
+                "title": "Source Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "source_id"
+            ],
+            "title": "NodeEvidenceReference",
+            "type": "object"
+          },
+          "NodeMergeProposal": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "node_merge",
+                "default": "node_merge",
+                "title": "Kind",
+                "type": "string"
+              },
+              "reason": {
+                "minLength": 1,
+                "title": "Reason",
+                "type": "string"
+              },
+              "solver_id": {
+                "minLength": 1,
+                "title": "Solver Id",
+                "type": "string"
+              },
+              "source_node_id": {
+                "minLength": 1,
+                "title": "Source Node Id",
+                "type": "string"
+              },
+              "target_node_id": {
+                "minLength": 1,
+                "title": "Target Node Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "solver_id",
+              "source_node_id",
+              "target_node_id",
+              "reason"
+            ],
+            "title": "NodeMergeProposal",
+            "type": "object"
+          },
+          "NodeReopenProposal": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "node_reopen",
+                "default": "node_reopen",
+                "title": "Kind",
+                "type": "string"
+              },
+              "node_id": {
+                "minLength": 1,
+                "title": "Node Id",
+                "type": "string"
+              },
+              "reason_refs": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "title": "Reason Refs",
+                "type": "array"
+              },
+              "solver_id": {
+                "minLength": 1,
+                "title": "Solver Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "solver_id",
+              "node_id"
+            ],
+            "title": "NodeReopenProposal",
+            "type": "object"
+          },
+          "StatusUpdateProposal": {
+            "additionalProperties": false,
+            "properties": {
+              "evidence": {
+                "default": [],
+                "items": {
+                  "$ref": "#/$defs/NodeEvidenceReference"
+                },
+                "title": "Evidence",
+                "type": "array"
+              },
+              "kind": {
+                "const": "status_update",
+                "default": "status_update",
+                "title": "Kind",
+                "type": "string"
+              },
+              "node_id": {
+                "minLength": 1,
+                "title": "Node Id",
+                "type": "string"
+              },
+              "reason": {
+                "minLength": 1,
+                "title": "Reason",
+                "type": "string"
+              },
+              "solver_id": {
+                "minLength": 1,
+                "title": "Solver Id",
+                "type": "string"
+              },
+              "status": {
+                "minLength": 1,
+                "title": "Status",
+                "type": "string"
+              }
+            },
+            "required": [
+              "solver_id",
+              "node_id",
+              "status",
+              "reason"
+            ],
+            "title": "StatusUpdateProposal",
+            "type": "object"
+          },
+          "TaskCompletionEvidence": {
+            "additionalProperties": false,
+            "description": "Typed completion evidence; acceptance validation applies before DONE.",
+            "properties": {
+              "acceptance_results": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "title": "Acceptance Results",
+                "type": "array"
+              },
+              "required_artifact_refs": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "title": "Required Artifact Refs",
+                "type": "array"
+              },
+              "unresolved_blocker_acknowledged": {
+                "default": false,
+                "title": "Unresolved Blocker Acknowledged",
+                "type": "boolean"
+              }
+            },
+            "title": "TaskCompletionEvidence",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Closed version-1 runtime command union.",
+        "properties": {
+          "abort_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Abort Reason"
+          },
+          "completion_evidence": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TaskCompletionEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "expected_revision": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expected Revision"
+          },
+          "goal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Goal"
+          },
+          "kind": {
+            "enum": [
+              "start_task",
+              "resume_task",
+              "record_observation",
+              "propose_state_change",
+              "record_action_dispatch",
+              "record_action_result",
+              "checkpoint_task",
+              "replan_task",
+              "complete_task",
+              "pause_task",
+              "abort_task"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "operation_id": {
+            "minLength": 1,
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "pause_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Pause Reason"
+          },
+          "proposal": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "belief_update": "#/$defs/BeliefUpdateProposal",
+                    "node_merge": "#/$defs/NodeMergeProposal",
+                    "node_reopen": "#/$defs/NodeReopenProposal",
+                    "status_update": "#/$defs/StatusUpdateProposal"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/BeliefUpdateProposal"
+                  },
+                  {
+                    "$ref": "#/$defs/StatusUpdateProposal"
+                  },
+                  {
+                    "$ref": "#/$defs/NodeReopenProposal"
+                  },
+                  {
+                    "$ref": "#/$defs/NodeMergeProposal"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Proposal"
+          },
+          "protocol_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Protocol Version",
+            "type": "integer"
+          },
+          "source_digest": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Source Digest"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "kind",
+          "operation_id"
+        ],
+        "title": "RuntimeCommandRequest",
+        "type": "object"
+      },
       "SidecarError": {
         "additionalProperties": false,
         "description": "Closed error envelope; no task-derived data.",
@@ -928,9 +1400,63 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/v1/operations/prepare": {
+      "post": {
+        "operationId": "prepareRuntimeCommand",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeCommandRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationOrigin"
+                }
+              }
+            },
+            "description": "Installation-signed operation origin to retain before intake"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SidecarError"
+                }
+              }
+            },
+            "description": "Closed error envelope"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/v1/runtime/intake": {
       "post": {
         "operationId": "submitRuntimeCommand",
+        "parameters": [
+          {
+            "description": "Original signed proof, encoded as ASCII JSON. Required for managed intake.",
+            "in": "header",
+            "name": "Memorii-Operation-Origin",
+            "required": true,
+            "schema": {
+              "maxLength": 8192,
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {

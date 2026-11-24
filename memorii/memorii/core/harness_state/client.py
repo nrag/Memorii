@@ -13,8 +13,10 @@ import urllib.error
 import urllib.request
 from typing import Literal
 
+from memorii.core.harness_state.consumer import SpoolRecord
 from memorii.core.harness_state.envelope import HarnessStateEnvelope
-from memorii.core.harness_state.sidecar import SidecarRequest
+from memorii.core.harness_state.sidecar import SidecarIntakeRequest, SidecarRequest
+from memorii.core.persistence.runtime_contracts import OperationOrigin, RuntimeCommandRequest
 
 
 class RuntimeClientError(RuntimeError):
@@ -48,10 +50,34 @@ class RuntimeStateClient:
         view: Literal["execution", "solver", "summary", "history", "neighborhood"] = "summary",
     ) -> HarnessStateEnvelope:
         request = SidecarRequest(task_id=task_id, view=view)
+        return HarnessStateEnvelope.model_validate_json(
+            self._post("/v1/runtime/state", request.model_dump_json())
+        )
+
+    def prepare_operation(self, command: RuntimeCommandRequest) -> OperationOrigin:
+        """Prepare a new intent. Persist this proof with the command before submitting."""
+        return OperationOrigin.model_validate_json(
+            self._post("/v1/operations/prepare", command.model_dump_json())
+        )
+
+    def submit_operation(
+        self, command: RuntimeCommandRequest, operation_origin: OperationOrigin
+    ) -> SpoolRecord:
+        """Send the originally prepared proof unchanged, including on retries."""
+        request = SidecarIntakeRequest(command=command)
+        proof = json.dumps(operation_origin.model_dump(mode="json"), ensure_ascii=True)
+        return SpoolRecord.model_validate_json(self._post(
+            "/v1/runtime/intake", request.model_dump_json(), operation_origin=proof,
+        ))
+
+    def _post(self, route: str, body: str, *, operation_origin: str | None = None) -> bytes:
+        headers = {"Authorization": f"Bearer {self._credential}", "Content-Type": "application/json"}
+        if operation_origin is not None:
+            headers["Memorii-Operation-Origin"] = operation_origin
         http_request = urllib.request.Request(
-            self._base_url + "/v1/runtime/state",
-            data=request.model_dump_json().encode("utf-8"),
-            headers={"Authorization": f"Bearer {self._credential}"},
+            self._base_url + route,
+            data=body.encode("utf-8"),
+            headers=headers,
             method="POST",
         )
         try:
@@ -59,9 +85,9 @@ class RuntimeStateClient:
                 payload = response.read()
         except urllib.error.HTTPError as exc:
             with exc:
-                body = exc.read()
+                error_body = exc.read()
             try:
-                error = json.loads(body)
+                error = json.loads(error_body)
             except json.JSONDecodeError:
                 error = None
             if not isinstance(error, dict):
@@ -73,7 +99,7 @@ class RuntimeStateClient:
             ) from exc
         except urllib.error.URLError as exc:
             raise RuntimeClientError("unavailable", 0, str(exc.reason)) from exc
-        return HarnessStateEnvelope.model_validate_json(payload)
+        return payload
 
 
 __all__ = ["RuntimeClientError", "RuntimeStateClient"]

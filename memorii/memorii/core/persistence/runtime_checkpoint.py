@@ -16,11 +16,15 @@ never repeats a tool.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from datetime import UTC, datetime
+from hashlib import sha256
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from memorii.core.consolidation.runtime_outputs import ArchivePackageRef
+from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
 from memorii.core.persistence.runtime_contracts import (
     RuntimeOverlayVersion,
     SolverJustificationRecord,
@@ -31,6 +35,7 @@ from memorii.core.persistence.runtime_repository import RuntimeStateRepository
 from memorii.core.storage_administration.revoked_identity_view import (
     RevokedIdentityServingGate,
 )
+from memorii.domain.execution_graph.nodes import ExecutionNode
 
 _HEX_64 = r"^[0-9a-f]{64}$"
 CHECKPOINT_SIGNATURE_PURPOSE = "memorii.runtime-checkpoint.v1"
@@ -38,6 +43,172 @@ CHECKPOINT_SIGNATURE_PURPOSE = "memorii.runtime-checkpoint.v1"
 
 class RuntimeCheckpointError(RuntimeError):
     """Checkpoint creation or verification refused."""
+
+
+class TaskLifecycleCheckpoint(BaseModel):
+    """Full pre-transition snapshot for the supported source-free root graph."""
+
+    kind: Literal["task_lifecycle_checkpoint"] = "task_lifecycle_checkpoint"
+    installation_id: str = Field(min_length=1)
+    partition_id: str = Field(min_length=1)
+    generation_id: str = Field(min_length=1)
+    publication_digest: str = Field(pattern=_HEX_64)
+    runtime_revision: int = Field(ge=1)
+    task: TaskRecord
+    root_node: ExecutionNode
+    source_closure: tuple[()] = ()
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def root_matches_task(self) -> TaskLifecycleCheckpoint:
+        if self.root_node.id != self.task.root_execution_node_id or self.root_node.owner != self.task.principal:
+            raise ValueError("checkpoint root must belong to its task")
+        return self
+
+    def digest(self) -> str:
+        return sha256(encode_typed_value(self.model_dump(mode="python"))).hexdigest()
+
+
+class TaskLifecycleArchiveManifest(BaseModel):
+    """Owner-prepared immutable archive closure for one signed checkpoint."""
+
+    checkpoint_id: str = Field(min_length=1)
+    checkpoint_digest: str = Field(pattern=_HEX_64)
+    origin_revision: int = Field(ge=1)
+    source_closure: tuple[()] = ()
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    def digest(self) -> str:
+        return sha256(encode_typed_value(self.model_dump(mode="python"))).hexdigest()
+
+
+class TaskLifecycleArchive(BaseModel):
+    """Manifest-covered checkpoint bytes, signer and retention reference."""
+
+    checkpoint_id: str = Field(min_length=1)
+    task_id: str = Field(min_length=1)
+    checkpoint_digest: str = Field(pattern=_HEX_64)
+    checkpoint: TaskLifecycleCheckpoint
+    signer_key_id: str = Field(min_length=1)
+    signature: str = Field(pattern=r"^[0-9a-f]{128}$")
+    manifest: TaskLifecycleArchiveManifest
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def verify_closure(self) -> TaskLifecycleArchive:
+        if (
+            self.task_id != self.checkpoint.task.task_id
+            or self.checkpoint_digest != self.checkpoint.digest()
+            or self.checkpoint_id != f"checkpoint:{self.checkpoint_digest}"
+            or self.manifest.checkpoint_id != self.checkpoint_id
+            or self.manifest.checkpoint_digest != self.checkpoint_digest
+            or self.manifest.origin_revision != self.checkpoint.runtime_revision + 1
+        ):
+            raise ValueError("task archive does not bind its exact checkpoint and origin")
+        return self
+
+    def reference(self) -> ArchivePackageRef:
+        manifest_digest = self.manifest.digest()
+        return ArchivePackageRef(
+            installation_id=self.checkpoint.installation_id,
+            partition_id=self.checkpoint.partition_id,
+            task_id=self.task_id,
+            origin_revision=self.manifest.origin_revision,
+            checkpoint_id=self.checkpoint_id,
+            checkpoint_digest=self.checkpoint_digest,
+            manifest_id=f"archive:{manifest_digest}",
+            manifest_digest=manifest_digest,
+        )
+
+    def verify_signature(self, verify: Callable[[str, str, str, str], bool]) -> None:
+        digest = self.checkpoint.digest()
+        if digest != self.checkpoint_digest or not verify(
+            self.signer_key_id, CHECKPOINT_SIGNATURE_PURPOSE, digest, self.signature,
+        ):
+            raise RuntimeCheckpointError("integrity_error: task checkpoint signature verification failed")
+
+
+def stage_task_lifecycle_archive(
+    repository: RuntimeStateRepository,
+    connection: sqlite3.Connection,
+    *,
+    task: TaskRecord,
+    installation_id: str,
+    partition_id: str,
+    generation_id: str,
+    signer_key_id: str,
+    sign: Callable[[str, str], str],
+) -> tuple[TaskLifecycleArchive, ExecutionNode]:
+    """Archive verified task state before a managed lifecycle transition."""
+    partition = repository.partition
+    publication = partition.read_publication_row(connection)
+    if publication is None or publication["generation_id"] != generation_id:
+        raise RuntimeCheckpointError("integrity_error: task archive publication origin mismatch")
+    rows = partition.read_runtime_rows(
+        connection, table="runtime_execution_nodes", match=(("task_id", task.task_id),),
+    )
+    if (
+        len(rows) != 1
+        or task.active_solver_by_execution_node
+        or repository.list_solver_runs_in(connection, task.task_id)
+        or repository.list_action_attempts_in(connection, task.task_id)
+        or partition.read_runtime_rows(
+            connection, table="runtime_execution_edges", match=(("task_id", task.task_id),),
+        )
+        # Source-backed task closure needs the source owner and explicit grant.
+        or connection.execute(
+            "SELECT 1 FROM memory_current_records"
+            " WHERE json_extract(record_json, '$.task_id') = ? LIMIT 1",
+            (task.task_id,),
+        ).fetchone() is not None
+    ):
+        raise RuntimeCheckpointError("unsupported_configuration: full task archive closure is unavailable")
+    root = ExecutionNode.model_validate_json(rows[0]["record_json"])
+    if root.linked_artifacts or root.linked_constraints:
+        raise RuntimeCheckpointError("unsupported_configuration: linked archive artifacts require their owner")
+    checkpoint = TaskLifecycleCheckpoint(
+        installation_id=installation_id,
+        partition_id=partition_id,
+        generation_id=generation_id,
+        publication_digest=publication["tuple_digest"],
+        runtime_revision=repository.read_runtime_revision_in(connection) - 1,
+        task=task,
+        root_node=root,
+    )
+    checkpoint_digest = checkpoint.digest()
+    checkpoint_id = f"checkpoint:{checkpoint_digest}"
+    archive = TaskLifecycleArchive(
+        checkpoint_id=checkpoint_id,
+        task_id=task.task_id,
+        checkpoint_digest=checkpoint_digest,
+        checkpoint=checkpoint,
+        signer_key_id=signer_key_id,
+        signature=sign(CHECKPOINT_SIGNATURE_PURPOSE, checkpoint_digest),
+        manifest=TaskLifecycleArchiveManifest(
+            checkpoint_id=checkpoint_id,
+            checkpoint_digest=checkpoint_digest,
+            origin_revision=checkpoint.runtime_revision + 1,
+        ),
+    )
+    prior = partition.read_runtime_row(
+        connection, table="runtime_checkpoints", match=(("checkpoint_id", checkpoint_id),),
+    )
+    if prior is not None and prior["record_json"] != archive.model_dump_json():
+        raise RuntimeCheckpointError("integrity_error: divergent task archive identity")
+    if prior is None:
+        partition.upsert_runtime_row(
+            connection,
+            table="runtime_checkpoints",
+            keys=("checkpoint_id",),
+            values=(checkpoint_id,),
+            record_json=archive.model_dump_json(),
+            index_columns=("task_id",),
+            index_values=(task.task_id,),
+        )
+    return archive, root
 
 
 class RuntimeCheckpointManifest(BaseModel):
