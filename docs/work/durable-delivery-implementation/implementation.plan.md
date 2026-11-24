@@ -44,4 +44,4 @@ Implementation branch `codex/durable-delivery-implementation` is published to or
 
 ## Next Action
 
-Use the [installed v8 capacity remediation results](../sqlite-capacity-remediation/implementation.plan.md) to isolate the remaining acquisition cost on the approved native storage profiles before considering default activation.
+Qualify the v8 candidate on the dedicated native Linux and macOS SSD profiles for both reference distributions before considering default activation. Use the [native cold acquisition results](../sqlite-native-cold-acquisition/implementation.plan.md) and the [installed backup remediation results](../sqlite-capacity-remediation/implementation.plan.md) as prior diagnostic evidence.

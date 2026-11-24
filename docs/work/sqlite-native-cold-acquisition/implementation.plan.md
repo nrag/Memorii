@@ -1,7 +1,7 @@
 # Native SSD Cold SQLite Acquisition
 
 - Work type: implementation
-- Status: active
+- Status: native diagnostic delivered. Level 3 release qualification remains open in the parent.
 - Delivery fidelity: Level 3 release target with native diagnostic evidence
 - Baseline: `8ffe0f65` on `codex/durable-delivery-implementation`
 - Parent: [durable delivery](../durable-delivery-implementation/implementation.plan.md)
@@ -32,6 +32,33 @@ The runner copies into a fresh file with Darwin `F_NOCACHE` during untimed setup
 | Complete manifest rebuild | 5.492 s | 5.507 s |
 | Runtime replay verification | 1.535 s | 1.542 s |
 
+## Implementation
+
+`749230e0` reads eligible payload bodies from the ordered SQLite row cursor in one pass. SQLite checks the storage class and length before projecting each bounded body. Larger bodies still stream through `blobopen`. The verifier recomputes the same domain-separated SHA-256 digest and checks base-table and index parity. An isolated full-database walk went from 2.846 s to 2.413 s median with zero starting page residency.
+
+`dfe5039b` prototyped Darwin `F_RDADVISE` ahead of the exact v8 raw verifier. Independent review reproduced a P2 SQLite lock loss when closing a second file descriptor for the same inode in the SQLite owner's process. `ebd1725a` moves the read advice into a child process with a two-second timeout. A native WAL regression checks lock ownership before and after the actual dispatch and verifies release when SQLite closes. Focused delta review found no remaining validated P1/P2 in the slice (`remaining_validated_p1_p2: []`).
+
+The helper advises the regular main database file in 32 MiB ranges up to 6 GiB, which covers the current 5.41 GiB reference database. SQLite still verifies every payload, including those beyond the advised range. Hint failures fall through to the same verifier. The implementation leaves the signed format and v7 default unchanged. A separate concurrent verification probe on one SQLite connection failed the recovery catalog check and was discarded.
+
+## Installed Reruns
+
+The [bounded-read wheel run](macos-bounded-read.jsonl) used `749230e0` and passed 107 focused installed tests. Its three full acquisitions took 6.693 s, 6.581 s and 6.566 s. Median raw verification took 2.599 s. Each run started with zero resident main-database pages and verified the same signed checkpoint and tail.
+
+The [rejected same-process advice run](macos-rejected-advice.jsonl) used `dfe5039b`. These measurements preserve the experiment history. The lock loss invalidates them as candidate acceptance evidence.
+
+The lock-isolated `ebd1725a` wheel SHA-256 is `367a977ed1dce901876ededb6794fd83c78736a8adcca98b202fba4b07ae953e`. The isolated driver verified the installed wheel inventory and presence of the helper. All 110 tests passed from that wheel with warnings treated as errors. Coverage included payload and index corruption, malformed payload size, read-ahead timeout and range limits, SQLite lock safety, staged upgrade, older restore, partition recovery and selection, checkpoint and tail replay, source authority, and backup fencing. Focused Ruff and Pyright checks also passed.
+
+All five [lock-isolated samples](macos-final.jsonl) verified signed tuple `b7a7b8690ef9b918a178e84a2948ce2f8a90b9af9a199a19b90f7836005eb83c`. Every main database copy started with zero of 354,519 pages resident. The complete acquisitions took 4.860 s, 4.885 s, 4.963 s, 4.892 s and 4.911 s. There were no timed failures or retries.
+
+| Metric | Median | Maximum |
+| --- | ---: | ---: |
+| Complete acquisition | 4.892 s | 4.963 s |
+| Raw payload verification | 1.813 s | 1.838 s |
+| Complete manifest rebuild | 3.505 s | 3.544 s |
+| Runtime replay verification | 1.365 s | 1.395 s |
+
+Complete acquisition improved by 30.5% at the median. Raw verification improved by 39.5%, including the time spent advising reads. All samples met the five-second startup budget on this shared native macOS host and the concentrated reference fixture. The formal capacity gate needs ten acquisition samples per distribution and platform, the other required series, and dedicated native runners.
+
 ## Next Action
 
-Finish full native comparisons of the bounded raw read path, then freeze and rerun the installed candidate.
+Use the parent reference-capacity milestone to qualify both distributions on dedicated native Linux and macOS runners before considering default activation.
