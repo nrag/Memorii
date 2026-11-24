@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import fcntl
+import os
 import sqlite3
 from collections.abc import Sequence
 from contextlib import closing
 from hashlib import sha256
+from pathlib import Path
 
 import pytest
 from memorii.core.persistence.runtime_journal import (
@@ -128,6 +131,46 @@ def test_oversized_raw_payload_cannot_enter_projection_with_understated_size() -
         rows.close()
         with pytest.raises(sqlite3.DatabaseError, match="raw memory payload length differs"):
             raw_memory_payloads.verify_raw_payloads(connection)
+
+
+def test_darwin_read_ahead_advises_only_bounded_ranges(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    database = tmp_path / "partition.sqlite3"
+    monkeypatch.setattr(raw_memory_payloads, "platform", "darwin")
+    monkeypatch.setattr(raw_memory_payloads, "_DARWIN_READ_AHEAD_SPAN", 300)
+    monkeypatch.setattr(raw_memory_payloads, "_DARWIN_READ_AHEAD_LIMIT", 1_000)
+    ranges: list[tuple[int, int]] = []
+
+    def capture(descriptor: int, operation: int, payload: bytes) -> bytes:
+        assert operation == raw_memory_payloads._DARWIN_READ_ADVICE
+        assert os.fstat(descriptor).st_ino == database.stat().st_ino
+        ranges.append(raw_memory_payloads._DARWIN_READ_RANGE.unpack(payload))
+        return payload
+
+    monkeypatch.setattr(fcntl, "fcntl", capture)
+    with closing(sqlite3.connect(database)) as connection:
+        _insert_raw_payload(connection, b"payload")
+        raw_memory_payloads.verify_raw_payloads(connection)
+    assert ranges == [(0, 300), (300, 300), (600, 300), (900, 100)]
+
+
+def test_darwin_read_ahead_failure_still_checks_payload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(raw_memory_payloads, "platform", "darwin")
+    calls = 0
+
+    def fail_advice(*_args: object) -> bytes:
+        nonlocal calls
+        calls += 1
+        raise OSError("read advice unsupported")
+
+    monkeypatch.setattr(fcntl, "fcntl", fail_advice)
+    with closing(sqlite3.connect(tmp_path / "partition.sqlite3")) as connection:
+        _insert_raw_payload(connection, b"payload")
+        raw_memory_payloads.verify_raw_payloads(connection)
+        with connection.blobopen("memory_payloads", "body", 1) as blob:
+            blob.write(b"x")
+        with pytest.raises(sqlite3.DatabaseError, match="raw memory payload digest differs"):
+            raw_memory_payloads.verify_raw_payloads(connection)
+    assert calls == 2
 
 
 def test_large_raw_payload_stream_still_rejects_a_changed_final_byte(monkeypatch: pytest.MonkeyPatch) -> None:
