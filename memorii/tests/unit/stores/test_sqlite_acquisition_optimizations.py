@@ -78,27 +78,67 @@ def test_checkpoint_byte_serialization_preserves_the_signed_member_digest() -> N
     assert _member_digest(bindings, _BINDING_JSON) == _previous_checkpoint_digest(bindings)
 
 
+def _insert_raw_payload(
+    connection: sqlite3.Connection, body: bytes, *, declared_size: int | None = None,
+) -> None:
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys=ON")
+    for sql in raw_memory_payloads._SCHEMA.values():
+        connection.execute(sql)
+    key = raw_memory_payloads.payload_digest(body)
+    connection.execute(
+        "INSERT INTO memory_payloads VALUES (?, ?, 0, ?)",
+        (key, len(body) if declared_size is None else declared_size, body),
+    )
+    connection.execute("INSERT INTO memory_batches VALUES (1, 1, ?, 'time', 1)", ("a" * 64,))
+    connection.execute("INSERT INTO memory_record_versions VALUES ('record', 1, ?)", (key,))
+    connection.execute("INSERT INTO memory_batch_members VALUES (1, 0, 'record', ?)", (key,))
+    connection.execute(
+        "INSERT INTO memory_current_records VALUES ('record', 1, ?, 'active', 'work', 'test', 1, NULL)",
+        (key,),
+    )
+
+
+@pytest.mark.parametrize("size", [32, raw_memory_payloads._CHUNK_BYTES])
+def test_projected_raw_payloads_verify_original_bytes_without_reopening(
+    size: int, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def reject_streaming(*_args: object) -> None:
+        pytest.fail("an in-range SQLite BLOB should use the bounded projection")
+
+    monkeypatch.setattr(raw_memory_payloads, "_open_raw_body", reject_streaming)
+    with closing(sqlite3.connect(":memory:")) as connection:
+        _insert_raw_payload(connection, b"z" * size)
+        raw_memory_payloads.verify_raw_payloads(connection)
+        with connection.blobopen("memory_payloads", "body", 1) as blob:
+            blob.seek(size - 1)
+            blob.write(b"x")
+        with pytest.raises(sqlite3.DatabaseError, match="raw memory payload digest differs"):
+            raw_memory_payloads.verify_raw_payloads(connection)
+
+
+def test_oversized_raw_payload_cannot_enter_projection_with_understated_size() -> None:
+    body = b"z" * (raw_memory_payloads._MAX_QUEUED_PAYLOAD_BYTES + 1)
+    with closing(sqlite3.connect(":memory:")) as connection:
+        connection.execute("PRAGMA ignore_check_constraints=ON")
+        _insert_raw_payload(connection, body, declared_size=16)
+        rows = raw_memory_payloads._bounded_payload_rows(connection)
+        row = rows.fetchone()
+        assert row is not None and row[5] is None
+        rows.close()
+        with pytest.raises(sqlite3.DatabaseError, match="raw memory payload length differs"):
+            raw_memory_payloads.verify_raw_payloads(connection)
+
+
 def test_large_raw_payload_stream_still_rejects_a_changed_final_byte(monkeypatch: pytest.MonkeyPatch) -> None:
     body = b"z" * (raw_memory_payloads._MAX_QUEUED_PAYLOAD_BYTES + 1)
-    key = raw_memory_payloads.payload_digest(body)
 
     def reject_buffering(raw: bytes, expected: bytes) -> None:
         pytest.fail("the payload exceeded the parallel verification buffer limit")
 
     monkeypatch.setattr(raw_memory_payloads, "_verify_buffer", reject_buffering)
     with closing(sqlite3.connect(":memory:")) as connection:
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys=ON")
-        for sql in raw_memory_payloads._SCHEMA.values():
-            connection.execute(sql)
-        connection.execute("INSERT INTO memory_payloads VALUES (?, ?, 0, ?)", (key, len(body), body))
-        connection.execute("INSERT INTO memory_batches VALUES (1, 1, ?, 'time', 1)", ("a" * 64,))
-        connection.execute("INSERT INTO memory_record_versions VALUES ('record', 1, ?)", (key,))
-        connection.execute("INSERT INTO memory_batch_members VALUES (1, 0, 'record', ?)", (key,))
-        connection.execute(
-            "INSERT INTO memory_current_records VALUES ('record', 1, ?, 'active', 'work', 'test', 1, NULL)",
-            (key,),
-        )
+        _insert_raw_payload(connection, body)
         raw_memory_payloads.verify_raw_payloads(connection)
         with connection.blobopen("memory_payloads", "body", 1) as blob:
             blob.seek(len(body) - 1)

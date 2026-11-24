@@ -141,7 +141,7 @@ def _require_index_parity(
 
 
 def _payload_location(row: sqlite3.Row) -> tuple[int, bytes, int]:
-    rowid, expected, size, codec, body_type = row
+    rowid, expected, size, codec, body_type = row[:5]
     if (
         not isinstance(expected, bytes) or len(expected) != 32
         or type(size) is not int or size <= 0 or codec != 0 or body_type != "blob"
@@ -229,6 +229,18 @@ def _require_reference_closure(connection: sqlite3.Connection) -> None:
         raise sqlite3.DatabaseError("raw memory payloads include missing or unreferenced rows")
 
 
+def _bounded_payload_rows(connection: sqlite3.Connection) -> sqlite3.Cursor:
+    # Check the actual SQLite BLOB length before materializing a body. The
+    # stored size is still untrusted at this point in acquisition.
+    return connection.execute("""
+        SELECT rowid,payload_digest,raw_size,codec,typeof(body),
+               CASE WHEN typeof(body) = 'blob' THEN
+                   CASE WHEN length(body) BETWEEN 1 AND ? AND length(body) = raw_size THEN body END
+               END
+        FROM main.memory_payloads NOT INDEXED ORDER BY rowid
+    """, (_MAX_QUEUED_PAYLOAD_BYTES,))
+
+
 def verify_raw_payloads(connection: sqlite3.Connection) -> None:
     """Check each raw body once and bind base-table metadata to its lookup order."""
     _require_index_parity(
@@ -244,24 +256,27 @@ def verify_raw_payloads(connection: sqlite3.Connection) -> None:
             base_selector=RAW_CURRENT_BASE_SELECTOR,
         )
     _require_reference_closure(connection)
-    rows = connection.execute("""
-        SELECT rowid,payload_digest,raw_size,codec,typeof(body)
-        FROM main.memory_payloads NOT INDEXED ORDER BY rowid
-    """)
-    # Keep reads on the verified transaction and hand only immutable bytes to
-    # the hash workers. Pending buffers occupy at most 16 MiB per scan.
+    rows = _bounded_payload_rows(connection)
+    # Keep reads on the verified transaction and drain the queue before fetching
+    # another body. Bounded Python buffers occupy at most 16 MiB per scan.
     pending: deque[Future[None]] = deque()
     with ThreadPoolExecutor(max_workers=2) as workers:
-        for row in rows:
-            rowid, expected, size = _payload_location(row)
-            if not _CHUNK_BYTES <= size <= _MAX_QUEUED_PAYLOAD_BYTES:
-                _verify_body(connection, rowid, expected, size)
-                continue
+        while True:
             if len(pending) == _MAX_PENDING_HASHES:
                 pending.popleft().result()
-            with _open_raw_body(connection, rowid, size) as blob:
-                raw = blob.read()
-            pending.append(workers.submit(_verify_buffer, raw, expected))
+            row = rows.fetchone()
+            if row is None:
+                break
+            rowid, expected, size = _payload_location(row)
+            raw = row[5]
+            if raw is None:
+                _verify_body(connection, rowid, expected, size)
+            elif not isinstance(raw, bytes) or len(raw) != size:
+                raise sqlite3.DatabaseError("raw memory payload length differs")
+            elif size < _CHUNK_BYTES:
+                _verify_buffer(raw, expected)
+            else:
+                pending.append(workers.submit(_verify_buffer, raw, expected))
         for result in pending:
             result.result()
 
