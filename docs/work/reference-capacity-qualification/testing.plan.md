@@ -2,7 +2,7 @@
 
 - Work type: testing
 - Delivery fidelity: Level 3
-- Status: blocked on runner provisioning and workflow registration
+- Status: running through the direct dedicated-host path. Balanced Linux failed the startup budget.
 - Branch: `codex/durable-delivery-implementation`
 - Starting head: `ba1e7baab0626aaa32c36a350876c0c3b952b337`
 - Parent: [reference capacity milestone](../durable-delivery-implementation/milestones/reference-capacity.plan.md)
@@ -37,7 +37,8 @@ The formal driver starts every acquisition sample from a fresh fixture copy in a
 - The former workflow would have measured v7 because the fixture began from default initialization. The branch now passes the staged-format option to preflight, fixture preparation and every timed qualification. The fixture reopens after cutover and creates generation-bound source receipts and a checkpoint in the selected generation.
 - Format numbers remain persisted schema identities. `--raw-payloads` reuses the existing owner CLI terminology and applies only to these test-driver invocations.
 - The 28 focused fixture, driver, upgrade, and capacity regression tests passed locally and again from an isolated installation of `9d3436378321719a650329bb26165ac65c6d7e60`. The driver matched the installed inventory to wheel SHA-256 `25b040fa8a570ce7247dfcd7e24562c6e6b0bea9ec15e672e83ed64861f83b65`. Scoped Ruff, Pyright, and repository identity checks passed. An independent correctness reviewer found no validated P1/P2 in the format wiring. The formal run was unavailable and remains unverified.
+- The owner reserved this native Mac for a direct run and authorized one disposable PhoenixNAP host for Linux. Both use the same frozen `8e570195` candidate and wheel. The [Linux balanced report](linux/8e570195/README.md) records 11.52 s startup acquisition p95 against the 5 s budget. The remaining dedicated measurements still apply even though the Linux balanced release gate failed.
 
 ## Blockers And Next Action
 
-The repository needs access to both dedicated native runners and either workflow registration on `main` or authorized shell access for equivalent execution on those two hosts. Registering or changing `main`, enrolling this shared workstation, buying capacity, and attesting hosts were outside this branch-only operation. After both eligible hosts and a launch path are available, freeze and dispatch the reviewed branch SHA through `reference-capacity.yml`, then retain and reconcile all four reports.
+Finish the direct concentrated Linux run, retain its report, and deprovision the disposable host and IP. The separate native macOS run is scheduled on the owner-reserved workstation. Keep v7 as default while the release gate is open.
