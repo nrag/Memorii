@@ -58,7 +58,7 @@ from memorii.core.storage_administration.operator import (
 )
 from memorii.core.storage_administration.service import StorageAdministrationError, StorageAdministrationService
 from memorii.stores.sqlite.control import ControlDatabase, ControlJournalChainError
-from memorii.stores.sqlite.partition import PartitionDataRepository
+from memorii.stores.sqlite.partition import PARTITION_SCHEMA_VERSION, PartitionDataRepository
 
 _BACKUP_MARKER = "backup-complete.json"
 _RECOVERY_BUNDLE = "control-recovery-bundle.json"
@@ -917,7 +917,7 @@ class BackupRestoreOperator:
             PartitionDataRepository(working, require_existing=True) as staged,
             staged.transaction(write=True) as connection,
         ):
-            upgrade_needed = not staged.supports_runtime_replay_checkpoints(connection)
+            upgrade_needed = staged.read_schema_version(connection) != PARTITION_SCHEMA_VERSION
             staged.stage_runtime_recovery_upgrade(connection, source_digest=source.payload_digest())
             previous = source.model_copy(update={"data_generation_id": generation_id})
             revision = staged.bump_runtime_revision(connection)

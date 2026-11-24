@@ -28,14 +28,16 @@ if TYPE_CHECKING:
     from memorii.core.memory_evolution.semantic_index import SemanticIndexProjection
     from memorii.core.persistence.contracts import MaterializationCatalogEntry
     from memorii.core.semantic_ingestion.ontology_index import OntologyIndexProjection
+    from memorii.stores.sqlite.materialization_sql import MaterializationCapture, MaterializationForest
 
-PARTITION_SCHEMA_VERSION = 6
+PARTITION_SCHEMA_VERSION = 7
 _INITIAL_PARTITION_SCHEMA_VERSION = 1
 _CONSOLIDATION_SCHEMA_VERSION = 2
 _DELIVERY_SCHEMA_VERSION = 3
 _RUNTIME_HISTORY_SCHEMA_VERSION = 4
 _RUNTIME_SOURCE_RELEASE_SCHEMA_VERSION = 5
 _RUNTIME_REPLAY_CHECKPOINT_SCHEMA_VERSION = 6
+_INCREMENTAL_MANIFEST_SCHEMA_VERSION = 7
 _DEFAULT_BUSY_TIMEOUT_MS = 5_000
 
 _SCHEMA_STATEMENTS = (
@@ -405,7 +407,11 @@ _MATERIALIZATION_CATALOGS_BY_VERSION = {
         _DELIVERY_RESTORE_HOLD_CATALOG,
     ),
 }
+_MATERIALIZATION_CATALOGS_BY_VERSION[_INCREMENTAL_MANIFEST_SCHEMA_VERSION] = (
+    _MATERIALIZATION_CATALOGS_BY_VERSION[_RUNTIME_REPLAY_CHECKPOINT_SCHEMA_VERSION]
+)
 _CATALOG_SEED_DOMAIN = b"memorii.materialization-catalog.v1\x00"
+VerificationCookie = tuple[int, int, int]
 
 
 def _placeholders(values: Sequence[str]) -> str:
@@ -511,6 +517,7 @@ class PartitionDataRepository:
         self._protected_storage_root = protected_storage_root or self._database_path.parent
         self._thread_lock = threading.RLock()
         self._transaction_guard: Callable[[sqlite3.Connection], None] | None = None
+        self._manifest_cache: tuple[VerificationCookie, MaterializationForest] | None = None
         self._connection = sqlite3.connect(
             self._database_path.absolute().as_uri() + "?mode=rw" if require_existing else self._database_path,
             timeout=busy_timeout_ms / 1000.0,
@@ -600,6 +607,9 @@ class PartitionDataRepository:
     ) -> tuple[MaterializationCatalogEntry, ...]:
         from memorii.core.persistence.contracts import MaterializationCatalogEntry
 
+        forest = self.rebuild_manifest_accumulator(connection)
+        if forest is not None:
+            return forest.manifest.catalogs
         version = self.read_schema_version(connection)
         catalogs = _MATERIALIZATION_CATALOGS_BY_VERSION[version]
         if version == _INITIAL_PARTITION_SCHEMA_VERSION and self._has_consolidation_catalog(connection):
@@ -649,6 +659,45 @@ class PartitionDataRepository:
                 "materialization manifest does not cover the declared catalogs"
             )
         return tuple(sorted(entries, key=lambda entry: entry.catalog))
+
+    def rebuild_manifest_accumulator(self, connection: sqlite3.Connection) -> MaterializationForest | None:
+        from memorii.stores.sqlite.materialization_sql import rebuild_manifest
+
+        version = self.read_schema_version(connection)
+        if version < _INCREMENTAL_MANIFEST_SCHEMA_VERSION:
+            return None
+        self.supports_runtime_replay_checkpoints(connection)
+        catalogs = _MATERIALIZATION_CATALOGS_BY_VERSION[version]
+        return rebuild_manifest(connection, frozenset(name for name, _, _ in catalogs))
+
+    def cache_manifest_accumulator(self, cookie: VerificationCookie, forest: MaterializationForest) -> None:
+        self._manifest_cache = (cookie, forest)
+
+    def has_verified_manifest_base(self, connection: sqlite3.Connection, signed_digest: str) -> bool:
+        if self.read_schema_version(connection) < _INCREMENTAL_MANIFEST_SCHEMA_VERSION:
+            return True
+        cached = self._manifest_cache
+        return (
+            connection is self._connection
+            and cached is not None
+            and cached[0] == self.verification_cookie(connection)
+            and cached[1].manifest.digest() == signed_digest
+        )
+
+    @contextmanager
+    def capture_materialization(
+        self, connection: sqlite3.Connection, signed_digest: str,
+    ) -> Iterator[MaterializationCapture | None]:
+        from memorii.stores.sqlite.materialization_sql import capture_manifest_changes
+
+        if self.read_schema_version(connection) < _INCREMENTAL_MANIFEST_SCHEMA_VERSION:
+            yield None
+            return
+        if not connection.in_transaction or not self.has_verified_manifest_base(connection, signed_digest):
+            raise sqlite3.DatabaseError("incremental materialization requires the verified signed base")
+        assert self._manifest_cache is not None
+        with capture_manifest_changes(connection, self._manifest_cache[1]) as capture:
+            yield capture
 
     @staticmethod
     def read_schema_version(connection: sqlite3.Connection) -> int:
@@ -723,14 +772,18 @@ class PartitionDataRepository:
             raise sqlite3.DatabaseError("recovery upgrade requires the exact staged source publication")
         if version < _RUNTIME_HISTORY_SCHEMA_VERSION:
             raise sqlite3.DatabaseError("recovery upgrade requires an authenticated runtime event journal")
-        if self.supports_runtime_replay_checkpoints(connection):
+        if version == PARTITION_SCHEMA_VERSION:
             return
+        from memorii.stores.sqlite.materialization_sql import verify_legacy_memory_selectors
+
+        verify_legacy_memory_selectors(connection)
         if version < _RUNTIME_SOURCE_RELEASE_SCHEMA_VERSION:
             self._install_source_release_catalog(connection)
-        self._install_runtime_recovery_catalogs(connection)
+        if not self.supports_runtime_replay_checkpoints(connection):
+            self._install_runtime_recovery_catalogs(connection)
         connection.execute(
             "UPDATE partition_schema SET value = ? WHERE key = 'schema_version'",
-            (str(_RUNTIME_REPLAY_CHECKPOINT_SCHEMA_VERSION),),
+            (str(PARTITION_SCHEMA_VERSION),),
         )
 
     @staticmethod
@@ -755,10 +808,14 @@ class PartitionDataRepository:
         )
 
     @staticmethod
-    def verification_cookie(connection: sqlite3.Connection) -> tuple[int, int]:
+    def verification_cookie(connection: sqlite3.Connection) -> VerificationCookie:
         # SQLite's data_version advances for other connections. The local
         # change count invalidates a cached acquisition for this connection.
-        return int(connection.execute("PRAGMA data_version").fetchone()[0]), connection.total_changes
+        return (
+            int(connection.execute("PRAGMA main.data_version").fetchone()[0]),
+            connection.total_changes,
+            int(connection.execute("PRAGMA main.schema_version").fetchone()[0]),
+        )
 
     @staticmethod
     def _install_runtime_history(connection: sqlite3.Connection) -> None:

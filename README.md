@@ -150,7 +150,7 @@ preview digest. All three steps leave the live SQLite data in place.
 
 - Use `backup restore-activate-current` for a staged backup at the exact live watermark.
 - For an older backup, acknowledge data loss in the plan and pass the reviewed preview digest to `backup restore-activate-older`. The installation stays in `read_only`, with prior-generation deliveries held.
-- Use `backup upgrade-runtime` with an exact-current preview to upgrade a signed v4 or v5 runtime to v6. The upgrade retains the original batches and holds prior-generation deliveries. Host authorization must be renewed for the selected generation.
+- Use `backup upgrade-runtime` with an exact-current preview to upgrade a signed v4, v5, or v6 runtime to v7. The upgrade retains the original batches and holds prior-generation deliveries. Host authorization must be renewed for the selected generation.
 
 After selection, reopen the installation and inspect its status before
 changing its mode. Owners can use `reconcile-delivery plan-reject` and

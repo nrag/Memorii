@@ -60,7 +60,7 @@ from memorii.core.storage_administration.generation_selection import (
     selected_partition_path,
 )
 from memorii.stores.sqlite.control import ControlDatabase, ControlJournalChainError
-from memorii.stores.sqlite.partition import PartitionDataRepository
+from memorii.stores.sqlite.partition import PartitionDataRepository, VerificationCookie
 
 _CONTROL_FORMAT_VERSION = 1
 DEFAULT_SIGNER_KEY_ID = "installation-control"
@@ -144,7 +144,7 @@ class StorageAdministrationService:
             ) from exc
         self._partition: PartitionDataRepository | None = None
         self._partition_recovery = threading.local()
-        self._verified_tuples: dict[str, tuple[int, int]] = {}
+        self._verified_tuples: dict[str, VerificationCookie] = {}
         # Wired by the governance enforcement entry: re-emits one journal
         # entry's revocation directive. Until wired, pending enforcements
         # are reported (never silently dropped) by the drain.
@@ -787,40 +787,37 @@ class StorageAdministrationService:
             partition = self.partition()
             with partition.manual_write_transaction() as handle:
                 connection = handle.connection
-                pre_state = partition.read_publication_row(connection)
-                if pre_state is None or str(pre_state["tuple_digest"]) != (
-                    finalized.payload_digest()
-                ):
-                    raise InstallationIntegrityError(
-                        "partition pre-state does not match the finalized control tuple"
-                    )
-                memory_store.apply_batch_in_transaction(
-                    connection,
-                    records,
-                    expected_revision=expected_revision,
-                    expected_write_revision=expected_write_revision,
-                    preconditions=preconditions,
-                    authorization=authorization,
-                    transaction_precondition=transaction_precondition,
-                )
-                if derived_semantic_index is not None:
-                    index_write_revision, index_data_revision = (
-                        partition.read_revision_state(connection)
-                    )
-                    partition.replace_derived_semantic_index(
+                self._require_materialization_base(connection, finalized)
+                with partition.capture_materialization(connection, finalized.manifest_digest) as capture:
+                    memory_store.apply_batch_in_transaction(
                         connection,
-                        derived_semantic_index,
-                        write_revision=index_write_revision,
-                        data_revision=index_data_revision,
+                        records,
+                        expected_revision=expected_revision,
+                        expected_write_revision=expected_write_revision,
+                        preconditions=preconditions,
+                        authorization=authorization,
+                        transaction_precondition=transaction_precondition,
                     )
-                if derived_ontology_index is not None:
-                    partition.replace_derived_ontology_index(
-                        connection, derived_ontology_index
-                    )
+                    if derived_semantic_index is not None:
+                        index_write_revision, index_data_revision = (
+                            partition.read_revision_state(connection)
+                        )
+                        partition.replace_derived_semantic_index(
+                            connection,
+                            derived_semantic_index,
+                            write_revision=index_write_revision,
+                            data_revision=index_data_revision,
+                        )
+                    if derived_ontology_index is not None:
+                        partition.replace_derived_ontology_index(
+                            connection, derived_ontology_index
+                        )
+                forest = None if capture is None else capture.result
                 candidate = self._candidate_from_transaction(
                     connection,
                     generation_id=finalized.data_generation_id,
                     epoch=self._effective_epoch(state),
+                    manifest=None if forest is None else forest.manifest,
                 )
                 partition.write_publication_row(
                     connection,
@@ -861,6 +858,8 @@ class StorageAdministrationService:
                     after_digest=candidate.payload_digest(),
                 ),
             )
+            if forest is not None:
+                partition.cache_manifest_accumulator(cookie, forest)
             self._verified_tuples = {candidate.payload_digest(): cookie}
             return PublicationOutcome(
                 ordinal=candidate.vector.partition_ordinal,
@@ -1048,6 +1047,7 @@ class StorageAdministrationService:
         partition = self.partition()
         manifest_mismatch = False
         with partition.transaction(write=False) as connection:
+            cookie = partition.verification_cookie(connection)
             row = partition.read_publication_row(connection)
             if row is None or str(row["tuple_digest"]) != finalized.payload_digest():
                 raise InstallationIntegrityError(
@@ -1057,9 +1057,8 @@ class StorageAdministrationService:
                 row, finalized,
             ):
                 raise InstallationIntegrityError("partition metadata does not match the signed publication")
-            cookie = partition.verification_cookie(connection)
             if self._verified_tuples.get(finalized.payload_digest()) != cookie:
-                manifest_mismatch = not self._matches_materialization(connection, finalized)
+                manifest_mismatch = not self._matches_materialization(connection, finalized, cookie=cookie)
         if manifest_mismatch:
             self._quarantine_manifest_mismatch(finalized)
             raise InstallationIntegrityError(
@@ -1093,7 +1092,7 @@ class StorageAdministrationService:
 
     def _matches_materialization(
         self, connection: sqlite3.Connection, finalized: RuntimePublicationState,
-        *, partition: PartitionDataRepository | None = None,
+        *, partition: PartitionDataRepository | None = None, cookie: VerificationCookie | None = None,
     ) -> bool:
         try:
             if partition is None:
@@ -1102,8 +1101,13 @@ class StorageAdministrationService:
                 finalized.vector.memory_write_revision, finalized.vector.memory_data_revision,
             ):
                 return False
-            entries = partition.compute_materialization_manifest(connection)
-            if RuntimeMaterializationManifest(catalogs=entries).digest() != finalized.manifest_digest:
+            forest = partition.rebuild_manifest_accumulator(connection)
+            manifest = (
+                forest.manifest if forest is not None else RuntimeMaterializationManifest(
+                    catalogs=partition.compute_materialization_manifest(connection),
+                )
+            )
+            if manifest.digest() != finalized.manifest_digest:
                 return False
             verify_runtime_history(
                 connection,
@@ -1117,9 +1121,33 @@ class StorageAdministrationService:
                     if finalized.checkpoint_digest is not None else None
                 ),
             )
-        except (PermissionError, RuntimeJournalError, ValidationError, sqlite3.DatabaseError):
+            if cookie is not None:
+                if cookie != partition.verification_cookie(connection):
+                    return False
+                if forest is not None:
+                    partition.cache_manifest_accumulator(cookie, forest)
+        except (PermissionError, RuntimeJournalError, ValueError, sqlite3.DatabaseError):
             return False
         return True
+
+    def _require_materialization_base(
+        self, connection: sqlite3.Connection, finalized: RuntimePublicationState,
+    ) -> None:
+        """Bind the protected write-side cache inside the SQLite write lock."""
+        partition = self.partition()
+        row = partition.read_publication_row(connection)
+        if (
+            row is None or row["tuple_digest"] != finalized.payload_digest()
+            or (partition.supports_runtime_history(connection) and not self._matches_signed_publication(row, finalized))
+        ):
+            raise InstallationIntegrityError("partition pre-state does not match the finalized control tuple")
+        cookie = partition.verification_cookie(connection)
+        cache_matches = (
+            self._verified_tuples.get(finalized.payload_digest()) == cookie
+            and partition.has_verified_manifest_base(connection, finalized.manifest_digest)
+        )
+        if not cache_matches and not self._matches_materialization(connection, finalized, cookie=cookie):
+            raise InstallationIntegrityError("materialization base changed before publication")
 
     # --- internal ------------------------------------------------------
 
@@ -1147,12 +1175,13 @@ class StorageAdministrationService:
         *,
         generation_id: str,
         epoch: int,
+        manifest: RuntimeMaterializationManifest | None = None,
     ) -> RuntimePublicationState:
         partition = self.partition()
         row = partition.read_publication_row(connection)
         prior_ordinal = 0 if row is None else int(row["ordinal"])
-        entries = partition.compute_materialization_manifest(connection)
-        manifest = RuntimeMaterializationManifest(catalogs=entries)
+        if manifest is None:
+            manifest = RuntimeMaterializationManifest(catalogs=partition.compute_materialization_manifest(connection))
         write_revision, data_revision = partition.read_revision_state(connection)
         state = self._control_state()
         previous = self._control.read_publication_state(self._repository_id()) if row is not None else None

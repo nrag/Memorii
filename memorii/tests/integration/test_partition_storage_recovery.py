@@ -14,13 +14,17 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.sqlite_store import SqliteMemoryPlaneStore
 from memorii.core.storage_administration.service import StorageAdministrationService
 from memorii.domain.enums import CommitStatus, MemoryDomain
 
 
-def test_streaming_materialization_matches_the_existing_ordered_catalog_digest(tmp_path: Path) -> None:
+def test_streaming_materialization_matches_the_existing_ordered_catalog_digest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("memorii.stores.sqlite.partition.PARTITION_SCHEMA_VERSION", 6)
     with StorageAdministrationService(tmp_path / "installation") as service:
         service.initialize()
         service.publish_memory_plane_batch(tuple(

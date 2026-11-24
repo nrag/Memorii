@@ -1,6 +1,6 @@
 {
   "files": {
-    ".github/workflows/pr-gates.yml": "67ded68ca34ba04404ba919876bad50adb6f2b0fc3c848cce9a0d898864f2e21",
+    ".github/workflows/pr-gates.yml": "3ff9fb1e6dd3608ad95c8336f0f6899412b838a5be8e62dfef8e97d0615be97d",
     "acceptance/__init__.py": "adbb769f003c08d46e26ff769de38c76f15e3e09b1bee8cb53e3c3886f8aa91d",
     "acceptance/arithmetic.py": "0958fd3aff008ba15b309bd7f4e037bb4e139672f85b51807bfacc562a0528cd",
     "acceptance/authority_cli.py": "4132ae05df5601c4f0a0098b177291c3dc9b722d9250620de4247bbb763eb135",
@@ -1917,12 +1917,12 @@
     "memorii/memorii/core/memory_evolution/revocation_tombstones.py": "5f0c4b6bff0803f46a551697fdf51fc6246dc69727752531a16aa63ff25ac77c",
     "memorii/memorii/core/persistence/contracts.py": "8d93cb730267b1752f59195e29607c65ae7285c226bcdcc18832b65fac784aa1",
     "memorii/memorii/core/persistence/runtime_checkpoint.py": "2f90d53b1145b41266902e8e8b9fc0e0bfc0b9244beeaba83cca66cd17ceb1a0",
-    "memorii/memorii/core/persistence/runtime_repository.py": "80e4b80e88776e18a1af72866fb1d68d23ecea6fbc609af6ca97c709bd52b39f",
+    "memorii/memorii/core/persistence/runtime_repository.py": "a763d7735c436128bcb229ecd210f709e210f8ff576d33178d4fe0f10668a9e7",
     "memorii/memorii/core/semantic_ingestion/structured_fact_read.py": "c09535515f09db15330412e8fa49b19157b4eb6c21961a131adbbe35595513c4",
     "memorii/memorii/core/storage_administration/operator.py": "640f2aa6ce62469901ce2311eb149a81e08a598787505d0e2a81b0c04deb4090",
     "memorii/memorii/core/storage_administration/operator_governance.py": "4904c54db497c9604ad2e176a7a1afb042679a806040ed4856014de90cd7399e",
     "memorii/memorii/core/storage_administration/revoked_identity_view.py": "697672a2a59afdd9967040c138403298338a3e77955f4a06c12f482ab8fe52c4",
-    "memorii/memorii/core/storage_administration/service.py": "fcec2188b2d84b8ee7ad19ad9467d60c599403a7308de2a4d06518bd037df9bc",
+    "memorii/memorii/core/storage_administration/service.py": "490b5032e2ae50091c803107a3cbafa74a2b1f2165ad3bdb903d39c7f4067f78",
     "memorii/memorii/core/storage_administration/suppression_journal.py": "0c2cb33f207a0029150126ccf0e67e17bf4260fbfa8b475e2434081cf4d8267f",
     "memorii/memorii/stores/sqlite/control.py": "b9f661252db13da83974f87115163679bc743dd1ed5ad8568d2cf15a698ad5f2",
     "memorii/memorii/tools/runtime_operator.py": "ae7095483f715496ec51fb1fecbe4d2c37d7878cb6150fc4e860c41245c503c9",

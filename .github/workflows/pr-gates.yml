@@ -434,6 +434,7 @@ jobs:
         run: >-
           pytest -W error
           tests/integration/test_partition_storage_recovery.py
+          tests/integration/test_incremental_materialization.py
           tests/integration/test_partition_generation_selection.py
           tests/integration/test_older_restore_generation.py
           tests/integration/test_shared_sqlite_provider_paths.py

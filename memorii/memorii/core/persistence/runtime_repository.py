@@ -681,7 +681,6 @@ def publish_runtime_change(
         RuntimePublicationState,
     )
     from memorii.core.storage_administration.service import (
-        InstallationIntegrityError,
         InstallationQuarantinedError,
         StorageAdministrationError,
     )
@@ -721,35 +720,34 @@ def publish_runtime_change(
         partition = administration.partition()
         with partition.manual_write_transaction() as handle:
             connection = handle.connection
-            pre_state = partition.read_publication_row(connection)
-            if pre_state is None or str(pre_state["tuple_digest"]) != (
-                finalized.payload_digest()
-            ):
-                raise InstallationIntegrityError(
-                    "partition pre-state does not match the finalized control tuple"
+            administration._require_materialization_base(connection, finalized)
+            with partition.capture_materialization(connection, finalized.manifest_digest) as capture:
+                runtime_revision = partition.bump_runtime_revision(connection)
+                with partition.capture_runtime_rows(connection) as changes:
+                    apply(connection, repository)
+                if partition.supports_runtime_history(connection) and not changes:
+                    return runtime_revision - 1
+                runtime_position = (
+                    append_runtime_changes(
+                        connection,
+                        changes=changes,
+                        previous=finalized,
+                        runtime_revision=runtime_revision,
+                        sign=lambda purpose, digest: administration._signing.sign(
+                            administration._signer_key_id, purpose, digest,
+                        ),
+                    )
+                    if partition.supports_runtime_history(connection)
+                    else None
                 )
-            runtime_revision = partition.bump_runtime_revision(connection)
-            with partition.capture_runtime_rows(connection) as changes:
-                apply(connection, repository)
-            if partition.supports_runtime_history(connection) and not changes:
-                return runtime_revision - 1
-            runtime_position = (
-                append_runtime_changes(
-                    connection,
-                    changes=changes,
-                    previous=finalized,
-                    runtime_revision=runtime_revision,
-                    sign=lambda purpose, digest: administration._signing.sign(
-                        administration._signer_key_id, purpose, digest,
-                    ),
+            forest = None if capture is None else capture.result
+            manifest = (
+                forest.manifest if forest is not None else RuntimeMaterializationManifest(
+                    catalogs=partition.compute_materialization_manifest(connection),
                 )
-                if partition.supports_runtime_history(connection)
-                else None
             )
-            manifest_entries = partition.compute_materialization_manifest(connection)
-            manifest = RuntimeMaterializationManifest(catalogs=manifest_entries)
             memory_write, memory_data = partition.read_revision_state(connection)
-            prior_ordinal = int(pre_state["ordinal"])
+            prior_ordinal = finalized.vector.partition_ordinal
             epoch = state.eligibility_epoch + state.pending_epoch_increments
             checkpoint_digest = finalized.checkpoint_digest
             if (
@@ -833,5 +831,7 @@ def publish_runtime_change(
                 after_digest=candidate.payload_digest(),
             ),
         )
+        if forest is not None:
+            partition.cache_manifest_accumulator(cookie, forest)
         administration._verified_tuples = {candidate.payload_digest(): cookie}
         return runtime_revision

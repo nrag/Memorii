@@ -1,10 +1,13 @@
 """Owner cutover and interruption recovery from an older authenticated backup."""
 
 import json
+import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.persistence.managed_delivery import DeliveryRestoreHold
 from memorii.core.persistence.runtime_api import LegacyUnresolvedDelivery, RuntimeOutboxDelivery
 from memorii.core.persistence.runtime_contracts import TaskRecord
@@ -19,6 +22,7 @@ from memorii.core.storage_administration.operator import (
 )
 from memorii.core.storage_administration.operator_backup import BackupRestoreOperator
 from memorii.core.storage_administration.service import StorageAdministrationError, StorageAdministrationService
+from memorii.domain.enums import CommitStatus, MemoryDomain
 from memorii.tools.runtime_operator import main as operator_main
 
 
@@ -182,13 +186,15 @@ def test_older_restore_recovers_exact_bytes_and_keeps_delivery_held(
         assert RuntimeStateRepository(reopened.partition()).get_task("task:new") is not None
 
 
-def test_owner_upgrades_signed_v4_runtime_without_rewriting_old_batches(
+@pytest.mark.parametrize(("prior_format", "selector_drift"), [(4, False), (5, False), (6, False), (6, True)])
+def test_owner_upgrades_signed_runtime_without_rewriting_old_batches(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    prior_format: int, selector_drift: bool,
 ) -> None:
     root, archive, staging = tmp_path / "installed", tmp_path / "archive", tmp_path / "stage"
     with StorageAdministrationService(root) as service:
         with monkeypatch.context() as previous:
-            previous.setattr("memorii.stores.sqlite.partition.PARTITION_SCHEMA_VERSION", 4)
+            previous.setattr("memorii.stores.sqlite.partition.PARTITION_SCHEMA_VERSION", prior_format)
             service.initialize()
         owner = mint_owner_capability(service, "owner:test")
         operator = StorageAdministrationOperator(service)
@@ -203,10 +209,19 @@ def test_owner_upgrades_signed_v4_runtime_without_rewriting_old_batches(
             service, lambda connection, state: state.apply_task(connection, _task("task:upgrade")),
             operation_binding="migrate",
         )
+        service.publish_memory_plane_batch((CanonicalMemoryRecord(
+            memory_id="source:upgrade", domain=MemoryDomain.TRANSCRIPT, source_kind="raw",
+            text="Retained during migration", status=CommitStatus.COMMITTED,
+        ),), operation_binding="migrate")
         partition = service.partition()
         with partition.transaction(write=False) as connection:
-            assert partition.read_schema_version(connection) == 4
+            assert partition.read_schema_version(connection) == prior_format
             original = tuple(partition.runtime_event_batch_rows(connection))
+        before = service.acquire_verified_snapshot()
+        if selector_drift:
+            with closing(sqlite3.connect(partition.database_path)) as external:
+                external.execute("UPDATE memory_current_records SET source_kind = 'foreign'")
+                external.commit()
         backups = BackupRestoreOperator(operator)
         key = b"x" * 32
         backups.create_backup(capability=owner, archive_root=archive, reason="upgrade backup", recovery_key=key)
@@ -220,6 +235,14 @@ def test_owner_upgrades_signed_v4_runtime_without_rewriting_old_batches(
         ]
         stage_args = ["--plan-file", str(plan_file), "--staging-root", str(staging)]
         preview = backups.preview_staged_restore(capability=owner, plan=plan, staging_root=staging)
+        if selector_drift:
+            with pytest.raises(OperatorError, match="candidate could not be prepared") as caught:
+                backups.upgrade_current_runtime(
+                    capability=owner, plan=plan, staging_root=staging, preview_digest=preview.digest(),
+                )
+            assert "legacy current selectors differ" in str(caught.value.__cause__)
+            assert service.acquire_verified_snapshot() == before
+            return
         assert operator_main([*cli, "upgrade-runtime", *stage_args, "--preview-digest", preview.digest()]) == 0
         assert "needs_reconciliation" in capsys.readouterr().out
 
@@ -227,6 +250,7 @@ def test_owner_upgrades_signed_v4_runtime_without_rewriting_old_batches(
         reopened.acquire_verified_snapshot()
         partition = reopened.partition()
         with partition.transaction(write=False) as connection:
+            assert partition.read_schema_version(connection) == 7
             assert partition.supports_runtime_source_release(connection)
             assert partition.supports_runtime_replay_checkpoints(connection)
             assert tuple(partition.runtime_event_batch_rows(connection))[:-1] == original

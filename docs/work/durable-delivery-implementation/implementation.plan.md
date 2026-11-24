@@ -44,4 +44,4 @@ Implementation branch `codex/durable-delivery-implementation` is published to or
 
 ## Next Action
 
-Implement the incremental manifest accumulator required by the reference-scale command budget.
+Profile the reference source setup and identify the remaining full-record scans before timing the 1 GiB fixture.
