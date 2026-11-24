@@ -1,0 +1,46 @@
+{
+  "checkpoint_digest": "2686aec3e7ebf135b82f63661aad1c014c1cf22ece2510da333a18bebe1c8394",
+  "checkpoint_tail_count": 1000,
+  "distribution": "concentrated",
+  "event_inventory_digest": "20c802c13fab3846912660c2c68f9caf427f36fad8bc6686d47d659180f4c343",
+  "generator_digest": "5dd441d884d2f02d26639e795025afb77b6d7d1d67a6ee7636148002cf891d80",
+  "graph_digest": "28a0843cbabeda49c1f7f98e1f9675982f1ab4d92831ab77a797507a1d457b5a",
+  "graph_row_counts": {
+    "runtime_execution_edges": 9800,
+    "runtime_execution_nodes": 10000,
+    "runtime_overlay_versions": 5200,
+    "runtime_solver_edges": 6250,
+    "runtime_solver_nodes": 50000,
+    "runtime_solver_runs": 200,
+    "runtime_tasks": 200
+  },
+  "loader_digest": "a5d9002b1459b35354884dc16e38f869a7e34f4719c965f6bb324b358bf1c706",
+  "partition_tuple_digest": "a563e7a99d7c74caac32780dad2c4f19e5816e523fa2ff80c0b72e4f3cf1d8b1",
+  "prepare_ns": 360750882269,
+  "qualification_blockers": [
+    "timed_reference_workload_not_measured"
+  ],
+  "runtime_event_batch_count": 5298,
+  "runtime_event_count": 100000,
+  "runtime_operation_counts": {
+    "runtime_command_receipts/system/directory/create": 4096,
+    "runtime_execution_edges/execution/edge/create": 9800,
+    "runtime_execution_nodes/execution/node/create": 10000,
+    "runtime_execution_nodes/execution/node/update": 6062,
+    "runtime_operation_attempts/system/directory/create": 4096,
+    "runtime_overlay_versions/solver/overlay/version": 5200,
+    "runtime_solver_edges/solver/edge/create": 6250,
+    "runtime_solver_nodes/solver/node/create": 50000,
+    "runtime_solver_runs/system/directory/create": 200,
+    "runtime_tasks/system/directory/create": 200,
+    "runtime_tasks/system/directory/update": 4096
+  },
+  "source_body_bytes": 1073741824,
+  "source_count": 4096,
+  "source_driver_digest": "d72cd007ad84fdbbdbcea5550fbec1e1d9760877a0c748958b2b1a02045cbe71",
+  "source_receipt_count": 4096,
+  "source_receipts_digest": "6f4db16330113c3305924c5629a994f325f9265df02fd5bb2ac7c1ce4c97aa7d",
+  "sources_digest": "690451dc6bc3046805970d6e77d279657f33ed1491400739df69cc62497543a4",
+  "type": "fixture",
+  "workload_digest": "86f02650881066654332dfab2ccd3acfb619a709c08689d2c58c23832bc1e396"
+}

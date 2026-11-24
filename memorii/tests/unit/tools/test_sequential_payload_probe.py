@@ -56,7 +56,7 @@ def sequential_projection(
     record = _record("\u00e9" * 4096)
     sibling = record.model_copy(update={"memory_id": "sibling"})
     updated = record.model_copy(update={"text": record.text + " updated"})
-    return _build_projection(tmp_path, ((record, sibling), (updated,)))
+    return _build_projection(tmp_path, ((record, sibling), (updated,), ()))
 
 
 @pytest.mark.parametrize("read_mode", ["select", "blob"])
@@ -67,6 +67,10 @@ def test_sequential_projection_recovers_original_catalogs(
     projected, expected, legacy = sequential_projection
     verify_sequential_projection(projected, expected, read_mode=read_mode)
     assert verify_payload_probe_against(projected, legacy)["manifest_digest"] == legacy.digest()
+    with closing(sqlite3.connect(projected)) as connection:
+        assert connection.execute(
+            "SELECT revision, data_revision, member_count FROM probe_batches ORDER BY revision"
+        ).fetchall() == [(1, 1, 2), (2, 2, 1), (3, 2, 0)]
 
 
 @pytest.mark.parametrize("read_mode", ["select", "blob"])

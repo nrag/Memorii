@@ -44,4 +44,4 @@ Implementation branch `codex/durable-delivery-implementation` is published to or
 
 ## Next Action
 
-Resume after the [SQLite payload design spike](../sqlite-memory-payload-design/design.plan.md) demonstrates a production-shaped raw verification path with a credible margin for the acquisition budget.
+Advance the [SQLite payload storage design](../sqlite-memory-payload-design/design.plan.md) through staged-format review so the installed raw path can measure full acquisition against the existing five-second budget.
