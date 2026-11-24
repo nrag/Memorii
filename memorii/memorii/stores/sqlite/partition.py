@@ -1427,9 +1427,12 @@ class PartitionDataRepository:
         )
 
     def read_batch_rows(self, connection: sqlite3.Connection) -> Sequence[sqlite3.Row]:
-        return connection.execute(
+        return list(self.iter_batch_rows(connection))
+
+    def iter_batch_rows(self, connection: sqlite3.Connection) -> Iterator[sqlite3.Row]:
+        return iter(connection.execute(
             "SELECT revision, data_revision, checksum, batch_json FROM memory_batches ORDER BY revision"
-        ).fetchall()
+        ))
 
     def read_current_record_rows(
         self,

@@ -466,7 +466,7 @@ class SqliteMemoryPlaneStore:
             return
         expected_revision = 1
         previous_data_revision = 0
-        for row in self._partition.read_batch_rows(connection):
+        for row in self._partition.iter_batch_rows(connection):
             try:
                 batch = PersistedBatch.model_validate_json(row["batch_json"])
             except ValueError as exc:
