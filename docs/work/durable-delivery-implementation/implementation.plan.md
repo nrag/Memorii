@@ -44,4 +44,4 @@ Implementation branch `codex/durable-delivery-implementation` is published to or
 
 ## Next Action
 
-Replace the full current-record scan during governed source admission with a bounded SQLite validation path that preserves authorization and preconditions.
+Run a larger reference-fixture diagnostic to profile semantic replay and cold acquisition before full platform qualification.

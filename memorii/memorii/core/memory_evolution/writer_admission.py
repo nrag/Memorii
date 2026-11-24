@@ -1034,6 +1034,36 @@ class SemanticGovernedWritePolicy:
     def __init__(self, admissions: SemanticWriterAdmissionStore) -> None:
         self._admissions = admissions
 
+    def required_current_record_ids(
+        self,
+        records: tuple[CanonicalMemoryRecord, ...],
+        authorization: MemoryPlaneWriteAuthorization | None,
+    ) -> frozenset[str] | None:
+        """Scope the unchanged validator for source-only atomic retention."""
+        if (
+            not 5 <= len(records) <= 15
+            or not isinstance(authorization, SemanticWriterWriteAuthorization)
+            or authorization.owner not in self._admissions._atomic_owners
+            or authorization.lease_expires_at is not None
+            or not all(is_semantic_control_record(record) for record in records)
+        ):
+            return None
+        pending = list(records)
+        binding = self._admissions.commit_binding(authorization.admission)
+        try:
+            captured = _is_hermes_captured_turn_atomic_write(pending, binding, require_exact_members=True)
+        except KeyError:
+            # The ordinary path validates transaction preconditions before parsing malformed members.
+            return None
+        if captured:
+            return frozenset((writer_admission_memory_id(),))
+        if (
+            any(record.content.get("semantic_ingestion_kind") == "preplanning_operation_control" for record in pending)
+            or not _is_atomic_admission_only_write(pending, binding, require_exact_members=True)
+        ):
+            return None
+        return frozenset((writer_admission_memory_id(),))
+
     def validate(
         self,
         records: tuple[CanonicalMemoryRecord, ...],
@@ -3515,6 +3545,8 @@ def _validate_atomic_admission_records(
     records: list[CanonicalMemoryRecord],
     fence: OperationFenceBinding,
     binding: SemanticWriterCommitBinding,
+    *,
+    require_exact_members: bool = False,
 ) -> None:
     sources = [
         record
@@ -3548,6 +3580,7 @@ def _validate_atomic_admission_records(
     if (
         len(records) not in (5 * source_count, 6 * source_count)
         or len(seals) not in {0, source_count}
+        or (require_exact_members and len(records) != len(sources) + len(indexes) + len(profiles) + len(seals))
         or not any(source.memory_id == fence.source_id for source in sources)
     ):
         raise SemanticWriterAdmissionError("atomic admission source binding is mismatched")
@@ -3935,6 +3968,8 @@ def _is_activated_agent_local_catalog_visibility_grant_write(
 def _is_atomic_admission_only_write(
     records: list[CanonicalMemoryRecord],
     binding: SemanticWriterCommitBinding,
+    *,
+    require_exact_members: bool = False,
 ) -> bool:
     """Permit exactly the five retained Step-1 records before bootstrap handoff."""
     index = next(
@@ -3951,7 +3986,7 @@ def _is_atomic_admission_only_write(
         fence = OperationFenceBinding.model_validate(
             index.content["operation_fence_binding"]
         )
-        _validate_atomic_admission_records(records, fence, binding)
+        _validate_atomic_admission_records(records, fence, binding, require_exact_members=require_exact_members)
     except (KeyError, TypeError, ValueError, SemanticWriterAdmissionError):
         return False
     return True
@@ -3960,6 +3995,8 @@ def _is_atomic_admission_only_write(
 def _is_hermes_captured_turn_atomic_write(
     records: list[CanonicalMemoryRecord],
     binding: SemanticWriterCommitBinding,
+    *,
+    require_exact_members: bool = False,
 ) -> bool:
     """Permit the closed source-only Hermes capture quartet."""
     prepared_records = [
@@ -3980,7 +4017,7 @@ def _is_hermes_captured_turn_atomic_write(
         record for record in records
         if record is not prepared_records[0] and record is not ledgers[0] and record is not coordinations[0]
     ]
-    if not _is_atomic_admission_only_write(base, binding):
+    if not _is_atomic_admission_only_write(base, binding, require_exact_members=require_exact_members):
         return False
     prepared = prepared_records[0]
     ledger_record = ledgers[0]

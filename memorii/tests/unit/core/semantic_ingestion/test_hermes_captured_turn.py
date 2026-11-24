@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from hashlib import sha256
+from pathlib import Path
 
 import pytest
 from memorii.core.memory_evolution.admission import (
@@ -34,6 +35,7 @@ from memorii.core.memory_plane.store import (
     InMemoryMemoryPlaneStore,
     MemoryPlaneRevisionConflictError,
 )
+from memorii.core.persistence.factory import PublishedMemoryPlaneStore
 from memorii.core.semantic_ingestion.catalog_authority import (
     AuthenticatedPrincipalAgent,
     CatalogAuthorityScope,
@@ -63,6 +65,7 @@ from memorii.core.semantic_ingestion.source_preparation import (
     InMemoryPreparedSourceRepository,
     TextPreparationService,
 )
+from memorii.core.storage_administration.service import StorageAdministrationService
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 from tests.fixtures.semantic_ingestion.clean_room_request_fixture import (
     build_prepared_source_authority,
@@ -81,8 +84,9 @@ _SEAL_SCHEMAS = (
 )
 
 
-def _capture_fixture(tmp_path, *, catalog_bundle_locator=None):
-    plane = MemoryPlaneService()
+def _capture_fixture(tmp_path, *, catalog_bundle_locator=None, plane: MemoryPlaneService | None = None):
+    if plane is None:
+        plane = MemoryPlaneService()
     history = _publication(tmp_path, schemas=_SEAL_SCHEMAS)
     writers = SemanticWriterAdmissionStore(
         plane,
@@ -261,6 +265,33 @@ def test_capture_exact_retry_preserves_winning_record_map(tmp_path) -> None:
     winner = {record.memory_id: record for record in plane.list_records()}
     assert owner.capture(admission=admission, ledger=ledger) == admission.accepted
     assert {record.memory_id: record for record in plane.list_records()} == winner
+
+
+def test_managed_hermes_initial_capture_uses_only_indexed_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with StorageAdministrationService(tmp_path / "installation") as service:
+        service.initialize()
+        plane = MemoryPlaneService(
+            record_store=PublishedMemoryPlaneStore(service, service.memory_plane_store()),
+        )
+        _, _store, owner, admission, _binding, policy = _capture_fixture(tmp_path, plane=plane)
+        ledger = _ledger(admission, policy)
+        before = service.acquire_verified_snapshot()
+
+        partition = service.partition()
+        read_records = partition.read_current_record_rows
+
+        def require_semantic_event_filter(connection, **filters):
+            assert filters.get("source_kinds") == ["semantic_ingestion_event_batch"]
+            return read_records(connection, **filters)
+
+        monkeypatch.setattr(partition, "read_current_record_rows", require_semantic_event_filter)
+        assert owner.capture(admission=admission, ledger=ledger) == admission.accepted
+        after = service.acquire_verified_snapshot()
+        assert after.vector.memory_write_revision == before.vector.memory_write_revision + 1
+        assert owner.capture(admission=admission, ledger=ledger) == admission.accepted
+        assert service.acquire_verified_snapshot() == after
 
 
 def test_captured_completion_atomically_selects_ordinary_or_structured_owner(tmp_path) -> None:

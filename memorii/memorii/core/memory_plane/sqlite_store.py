@@ -32,6 +32,7 @@ from memorii.core.memory_plane.store import (
     BackendCheckpointSignatureAuthority,
     CheckpointSignatureAuthority,
     GovernedWritePolicy,
+    IndexedGovernedWritePolicy,
     MemoryPlaneCorruptionError,
     MemoryPlanePrecondition,
     MemoryPlaneRevisionConflictError,
@@ -40,6 +41,7 @@ from memorii.core.memory_plane.store import (
     PersistedBatch,
     clone_record,
     contains_runtime_context,
+    is_runtime_writeback_candidate,
     validate_expected_write_revision,
     validate_governed_write,
     validate_preconditions,
@@ -160,14 +162,9 @@ class SqliteMemoryPlaneStore:
         authorization: MemoryPlaneWriteAuthorization | None = None,
     ) -> int:
         with self._partition.transaction(write=True) as connection:
-            _, data_revision, current_records = self._validated_state(connection)
-            validate_governed_write(
-                self._governed_write_policy,
-                records,
-                tuple(current_records.values()),
-                authorization,
+            return self.apply_batch_in_transaction(
+                connection, records, expected_revision=None, authorization=authorization,
             )
-            return self._append_batch_unlocked(connection, records, data_revision=data_revision)
 
     def revision(self) -> int:
         with self._partition.transaction(write=False) as connection:
@@ -185,27 +182,11 @@ class SqliteMemoryPlaneStore:
         transaction_precondition: Callable[[], None] | None = None,
     ) -> int:
         with self._partition.transaction(write=True) as connection:
-            validate_expected_write_revision(expected_write_revision)
-            if transaction_precondition is not None:
-                transaction_precondition()
-            write_revision, data_revision, current_records = self._validated_state(connection)
-            if expected_revision is not None and expected_revision != data_revision:
-                raise MemoryPlaneRevisionConflictError(
-                    f"memory-plane revision changed: expected {expected_revision}, actual {data_revision}"
-                )
-            if expected_write_revision is not None and expected_write_revision != write_revision:
-                raise MemoryPlaneRevisionConflictError(
-                    "memory-plane write revision changed: "
-                    f"expected {expected_write_revision}, actual {write_revision}"
-                )
-            validate_preconditions(current_records, preconditions)
-            validate_governed_write(
-                self._governed_write_policy,
-                records,
-                tuple(current_records.values()),
-                authorization,
+            return self.apply_batch_in_transaction(
+                connection, records, expected_revision=expected_revision,
+                expected_write_revision=expected_write_revision, preconditions=preconditions,
+                authorization=authorization, transaction_precondition=transaction_precondition,
             )
-            return self._append_batch_unlocked(connection, records, data_revision=data_revision)
 
     def apply_batch_in_transaction(
         self,
@@ -217,6 +198,7 @@ class SqliteMemoryPlaneStore:
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
         authorization: MemoryPlaneWriteAuthorization | None = None,
         transaction_precondition: Callable[[], None] | None = None,
+        verified_partition: bool = False,
     ) -> int:
         """Apply one batch inside a coordinator-owned partition transaction.
 
@@ -228,7 +210,11 @@ class SqliteMemoryPlaneStore:
         validate_expected_write_revision(expected_write_revision)
         if transaction_precondition is not None:
             transaction_precondition()
-        write_revision, data_revision, current_records = self._validated_state(connection)
+        self._ensure_validated_chain(connection)
+        write_revision, data_revision = self._partition.read_revision_state(connection)
+        current_records = self._current_records_for_write(
+            connection, records, preconditions, authorization, verified_partition=verified_partition,
+        )
         if expected_revision is not None and expected_revision != data_revision:
             raise MemoryPlaneRevisionConflictError(
                 f"memory-plane revision changed: expected {expected_revision}, actual {data_revision}"
@@ -246,6 +232,34 @@ class SqliteMemoryPlaneStore:
             authorization,
         )
         return self._append_batch_unlocked(connection, records, data_revision=data_revision)
+
+    def _current_records_for_write(
+        self,
+        connection: sqlite3.Connection,
+        records: tuple[CanonicalMemoryRecord, ...],
+        preconditions: tuple[MemoryPlanePrecondition, ...],
+        authorization: MemoryPlaneWriteAuthorization | None,
+        *,
+        verified_partition: bool,
+    ) -> dict[str, CanonicalMemoryRecord]:
+        policy = self._governed_write_policy
+        required = (
+            policy.required_current_record_ids(records, authorization)
+            if verified_partition and isinstance(policy, IndexedGovernedWritePolicy) else None
+        )
+        if required is None:
+            rows = self._partition.read_current_record_rows(connection)
+            return {row["memory_id"]: _decode_record(row["record_json"]) for row in rows}
+        identities = required.union(
+            (precondition.memory_id for precondition in preconditions),
+            (record.memory_id for record in records if is_runtime_writeback_candidate(record)),
+        )
+        result: dict[str, CanonicalMemoryRecord] = {}
+        for identity in sorted(identities):
+            row = self._partition.read_current_record_row(connection, identity)
+            if row is not None:
+                result[identity] = _decode_record(row["record_json"])
+        return result
 
     def read_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
         with self._partition.transaction(write=False) as connection:

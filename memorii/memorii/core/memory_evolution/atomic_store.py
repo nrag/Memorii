@@ -11604,7 +11604,7 @@ class SemanticIngestionAtomicStore:
         records = sorted(
             (
                 record
-                for record in memory_plane.list_records()
+                for record in memory_plane.list_records(source_kind="semantic_ingestion_event_batch")
                 if record.source_kind == "semantic_ingestion_event_batch"
             ),
             key=lambda record: record.memory_id,

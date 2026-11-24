@@ -136,6 +136,19 @@ class GovernedWritePolicy(Protocol):
     ) -> None: ...
 
 
+@runtime_checkable
+class IndexedGovernedWritePolicy(GovernedWritePolicy, Protocol):
+    """A policy that can identify its complete read set for a closed write shape."""
+
+    def required_current_record_ids(
+        self,
+        records: tuple[CanonicalMemoryRecord, ...],
+        authorization: MemoryPlaneWriteAuthorization | None,
+    ) -> frozenset[str] | None:
+        """Name every record used by validate, or require the full snapshot."""
+        ...
+
+
 class RecordAbsentPrecondition(BaseModel):
     kind: Literal["record_absent"] = "record_absent"
     memory_id: str = Field(min_length=1)

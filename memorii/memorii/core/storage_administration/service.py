@@ -797,6 +797,7 @@ class StorageAdministrationService:
                         preconditions=preconditions,
                         authorization=authorization,
                         transaction_precondition=transaction_precondition,
+                        verified_partition=True,
                     )
                     if derived_semantic_index is not None:
                         index_write_revision, index_data_revision = (
