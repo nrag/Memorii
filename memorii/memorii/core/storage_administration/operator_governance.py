@@ -262,42 +262,38 @@ class GovernanceOperator:
                 "conflict: every plan target is already revoked; nothing to apply"
             )
         applied_at_unix = int(time.time())
-        # Journal first: forget is durably complete here. The enforcement
-        # publication (semantic revocation directive + tombstones) follows
-        # barrier release; serving gates consult the journal view meanwhile.
-        write_suppression_record(
-            control_root,
-            SuppressionRecord(
-                suppression_id=suppression_id,
-                plan_digest=plan.plan_digest,
-                closure_digest=plan.closure_digest,
-                authority_capability_digest=capability.capability_digest,
-                scope_note=plan.scope_note,
-                suppressed=tuple(
-                    SuppressionCoordinate(
-                        coordinate_kind=cast(
-                            Literal[
-                                "entity", "claim", "source", "record", "task",
-                                "justification",
-                            ],
-                            kind,
-                        ),
-                        coordinate_id=identifier,
-                        record_kind=record_kind or None,
-                    )
-                    for kind, identifier, record_kind in (
-                        _split_coordinate(coordinate) for coordinate in newly
-                    )
-                ),
-                applied_at_unix=applied_at_unix,
-                control_journal_position=state.control_revision + 1,
+        record = SuppressionRecord(
+            suppression_id=suppression_id,
+            plan_digest=plan.plan_digest,
+            closure_digest=plan.closure_digest,
+            authority_capability_digest=capability.capability_digest,
+            scope_note=plan.scope_note,
+            suppressed=tuple(
+                SuppressionCoordinate(
+                    coordinate_kind=cast(
+                        Literal[
+                            "entity", "claim", "source", "record", "task",
+                            "justification",
+                        ],
+                        kind,
+                    ),
+                    coordinate_id=identifier,
+                    record_kind=record_kind or None,
+                )
+                for kind, identifier, record_kind in (
+                    _split_coordinate(coordinate) for coordinate in newly
+                )
             ),
+            applied_at_unix=applied_at_unix,
+            control_journal_position=state.control_revision + 1,
         )
-        # Control revision and a PENDING epoch increment advance under the
-        # fence; eligibility_epoch itself is untouched so Tier A keeps
-        # passing. The increment becomes the signed tuple's epoch with the
-        # enforcement (or next) publication.
         with service._publication_fence():
+            require_owner_capability(service, capability)
+            if service._require_operational() != state or state.mode != "read_only":
+                raise OperatorError("conflict: control changed before forget could be applied")
+            # Record revocation first, while serializing both steps with
+            # archive publication and leaving enforcement to barrier release.
+            write_suppression_record(control_root, record)
             service._control.write_control_state(
                 state.model_copy(
                     update={
@@ -917,8 +913,10 @@ class GovernanceOperator:
 
             from memorii.core.persistence.contracts import canonical_json_digest
             from memorii.core.storage_administration.generation_selection import PARTITION_GENERATION_SELECTOR
+            from memorii.core.storage_administration.operator_backup import _backup_lifetime_guard
 
-            with service._publication_fence():
+            with _backup_lifetime_guard(service, exclusive=True), service._publication_fence():
+                require_owner_capability(service, capability)
                 state = service._control_state()
                 journal_entry = service._journal_entry(
                     operation="partition_erasure_applied",
@@ -1002,17 +1000,19 @@ class GovernanceOperator:
         )
         cutoff = time.time() - plan.older_than_days * 86400
         archived = 0
-        for name in plan.eligible_suppression_journals:
-            path = suppression / name
-            if not path.is_file():
-                continue
-            if path.stat().st_mtime >= cutoff:
-                raise OperatorError(
-                    "conflict: journal became eligible-recent; replan"
-                )
-            archive.mkdir(parents=True, exist_ok=True)
-            os.replace(path, archive / name)
-            archived += 1
+        with service._publication_fence():
+            require_owner_capability(service, capability)
+            for name in plan.eligible_suppression_journals:
+                path = suppression / name
+                if not path.is_file():
+                    continue
+                if path.stat().st_mtime >= cutoff:
+                    raise OperatorError(
+                        "conflict: journal became eligible-recent; replan"
+                    )
+                archive.mkdir(parents=True, exist_ok=True)
+                os.replace(path, archive / name)
+                archived += 1
         return archived
 
     def doctor(self) -> tuple[DoctorFinding, ...]:

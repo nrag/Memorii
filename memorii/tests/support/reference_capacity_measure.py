@@ -304,17 +304,29 @@ def _warm(
 
 class _BackupTimer(StorageAdministrationService):
     recording = False
-    backup_pause_ns: int | None = None
+    inside_backup_fence = False
+
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.backup_holds_ns: list[int] = []
+
+    @property
+    def backup_pause_ns(self) -> int | None:
+        return sum(self.backup_holds_ns) if self.backup_holds_ns else None
 
     @contextmanager
-    def _publication_fence(self):
+    def _publication_fence(self) -> Iterator[None]:
         with super()._publication_fence():
-            start = monotonic_ns()
-            yield
-        if self.recording:
-            if self.backup_pause_ns is not None:
-                raise ReferenceFixtureError("backup took more than one measured publication barrier")
-            self.backup_pause_ns = monotonic_ns() - start
+            start = monotonic_ns() if self.recording else None
+            if start is not None:
+                self.inside_backup_fence = True
+            try:
+                yield
+            finally:
+                if start is not None:
+                    self.inside_backup_fence = False
+        if start is not None:
+            self.backup_holds_ns.append(monotonic_ns() - start)
 
 
 def _time_backup(service: _BackupTimer, root: Path) -> int:
@@ -328,10 +340,13 @@ def _time_backup(service: _BackupTimer, root: Path) -> int:
     )
     service.acquire_verified_snapshot()
     service.recording = True
-    BackupRestoreOperator(operator).create_backup(
-        capability=capability, archive_root=root.parent / "archive",
-        reason="reference capacity snapshot", recovery_key=os.urandom(32),
-    )
+    try:
+        BackupRestoreOperator(operator).create_backup(
+            capability=capability, archive_root=root.parent / "archive",
+            reason="reference capacity snapshot", recovery_key=os.urandom(32),
+        )
+    finally:
+        service.recording = False
     if service.backup_pause_ns is None:
         raise ReferenceFixtureError("backup returned without the publication barrier measurement")
     return service.backup_pause_ns

@@ -1,8 +1,8 @@
 """Backup/restore operator controls over one installation.
 
 Owner-authorized, plan-governed operations matching the design contract:
-Backup create snapshots control and partition SQLite databases through the
-online backup API under the acknowledged read_only barrier. It verifies the
+Backup create pins control and partition SQLite snapshots under the
+acknowledged read_only barrier and copies them through the online backup API. It verifies the
 pair against the captured signed tuple and control journal tip, encrypts
 participants with a wrapped content key, and atomically publishes the archive.
 Restore plans bind the verified archive and the current live watermark.
@@ -22,7 +22,7 @@ import tempfile
 import time
 import uuid
 from collections.abc import Iterator
-from contextlib import closing
+from contextlib import ExitStack, closing, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Literal, Self
@@ -38,8 +38,11 @@ from pydantic import (
     model_validator,
 )
 
+from memorii.core.memory_plane.file_lock import locked_file
 from memorii.core.persistence.contracts import (
+    RUNTIME_PUBLICATION_SIGNATURE_PURPOSE,
     BatchPosition,
+    InstallationControlJournalEntry,
     InstallationControlState,
     InstallationGenerationChangeIntent,
     RuntimeHistoryInterval,
@@ -48,7 +51,11 @@ from memorii.core.persistence.contracts import (
     canonical_json_digest,
     empty_pointer_set_digest,
 )
-from memorii.core.persistence.key_owner import PARTITION_GENERATION_SIGNATURE_PURPOSE, RESTORE_STAGING_SIGNATURE_PURPOSE
+from memorii.core.persistence.key_owner import (
+    PARTITION_GENERATION_SIGNATURE_PURPOSE,
+    RESTORE_STAGING_SIGNATURE_PURPOSE,
+    LocalSigningKeyOwner,
+)
 from memorii.core.persistence.managed_delivery import DeliveryRestoreHold
 from memorii.core.persistence.runtime_api import convert_legacy_outbox_record
 from memorii.core.persistence.runtime_journal import RuntimeJournalError, append_runtime_changes, verify_runtime_history
@@ -66,7 +73,7 @@ from memorii.core.storage_administration.operator import (
     require_owner_capability,
 )
 from memorii.core.storage_administration.service import StorageAdministrationError, StorageAdministrationService
-from memorii.stores.sqlite.control import ControlDatabase, ControlJournalChainError
+from memorii.stores.sqlite.control import ControlDatabase, ControlJournalChainError, ControlStateError
 from memorii.stores.sqlite.partition import (
     PARTITION_SCHEMA_VERSION,
     RAW_MEMORY_PAYLOAD_SCHEMA_VERSION,
@@ -80,6 +87,7 @@ _RECOVERY_ANCHOR = "recovery-anchor.json"
 _RESTORE_ATTESTATION = "restore-staging-attestation.json"
 _SIGNING_PURPOSE = "memorii.installation-backup-manifest.v1"
 _CHUNK = 1 << 20
+_SQLITE_BACKUP_TIMEOUT_SECONDS = 300
 _ALLOWED_PARTICIPANTS = ("control", "partition")
 _Digest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 
@@ -304,18 +312,151 @@ class _VerifiedBackup:
     control_tip_digest: str
 
 
-def _sqlite_backup(source: Path, destination: Path) -> None:
-    """Snapshot one SQLite database through the online backup API."""
-    source_connection = sqlite3.connect(source.resolve().as_uri() + "?mode=ro", uri=True)
-    try:
-        destination_connection = sqlite3.connect(str(destination))
-        try:
-            source_connection.backup(destination_connection)
-        finally:
-            destination_connection.close()
-    finally:
-        source_connection.close()
+def _backup_lifetime_guard(service: StorageAdministrationService, *, exclusive: bool):
+    # Erasure takes this before the publication fence, so it cannot finish
+    # while a backup still retains readers or plaintext outside that fence.
+    return locked_file(service.installation_root / "control" / ".backup-lifetime.lock", exclusive=exclusive)
+
+
+@contextmanager
+def _open_backup_snapshot(path: Path) -> Iterator[sqlite3.Connection]:
+    with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as connection:
+        connection.row_factory = sqlite3.Row
+        if connection.execute("PRAGMA journal_mode").fetchone()[0] != "wal":
+            raise OperatorError("unavailable: online backup requires WAL snapshots for both participants")
+        connection.execute("BEGIN")
+        yield connection
+
+
+def _sqlite_backup(source: sqlite3.Connection, destination: Path) -> None:
+    """Copy a transaction already pinned by a verified read on this handle."""
+    deadline = time.monotonic() + _SQLITE_BACKUP_TIMEOUT_SECONDS
+
+    def check_deadline(_status: int, _remaining: int, _total: int) -> None:
+        if time.monotonic() >= deadline:
+            raise OperatorError("unavailable: pinned SQLite backup copy deadline exceeded")
+
+    if not source.in_transaction:
+        raise OperatorError("integrity_error: backup source is missing its pinned read transaction")
+    with closing(sqlite3.connect(str(destination))) as copy:
+        source.backup(copy, pages=512, progress=check_deadline, sleep=0.01)
     os.chmod(destination, 0o600)
+
+
+@dataclass(frozen=True)
+class _BackupAuthority:
+    state: InstallationControlState
+    publication: RuntimePublicationState
+    journal_tip: str
+    runtime_revision: int
+    control_path: Path
+    partition_path: Path
+    control_identity: tuple[int, int]
+    partition_identity: tuple[int, int]
+    suppression_watermark: tuple[str, str]
+    signer_fingerprint: str
+
+
+def _backup_suppression_watermark(service: StorageAdministrationService) -> tuple[str, str]:
+    control = service.installation_root / "control"
+    return (
+        _suppression_snapshot_digest(control / "suppressions"),
+        _suppression_snapshot_digest(control / "suppressions-archive"),
+    )
+
+
+def _pin_backup_sources(
+    service: StorageAdministrationService,
+    state: InstallationControlState,
+    finalized: RuntimePublicationState,
+    stack: ExitStack,
+) -> tuple[_BackupAuthority, sqlite3.Connection, sqlite3.Connection]:
+    position, tip = service._control.next_journal_position()
+    control_path = service.control_path()
+    partition = service.partition()
+    partition_path = service.partition_path()
+    control_identity = service._partition_file_identity(control_path)
+    partition_identity = service._partition_file_identity(partition_path)
+    control = stack.enter_context(_open_backup_snapshot(control_path))
+    data = stack.enter_context(_open_backup_snapshot(partition_path))
+
+    # BEGIN alone does not establish a SQLite read snapshot. Read the exact
+    # rows that bind each transaction while holding the publication fence.
+    selected = control.execute(
+        "SELECT state_json FROM publication_states WHERE repository_id = ?", (finalized.repository_id,),
+    ).fetchone()
+    control_row = control.execute("SELECT state_json FROM installation_control WHERE id = 1").fetchone()
+    journal = control.execute("SELECT entry_json FROM control_journal ORDER BY revision DESC LIMIT 1").fetchone()
+    if journal is None:
+        raise OperatorError("integrity_error: pinned control snapshot is missing its journal tip")
+    entry = InstallationControlJournalEntry.model_validate_json(journal[0])
+    row = partition.read_publication_row(data)
+    if (
+        selected is None or RuntimePublicationState.model_validate_json(selected[0]) != finalized
+        or control_row is None or InstallationControlState.model_validate_json(control_row[0]) != state
+        or (entry.revision + 1, entry.entry_digest) != (position, tip)
+        or row is None or row["tuple_digest"] != finalized.payload_digest()
+        or not service._matches_signed_publication(row, finalized)
+        or partition.read_revision_state(data) != (
+            finalized.vector.memory_write_revision, finalized.vector.memory_data_revision,
+        )
+        or service._partition_file_identity(control_path) != control_identity
+        or service._partition_file_identity(partition_path) != partition_identity
+    ):
+        raise OperatorError("integrity_error: pinned backup snapshots differ from the selected watermark")
+    authority = _BackupAuthority(
+        state=state, publication=finalized, journal_tip=tip,
+        runtime_revision=partition.read_runtime_revision(data),
+        control_path=control_path, partition_path=partition_path,
+        control_identity=control_identity, partition_identity=partition_identity,
+        suppression_watermark=_backup_suppression_watermark(service),
+        signer_fingerprint=service._signing.public_key_fingerprint(service._signer_key_id),
+    )
+    return authority, control, data
+
+
+def _require_backup_authority(
+    service: StorageAdministrationService, capability: OwnerCapability, authority: _BackupAuthority,
+) -> None:
+    state = service._require_operational()
+    current = service._control.read_publication_state(authority.publication.repository_id)
+    if (
+        state.installation_id != authority.state.installation_id
+        or state.mode not in ("active", "read_only")
+        or state.control_revision < authority.state.control_revision
+        or state.eligibility_epoch != authority.state.eligibility_epoch
+        or state.pending_epoch_increments != authority.state.pending_epoch_increments
+        or current is None
+        or current.installation_id != state.installation_id
+        or current.repository_id != authority.publication.repository_id
+        or current.data_generation_id != authority.publication.data_generation_id
+        or current.vector.partition_ordinal < authority.publication.vector.partition_ordinal
+        or (
+            current.vector.partition_ordinal == authority.publication.vector.partition_ordinal
+            and current != authority.publication
+        )
+        or current.eligibility_epoch != state.eligibility_epoch
+        or current.trust_registry_digest != authority.publication.trust_registry_digest
+        or service._control.read_pending_intent(authority.publication.repository_id) is not None
+        or not service._signing.has_key(service._signer_key_id)
+        or not service._signing.verify(
+            service._signer_key_id, RUNTIME_PUBLICATION_SIGNATURE_PURPOSE, current.payload_digest(), current.signature,
+        )
+        or service.control_path() != authority.control_path
+        # Resolve the live selector, including refusal of a prepared
+        # generation change whose selector still points to the old file.
+        or service.partition_path() != authority.partition_path
+        or service._partition_file_identity(authority.control_path) != authority.control_identity
+        or service._partition_file_identity(authority.partition_path) != authority.partition_identity
+        or _backup_suppression_watermark(service) != authority.suppression_watermark
+    ):
+        raise OperatorError("conflict: backup authority changed before archive publication")
+    # The service's signer caches the private key. Refresh from the current
+    # key owner before publishing an archive signed with that cached handle.
+    signer = LocalSigningKeyOwner(service.installation_root / "control" / "keys")
+    if signer.public_key_fingerprint(service._signer_key_id) != authority.signer_fingerprint:
+        raise OperatorError("conflict: backup authority changed before archive publication")
+    require_owner_capability(service, capability)
 
 
 def _atomic_write(path: Path, payload: bytes, mode: int = 0o600) -> None:
@@ -380,29 +521,35 @@ class BackupRestoreOperator:
         ):
             raise OperatorError("invalid_request: use a fresh backup directory")
         archive_root.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix=".backup-", dir=archive_root.parent) as scratch:
-            copies = Path(scratch) / "copies"
+        with (
+            _backup_lifetime_guard(service, exclusive=False),
+            tempfile.TemporaryDirectory(prefix=".backup-", dir=archive_root.parent) as scratch,
+            tempfile.TemporaryDirectory(
+                prefix=".backup-plaintext-", dir=service.installation_root / "partition",
+            ) as plaintext,
+        ):
+            # An abrupt process exit may leave SQLite plaintext behind. Keep
+            # it in the tree the installation's erasure operation owns.
+            copies = Path(plaintext)
             encrypted = Path(scratch) / "encrypted"
-            copies.mkdir(mode=0o700)
             encrypted.mkdir(mode=0o700)
-            # Only capture and the live watermark checks need the barrier.
-            with service.verified_operation_context() as (state, finalized):
-                if state.mode != "read_only":
-                    raise OperatorError(
-                        "conflict: backups require the acknowledged exclusive barrier"
-                        " (change mode to read_only first)"
-                    )
-                _, tip = service._control.next_journal_position()
-                with service.partition().transaction(write=False) as connection:
-                    runtime_revision = service.partition().read_runtime_revision(connection)
-                _sqlite_backup(service.control_path(), copies / "control.sqlite3")
-                _sqlite_backup(service.partition_path(), copies / "partition.sqlite3")
-                if (
-                    service._control_state() != state
-                    or service._control.read_publication_state(finalized.repository_id) != finalized
-                    or service._control.next_journal_position()[1] != tip
-                ):
-                    raise OperatorError("conflict: live watermark changed during backup capture")
+            try:
+                with ExitStack() as snapshots:
+                    with service.verified_operation_context() as (state, finalized):
+                        require_owner_capability(service, capability)
+                        if state.mode != "read_only":
+                            raise OperatorError(
+                                "conflict: backups require the acknowledged exclusive barrier"
+                                " (change mode to read_only first)"
+                            )
+                        authority, control, partition = _pin_backup_sources(service, state, finalized, snapshots)
+                    _sqlite_backup(control, copies / "control.sqlite3")
+                    _sqlite_backup(partition, copies / "partition.sqlite3")
+            except (
+                ControlJournalChainError, ControlStateError, OSError, sqlite3.Error,
+                StorageAdministrationError, ValidationError,
+            ) as exc:
+                raise OperatorError("unavailable: could not capture pinned backup snapshots") from exc
             participants: list[BackupParticipant] = []
             content_key = os.urandom(32)
             key_wrap_nonce = os.urandom(12)
@@ -432,11 +579,11 @@ class BackupRestoreOperator:
                 created_at_unix=int(time.time()),
                 control_revision=state.control_revision,
                 eligibility_epoch=state.eligibility_epoch,
-                runtime_revision=runtime_revision,
+                runtime_revision=authority.runtime_revision,
                 memory_write_revision=finalized.vector.memory_write_revision,
                 memory_data_revision=finalized.vector.memory_data_revision,
                 publication_digest=finalized.payload_digest(),
-                control_tip_digest=tip,
+                control_tip_digest=authority.journal_tip,
                 participants=tuple(participants),
                 wrapped_content_key=base64.b64encode(wrapped_key).decode("ascii"),
                 key_wrap_nonce=base64.b64encode(key_wrap_nonce).decode("ascii"),
@@ -492,8 +639,16 @@ class BackupRestoreOperator:
                 encrypted / _BACKUP_MARKER,
                 (manifest.model_dump_json() + "\n").encode(),
             )
-            os.replace(encrypted, archive_root)
-            _sync_directory(archive_root.parent)
+            try:
+                with service._publication_fence():
+                    _require_backup_authority(service, capability, authority)
+                    os.replace(encrypted, archive_root)
+                    _sync_directory(archive_root.parent)
+            except (
+                ControlJournalChainError, ControlStateError, PermissionError,
+                StorageAdministrationError, ValidationError,
+            ) as exc:
+                raise OperatorError("conflict: backup authority changed before archive publication") from exc
         return manifest
 
     def verify_backup(
