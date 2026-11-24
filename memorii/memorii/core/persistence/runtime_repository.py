@@ -38,6 +38,7 @@ from memorii.core.persistence.runtime_journal import append_runtime_changes
 from memorii.core.storage_administration.service import (
     StorageAdministrationService,
 )
+from memorii.domain.solver_graph.edges import SolverEdge
 from memorii.stores.sqlite.partition import PartitionDataRepository
 
 _T = TypeVar("_T", bound=BaseModel)
@@ -343,6 +344,25 @@ class RuntimeStateRepository:
             keys=("task_id", "node_id"),
             values=(task_id, node_id),
             record_json=node_json,
+        )
+
+    def apply_solver_edge(
+        self, connection: sqlite3.Connection, *, solver_id: str, edge: SolverEdge,
+    ) -> None:
+        """Persist an edge only inside its existing solver run."""
+        edge = SolverEdge.model_validate_json(edge.model_dump_json())
+        if self._partition.read_runtime_row(
+            connection, table="runtime_solver_runs", match=(("solver_id", solver_id),),
+        ) is None or any(
+            self._partition.read_runtime_row(
+                connection, table="runtime_solver_nodes",
+                match=(("solver_id", solver_id), ("node_id", endpoint)),
+            ) is None for endpoint in (edge.src, edge.dst)
+        ):
+            raise RuntimeStateError("invalid_request: solver edge endpoints must belong to its solver run")
+        self._partition.upsert_runtime_row(
+            connection, table="runtime_solver_edges", keys=("solver_id", "edge_id"),
+            values=(solver_id, edge.id), record_json=edge.model_dump_json(),
         )
 
     def apply_execution_edge(

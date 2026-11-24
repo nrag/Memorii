@@ -34,4 +34,6 @@ Use the approved design and existing semantic owners. Keep unsupported roots vis
 
 ## Progress And Review
 
-The reference input generator defines the two deterministic workload distributions and sample coordinates. Focused tests cover counts, repeatability and bounded source body generation. The installed fixture loader, timed runner and Linux and macOS qualification artifacts remain open. The existing smaller measured integration test stays a regression.
+The reference input generator defines the two deterministic workload distributions and sample coordinates. Focused tests cover counts, repeatability and bounded source body generation. The existing smaller measured integration test stays a regression.
+
+The engineering loader now prepares and audits diagnostic signed SQLite fixtures through the installed package's storage owners. It verifies the installed files against the candidate wheel before staging, then verifies graph and source closure and the signed pre-checkpoint event inventory after reopening. The isolated working-tree wheel smoke tested 2 retained sources and 19 signed runtime events. All 28 focused tests passed. Qualification mode explicitly refuses until the production native-source receipt bridge and validated checkpoint tail are available. No timed or reference-size run is claimed.
