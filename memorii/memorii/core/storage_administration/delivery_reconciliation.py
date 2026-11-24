@@ -10,7 +10,12 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from memorii.core.persistence.contracts import InstallationControlState, RuntimePublicationState
-from memorii.core.persistence.managed_delivery import DeliveryRestoreHold, DeliveryRestoreRejection
+from memorii.core.persistence.managed_delivery import (
+    DeliveredDelivery,
+    DeliveryRestoreHold,
+    DeliveryRestoreRejection,
+    RejectedDelivery,
+)
 from memorii.core.persistence.runtime_api import convert_legacy_outbox_record
 from memorii.core.persistence.runtime_contracts import canonical_runtime_digest
 from memorii.core.persistence.runtime_repository import RuntimeStateRepository, publish_runtime_change
@@ -177,3 +182,5 @@ class DeliveryReconciliationOperator:
             raise OperatorError("integrity_error: held delivery does not match its scope")
         if delivery.generation_id == finalized.data_generation_id:
             raise OperatorError("conflict: current-generation delivery is outside this restore hold")
+        if isinstance(delivery.progress, DeliveredDelivery | RejectedDelivery):
+            raise OperatorError("conflict: terminal managed delivery is outside this restore hold")

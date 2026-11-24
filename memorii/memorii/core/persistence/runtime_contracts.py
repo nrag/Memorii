@@ -15,9 +15,17 @@ from datetime import datetime
 from hashlib import sha256
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
-from memorii.domain.enums import SourceModality
+from memorii.domain.enums import SolverNodeStatus, SourceModality
 
 _HEX_64 = r"^[0-9a-f]{64}$"
 _EPISTEMIC = ("candidate", "committed", "weakened", "suspended", "retired")
@@ -244,8 +252,16 @@ class OverlayJustificationBinding(BaseModel):
     frontier: bool = False
     reopenable: bool = False
     unexplained: bool = False
+    candidate_status: SolverNodeStatus | None = None
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_serializer(mode="wrap")
+    def omit_unset_candidate_status(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
+        payload = handler(self)
+        if self.candidate_status is None:
+            payload.pop("candidate_status", None)
+        return payload
 
 
 class RuntimeOverlayVersion(BaseModel):
@@ -259,6 +275,15 @@ class RuntimeOverlayVersion(BaseModel):
     committed: bool = False
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def candidate_status_requires_provenance(self) -> RuntimeOverlayVersion:
+        if any(
+            binding.candidate_status is not None and (self.committed or not binding.active_justification_ids)
+            for binding in self.node_bindings
+        ):
+            raise ValueError("a proposed status requires an uncommitted overlay and a justification")
+        return self
 
 
 class ActionAttemptRecord(BaseModel):

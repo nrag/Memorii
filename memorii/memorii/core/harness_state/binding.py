@@ -156,7 +156,6 @@ class HermesRuntimeStatePorts:
                 return self._service.read_state(
                     task_id=binding.installation_task_id, grant=grant, now=moment,
                     cursor=cursor, checkpoint_ref=finalized.checkpoint_digest,
-                    view="history" if require_checkpoint else "summary",
                     installation_binding=(
                         finalized.data_generation_id, state.eligibility_epoch + state.pending_epoch_increments,
                     ),

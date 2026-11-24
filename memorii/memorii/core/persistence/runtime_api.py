@@ -1182,6 +1182,7 @@ def _apply_proposal(
         )
         binding = OverlayJustificationBinding(
             node_id=node_id, active_justification_ids=(justification.justification_id,) if managed else (),
+            candidate_status=SolverNodeStatus(proposal.status) if managed else None,
         )
     elif isinstance(proposal, NodeReopenProposal):
         node_id = proposal.node_id

@@ -15,8 +15,15 @@ from memorii.core.harness_state.service import HarnessStateError, HarnessStateSe
 from memorii.core.harness_state.write_authority import HostCommandGrantRequest, ManagedHostCommandAuthority
 from memorii.core.persistence.runtime_api import ManagedRuntimeCommandService
 from memorii.core.persistence.runtime_contracts import RuntimeCommandRequest, TaskCompletionEvidence
-from memorii.core.persistence.runtime_repository import RuntimeStateRepository
-from memorii.core.storage_administration.operator import mint_owner_capability
+from memorii.core.persistence.runtime_repository import RuntimeStateRepository, publish_runtime_change
+from memorii.core.storage_administration.delivery_reconciliation import DeliveryReconciliationOperator
+from memorii.core.storage_administration.operator import (
+    ModeChangeRequest,
+    OperatorError,
+    StorageAdministrationOperator,
+    mint_owner_capability,
+)
+from memorii.core.storage_administration.operator_backup import BackupRestoreOperator
 from memorii.core.storage_administration.service import (
     InstallationIntegrityError,
     StorageAdministrationError,
@@ -136,6 +143,40 @@ def test_embedded_recall_selects_latest_eligible_origin_after_out_of_order_deliv
         GrantEpochRegistry(root / "control" / "grants").revoke(read_grant.grant_id, reason="withdraw scope")
         with pytest.raises(WorkProjectionRecallError, match="denied:"):
             reader.read(task_id=task_id)
+
+        operator = StorageAdministrationOperator(reopened)
+        operator.change_mode(
+            ModeChangeRequest(
+                target_mode="read_only", expected_control_revision=operator.status().control_revision,
+                reason="exercise terminal delivery retention after restore",
+            ),
+            capability=owner,
+        )
+        backups = BackupRestoreOperator(operator)
+        archive, stage, key = tmp_path / "backup", tmp_path / "stage", b"r" * 32
+        backups.create_backup(capability=owner, archive_root=archive, reason="retain terminal effects", recovery_key=key)
+        current = RuntimeStateRepository(reopened.partition()).get_task(task_id)
+        assert current is not None
+        publish_runtime_change(
+            reopened, lambda connection, store: store.apply_task(
+                connection, current.model_copy(update={"version": current.version + 1}),
+            ), operation_binding="migrate",
+        )
+        plan = backups.plan_restore(capability=owner, archive_root=archive, data_loss_acknowledged=True)
+        backups.apply_restore(capability=owner, plan=plan, staging_root=stage, recovery_key=key)
+        preview = backups.preview_staged_restore(capability=owner, plan=plan, staging_root=stage)
+        backups.activate_older_restore(
+            capability=owner, plan=plan, staging_root=stage, preview_digest=preview.digest(),
+        )
+
+    with StorageAdministrationService(root) as restored:
+        reconciliation = DeliveryReconciliationOperator(restored)
+        with pytest.raises(OperatorError, match="terminal managed delivery"):
+            reconciliation.plan_rejection(capability=owner, delivery_id=complete_delivery)
+        repository = RuntimeStateRepository(restored.partition())
+        with repository.partition.transaction(write=False) as connection:
+            terminal = repository.get_managed_work_projection_delivery(connection, complete_delivery)
+            assert terminal is not None and terminal.delivery.progress.status == "delivered"
 
 
 @pytest.mark.parametrize("failure", [StorageAdministrationError("stale handle"), InstallationIntegrityError("bad tuple")])

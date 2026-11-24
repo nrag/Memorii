@@ -17,7 +17,13 @@ from memorii.core.harness_state.sidecar import RuntimeSidecar
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.persistence import runtime_journal
 from memorii.core.persistence.runtime_api import RuntimeCommandService
-from memorii.core.persistence.runtime_contracts import HypothesisContent, RuntimeCommandRequest, SolverRunRecord
+from memorii.core.persistence.runtime_contracts import (
+    HypothesisContent,
+    OverlayJustificationBinding,
+    RuntimeCommandRequest,
+    RuntimeOverlayVersion,
+    SolverRunRecord,
+)
 from memorii.core.persistence.runtime_repository import RuntimeStateRepository, publish_runtime_change
 from memorii.core.storage_administration.service import StorageAdministrationService
 from memorii.core.storage_administration.suppression_journal import (
@@ -42,20 +48,39 @@ def _checkpointed_graph(service: StorageAdministrationService) -> tuple[str, str
     )
     run = SolverRunRecord(
         solver_id="solver:checkpoint", task_id=task.task_id, parent_execution_node_id=node.id,
-        category="checkpoint", created_by=task.principal,
+        category="checkpoint", created_by=task.principal, selected_overlay_id="overlay:selected",
     )
+    selected_task = task.model_copy(update={
+        "version": task.version + 1,
+        "active_solver_by_execution_node": {node.id: run.solver_id},
+    })
 
     def seed(connection: sqlite3.Connection, repository: RuntimeStateRepository) -> None:
         repository.apply_execution_node(connection, task_id=task.task_id, node_id=node.id, node_json=node.model_dump_json())
+        repository.apply_task(connection, selected_task)
+        repository.apply_solver_run(connection, run.model_copy(update={
+            "solver_id": "solver:archived", "lifecycle": "archived", "selected_overlay_id": None,
+        }))
         repository.apply_solver_run(connection, run)
-        repository.apply_solver_node(
-            connection, solver_id=run.solver_id, node_id="hypothesis",
-            content=HypothesisContent(statement="Checkpoint hypothesis", strength=0.5), metadata_json="{}",
-        )
+        hypotheses = tuple(f"hypothesis:{index:02d}" for index in range(17))
+        for node_id in hypotheses:
+            repository.apply_solver_node(
+                connection, solver_id=run.solver_id, node_id=node_id,
+                content=HypothesisContent(statement="Checkpoint hypothesis", strength=0.5), metadata_json="{}",
+            )
+        repository.apply_overlay(connection, RuntimeOverlayVersion(
+            version_id="overlay:old", solver_id=run.solver_id, created_at=task.created_at,
+        ))
+        repository.apply_overlay(connection, RuntimeOverlayVersion(
+            version_id="overlay:selected", solver_id=run.solver_id, created_at=task.created_at,
+            committed=True, node_bindings=tuple(
+                OverlayJustificationBinding(node_id=node_id, frontier=True) for node_id in hypotheses
+            ),
+        ))
 
     publish_runtime_change(service, seed)
     checkpoint_request = RuntimeCommandRequest(
-        kind="checkpoint_task", operation_id="snapshot", task_id=task.task_id, expected_revision=task.version,
+        kind="checkpoint_task", operation_id="snapshot", task_id=task.task_id, expected_revision=selected_task.version,
     )
     receipt = commands.dispatch(checkpoint_request)
     assert commands.dispatch(checkpoint_request) == receipt
@@ -64,7 +89,7 @@ def _checkpointed_graph(service: StorageAdministrationService) -> tuple[str, str
         assert finalized.vector.runtime_position.kind == "batch"
         assert finalized.vector.runtime_position.sequence == 3
         checkpoint_digest = finalized.checkpoint_digest
-    changed = task.model_copy(update={"version": 2, "goal": "Tail goal"})
+    changed = selected_task.model_copy(update={"version": selected_task.version + 1, "goal": "Tail goal"})
     publish_runtime_change(service, lambda connection, repo: repo.apply_task(connection, changed))
     service.publish_memory_plane_batch((CanonicalMemoryRecord(
         memory_id="memory:checkpoint", domain=MemoryDomain.TRANSCRIPT, text="Separate memory publication",
@@ -116,6 +141,12 @@ def test_selected_checkpoint_skips_its_prefix_and_releases_the_same_tail_state(
         assert resumed.checkpoint_ref == digest
         assert resumed.goal == "Tail goal"
         assert resumed.solver_id == "solver:checkpoint"
+        assert resumed.selected_overlay_id == "overlay:selected"
+        assert len(resumed.frontier) == 16
+        assert resumed.continuation_cursor is not None
+        assert [item.label for item in ports.read_bound_state(
+            principal="host", cursor=resumed.continuation_cursor,
+        ).frontier] == ["hypothesis:16"]
         assert replayed == [4, 1, 2, 3, 4, 4]
         assert reopened.acquire_verified_snapshot() == expected
 

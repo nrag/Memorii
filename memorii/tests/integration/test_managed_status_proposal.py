@@ -28,6 +28,7 @@ from memorii.core.storage_administration.suppression_journal import (
     SuppressionRecord,
     write_suppression_record,
 )
+from memorii.domain.enums import SolverNodeStatus
 
 
 def test_managed_status_proposal_requires_scoped_active_graph_and_preserves_candidate_state(tmp_path: Path) -> None:
@@ -104,6 +105,7 @@ def test_managed_status_proposal_requires_scoped_active_graph_and_preserves_cand
         overlay, = repo.list_overlays(run.solver_id)
         justification, = repo.list_justifications(run.solver_id)
         assert overlay.committed is False
+        assert overlay.node_bindings[0].candidate_status == SolverNodeStatus.NEEDS_TEST
         assert overlay.node_bindings[0].active_justification_ids == (justification.justification_id,)
         assert justification.conclusion == "status_update:NEEDS_TEST:Evidence is incomplete"
 
