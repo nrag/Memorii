@@ -1,6 +1,6 @@
 {
   "files": {
-    ".github/workflows/pr-gates.yml": "ada9520eea6c9c77817e1cacdd5c5480288b2685b1dccae668ff956e7926acd1",
+    ".github/workflows/pr-gates.yml": "67ded68ca34ba04404ba919876bad50adb6f2b0fc3c848cce9a0d898864f2e21",
     "acceptance/__init__.py": "adbb769f003c08d46e26ff769de38c76f15e3e09b1bee8cb53e3c3886f8aa91d",
     "acceptance/arithmetic.py": "0958fd3aff008ba15b309bd7f4e037bb4e139672f85b51807bfacc562a0528cd",
     "acceptance/authority_cli.py": "4132ae05df5601c4f0a0098b177291c3dc9b722d9250620de4247bbb763eb135",
@@ -1925,7 +1925,7 @@
     "memorii/memorii/core/storage_administration/service.py": "fcec2188b2d84b8ee7ad19ad9467d60c599403a7308de2a4d06518bd037df9bc",
     "memorii/memorii/core/storage_administration/suppression_journal.py": "0c2cb33f207a0029150126ccf0e67e17bf4260fbfa8b475e2434081cf4d8267f",
     "memorii/memorii/stores/sqlite/control.py": "b9f661252db13da83974f87115163679bc743dd1ed5ad8568d2cf15a698ad5f2",
-    "memorii/memorii/tools/runtime_operator.py": "951c8121ab9e179e05bb080f471d91cece4290546afcfd7acf664818a2065bb4",
+    "memorii/memorii/tools/runtime_operator.py": "ae7095483f715496ec51fb1fecbe4d2c37d7878cb6150fc4e860c41245c503c9",
     "memorii/tests/integration/test_forget_enforcement_publication.py": "47e3f2dfca9c3f50b96ce169c530d78a3a53aa043ceae9768da694eab27c357c",
     "memorii/tests/integration/test_forget_serving_parity.py": "aeedf9d153179bfbc395614c622fb2b37eef1dc7e8884be5b6c683e793d5e867",
     "memorii/tests/unit/core/memory_evolution/test_revocation_directive_record.py": "34a6cea5d56a615bdd879a9e60eccab33c29b660f34a8712c73c54a334364d94",

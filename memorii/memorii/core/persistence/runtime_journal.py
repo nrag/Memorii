@@ -313,13 +313,22 @@ def _validate_catalog_transition(
             except ValueError as exc:
                 raise RuntimeJournalError("integrity_error: invalid source release grant transition") from exc
         case "runtime_delivery_restore_holds":
-            from memorii.core.persistence.managed_delivery import DeliveryRestoreHold
+            from memorii.core.persistence.managed_delivery import DeliveryRestoreHold, DeliveryRestoreRejection
 
-            hold = DeliveryRestoreHold.model_validate_json(row.record_json)
+            payload = json.loads(row.record_json)
+            record: DeliveryRestoreHold | DeliveryRestoreRejection
+            if isinstance(payload, dict) and payload.get("status") == "rejected":
+                record = DeliveryRestoreRejection.model_validate(payload)
+                expected_key = record.record_id
+            else:
+                record = DeliveryRestoreHold.model_validate(payload)
+                expected_key = record.hold_id
+                if record.source_generation_id == generation_id:
+                    raise RuntimeJournalError("integrity_error: delivery hold cannot inherit its own generation")
             if (
-                row.key != (hold.hold_id,) or row.indexed or previous_json is not None
-                or hold.installation_id != installation_id or hold.partition_id != repository_id
-                or hold.restored_generation_id != generation_id or hold.source_generation_id == generation_id
+                row.key != (expected_key,) or row.indexed or previous_json is not None
+                or record.installation_id != installation_id or record.partition_id != repository_id
+                or record.restored_generation_id != generation_id
             ):
                 raise RuntimeJournalError("integrity_error: delivery hold does not match its signed generation")
         case "runtime_outbox_deliveries":

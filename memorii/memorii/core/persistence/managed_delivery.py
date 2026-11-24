@@ -41,6 +41,21 @@ class DeliveryRestoreHold(_DeliveryRecord):
     status: Literal["needs_reconciliation"] = "needs_reconciliation"
 
 
+class DeliveryRestoreRejection(_DeliveryRecord):
+    """One terminal owner decision, independent of the retained historical outbox."""
+
+    record_id: Digest
+    hold_id: Digest
+    installation_id: Identity
+    partition_id: Identity
+    restored_generation_id: Identity
+    delivery_id: Identity
+    control_revision: Positive
+    evidence_digest: Digest
+    plan_digest: Digest
+    status: Literal["rejected"] = "rejected"
+
+
 class _TaskTarget(_DeliveryRecord):
     partition_id: Identity
     task_id: Identity

@@ -1,5 +1,6 @@
 """Owner cutover and interruption recovery from an older authenticated backup."""
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -30,7 +31,7 @@ def _task(task_id: str) -> TaskRecord:
 
 @pytest.mark.parametrize("cut", ["none", "before_selector", "after_selector", "invalid_selector"])
 def test_older_restore_recovers_exact_bytes_and_keeps_delivery_held(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cut: str,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], cut: str,
 ) -> None:
     root, archive, staging = tmp_path / "installed", tmp_path / "archive", tmp_path / "stage"
     key = b"k" * 32
@@ -151,6 +152,27 @@ def test_older_restore_recovers_exact_bytes_and_keeps_delivery_held(
         assert BackupRestoreOperator(operator).activate_older_restore(
             capability=capability, plan=plan, staging_root=staging, preview_digest=preview.digest(),
         ) == intent
+        if cut == "none":
+            cli = [
+                "--installation-root", str(root), "--owner-principal", capability.owner_principal,
+                "--capability-digest", capability.capability_digest, "reconcile-delivery",
+            ]
+            assert operator_main([*cli, "plan-reject", "--delivery-id", legacy.delivery_id]) == 0
+            review = json.loads(capsys.readouterr().out)
+            assert review["plan"]["hold_id"] == held.hold_id
+            reviewed_plan = tmp_path / "delivery-plan.json"
+            reviewed_plan.write_text(json.dumps(review["plan"]), encoding="utf-8")
+            reject = [*cli, "reject", "--plan-file", str(reviewed_plan), "--plan-digest"]
+            assert operator_main([*reject, "0" * 64]) == 3
+            capsys.readouterr()
+            assert operator_main([*reject, review["plan_digest"]]) == 0
+            rejection = json.loads(capsys.readouterr().out)
+            assert rejection["status"] == "rejected"
+            assert rejection["evidence_digest"] == review["plan"]["evidence_digest"]
+            after_rejection = reopened.acquire_verified_snapshot()
+            assert operator_main([*reject, review["plan_digest"]]) == 0
+            assert json.loads(capsys.readouterr().out) == rejection
+            assert reopened.acquire_verified_snapshot() == after_rejection
         publish_runtime_change(
             reopened, lambda connection, state: state.apply_task(connection, _task("task:new")),
             operation_binding="migrate",

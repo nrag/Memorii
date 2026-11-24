@@ -77,6 +77,13 @@ def main(argv: list[str] | None = None) -> int:
     upgrade.add_argument("--plan-file", type=Path, required=True)
     upgrade.add_argument("--staging-root", type=Path, required=True)
     upgrade.add_argument("--preview-digest", required=True)
+    reconcile = commands.add_parser("reconcile-delivery", help="Review a held delivery from a restored generation")
+    reconcile_sub = reconcile.add_subparsers(dest="reconcile_command", required=True)
+    reject_plan = reconcile_sub.add_parser("plan-reject", help="Plan to permanently decline a held delivery")
+    reject_plan.add_argument("--delivery-id", required=True)
+    reject = reconcile_sub.add_parser("reject", help="Record the reviewed decision without resending the delivery")
+    reject.add_argument("--plan-file", type=Path, required=True)
+    reject.add_argument("--plan-digest", required=True)
 
     forget = commands.add_parser("forget", help="Logical forget planning and apply")
     forget_sub = forget.add_subparsers(dest="forget_command", required=True)
@@ -312,6 +319,32 @@ def main(argv: list[str] | None = None) -> int:
                 data_loss_acknowledged=arguments.data_loss_acknowledged,
             )
             print(plan.model_dump_json())
+            return 0
+        if arguments.command == "reconcile-delivery":
+            from pydantic import ValidationError
+
+            from memorii.core.persistence.runtime_repository import RuntimeStateError
+            from memorii.core.storage_administration.delivery_reconciliation import (
+                DeliveryReconciliationOperator,
+                DeliveryRejectionPlan,
+            )
+            from memorii.core.storage_administration.service import StorageAdministrationError
+            from memorii.stores.sqlite.control import ControlStateError
+
+            owner = require_capability()
+            reconciliation = DeliveryReconciliationOperator(administration)
+            try:
+                if arguments.reconcile_command == "plan-reject":
+                    plan = reconciliation.plan_rejection(capability=owner, delivery_id=arguments.delivery_id)
+                    print(json.dumps({"plan": plan.model_dump(mode="json"), "plan_digest": plan.digest()}))
+                    return 0
+                plan = DeliveryRejectionPlan.model_validate_json(arguments.plan_file.read_bytes())
+                decision = reconciliation.reject(capability=owner, plan=plan, plan_digest=arguments.plan_digest)
+            except (RuntimeStateError, StorageAdministrationError, ControlStateError) as exc:
+                raise OperatorError(f"unavailable: held delivery could not be reconciled: {exc}") from exc
+            except (OSError, ValidationError) as exc:
+                raise OperatorError("invalid_request: delivery rejection plan could not be read") from exc
+            print(decision.model_dump_json())
             return 0
         if arguments.command == "runtime-source-grant":
             from memorii.core.persistence.runtime_repository import RuntimeStateError

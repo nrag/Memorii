@@ -629,6 +629,7 @@ jobs:
           tests/integration/test_runtime_process_recovery.py
           tests/integration/test_runtime_resume_checkpoint.py
           tests/integration/test_runtime_checkpoint_tail.py
+          tests/integration/test_managed_status_proposal.py
           tests/integration/test_runtime_sidecar.py
           tests/integration/test_consolidation_read_sidecar.py
           tests/integration/test_managed_candidate_delivery.py

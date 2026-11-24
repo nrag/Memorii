@@ -73,7 +73,7 @@ from memorii.core.storage_administration.revoked_identity_view import Refreshing
 from memorii.core.storage_administration.service import (
     StorageAdministrationService,
 )
-from memorii.domain.enums import ExecutionNodeStatus, ExecutionNodeType
+from memorii.domain.enums import ExecutionNodeStatus, ExecutionNodeType, SolverNodeStatus
 from memorii.domain.execution_graph.nodes import ExecutionNode
 
 _HEX_64 = r"^[0-9a-f]{64}$"
@@ -683,7 +683,7 @@ class RuntimeCommandService:
             pass
         elif request.kind == "propose_state_change":
             assert request.proposal is not None
-            _apply_proposal(repository, connection, request.proposal)
+            _apply_proposal(repository, connection, request.proposal, managed=operation_origin is not None)
         elif request.kind == "checkpoint_task":
             from datetime import UTC as _UTC
             from datetime import datetime as _datetime
@@ -826,10 +826,13 @@ class ManagedRuntimeCommandService:
                 operation_id=request.operation_id,
                 request_digest=request.managed_intent_digest(),
             )
-            if request.kind == "record_observation":
+            if request.kind in ("record_observation", "propose_state_change"):
                 repository = RuntimeStateRepository(self._administration.partition())
                 with repository.partition.transaction(write=False) as connection:
-                    self._resolve_observation(connection, repository, request, coordinate, finalized)
+                    if request.kind == "record_observation":
+                        self._resolve_observation(connection, repository, request, coordinate, finalized)
+                    else:
+                        self._validate_status_proposal(connection, repository, request, coordinate.principal)
             return self._administration.sign_operation_origin(coordinate)
 
     def dispatch(
@@ -867,6 +870,8 @@ class ManagedRuntimeCommandService:
             if request.kind == "record_observation":
                 assert authorized_publication is not None
                 source = self._resolve_observation(connection, repository, request, coordinate, authorized_publication)
+            elif request.kind == "propose_state_change":
+                self._validate_status_proposal(connection, repository, request, coordinate.principal)
             service._apply_command(
                 connection, repository, request, coordinate.request_digest,
                 operation_origin=operation_origin, source_admission=source,
@@ -960,7 +965,42 @@ class ManagedRuntimeCommandService:
                 self._require_active(state)
                 if self._require_authority(request, "dispatch", coordinate, state, finalized) != authority:
                     raise RuntimeCommandError("denied: mismatched intake authority")
+                if request.kind == "propose_state_change":
+                    with repository.partition.transaction(write=False) as connection:
+                        self._validate_status_proposal(connection, repository, request, coordinate.principal)
             return receipt
+
+    def _validate_status_proposal(
+        self,
+        connection: sqlite3.Connection,
+        repository: RuntimeStateRepository,
+        request: RuntimeCommandRequest,
+        principal: str,
+    ) -> None:
+        proposal = request.proposal
+        assert isinstance(proposal, StatusUpdateProposal)
+        task = repository.get_task_in(connection, request.task_id or "")
+        revoked = RefreshingRevokedIdentityView(self._administration.installation_root / "control")
+        if task is None or task.principal != principal or revoked.is_revoked_task(task.task_id):
+            raise RuntimeCommandError("denied: solver status authority is unavailable")
+        if task.lifecycle != "active" or task.version != request.expected_revision:
+            raise RuntimeCommandError("conflict: solver status requires an active task at the expected revision")
+        partition = repository.partition
+        row = partition.read_runtime_row(
+            connection, table="runtime_solver_runs", match=(("solver_id", proposal.solver_id),),
+        )
+        if row is None:
+            raise RuntimeCommandError("denied: solver status authority is unavailable")
+        run = SolverRunRecord.model_validate_json(row["record_json"])
+        if (
+            run.solver_id != proposal.solver_id or run.task_id != task.task_id or run.lifecycle != "active"
+            or task.active_solver_by_execution_node.get(run.parent_execution_node_id) != run.solver_id
+            or partition.read_runtime_row(
+                connection, table="runtime_solver_nodes",
+                match=(("solver_id", run.solver_id), ("node_id", proposal.node_id)),
+            ) is None
+        ):
+            raise RuntimeCommandError("denied: solver status authority is unavailable")
 
     @staticmethod
     def _verify_lifecycle_archive_release(
@@ -1068,6 +1108,17 @@ class ManagedRuntimeCommandService:
             raise RuntimeCommandError("invalid_request: operation identity is invalid")
         if request.kind == "record_observation" and self._observation_source is not None:
             return
+        if request.kind == "propose_state_change":
+            proposal = request.proposal
+            if not isinstance(proposal, StatusUpdateProposal) or proposal.evidence:
+                raise RuntimeCommandError("unsupported_configuration: managed status proposals require source-free input")
+            if not proposal.reason.strip():
+                raise RuntimeCommandError("invalid_request: a solver status proposal requires a reason")
+            try:
+                SolverNodeStatus(proposal.status)
+            except ValueError as exc:
+                raise RuntimeCommandError("invalid_request: unknown solver node status") from exc
+            return
         if request.kind not in {"start_task", "resume_task", "pause_task", "complete_task", "checkpoint_task"}:
             raise RuntimeCommandError(
                 "unsupported_configuration: managed result and mutation owners are not configured"
@@ -1081,6 +1132,8 @@ def _apply_proposal(
     | StatusUpdateProposal
     | NodeReopenProposal
     | NodeMergeProposal,
+    *,
+    managed: bool = False,
 ) -> None:
     """Apply one typed solver proposal as durable overlay state.
 
@@ -1127,7 +1180,9 @@ def _apply_proposal(
             source_refs=proposal.evidence,
             strength=1.0,
         )
-        binding = OverlayJustificationBinding(node_id=node_id, frontier=False)
+        binding = OverlayJustificationBinding(
+            node_id=node_id, active_justification_ids=(justification.justification_id,) if managed else (),
+        )
     elif isinstance(proposal, NodeReopenProposal):
         node_id = proposal.node_id
         justification = SolverJustificationRecord(
