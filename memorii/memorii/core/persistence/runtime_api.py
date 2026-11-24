@@ -1002,7 +1002,7 @@ def deliver_outbox(
     repository: RuntimeStateRepository,
     deliver: Callable[[RuntimeOutboxDelivery], str],
 ) -> tuple[RuntimeOutboxDelivery, ...]:
-    """Deliver every pending outbox entry through the caller's transport.
+    """Deliver pending entries through the explicit legacy-v1 transport.
 
     ``deliver`` returns the target receipt reference; a raise aborts the
     batch with nothing marked delivered (fail-closed, retry-safe — the
@@ -1012,6 +1012,8 @@ def deliver_outbox(
     delivered: list[RuntimeOutboxDelivery] = []
     with repository._partition.manual_write_transaction() as handle:
         connection = handle.connection
+        if repository.partition.supports_managed_runtime(connection):
+            raise RuntimeCommandError("needs_reconciliation: legacy digest-only deliveries require owner review")
         for entry in repository.list_outbox_deliveries(connection):
             receipt = deliver(entry)
             updated = entry.model_copy(

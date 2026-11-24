@@ -295,7 +295,7 @@ def _checkpoint_member_digest(
 ) -> str:
     return canonical_runtime_digest((
         "memorii.runtime-checkpoint-members.v2",
-        tuple(tuple(record.model_dump(mode="json") for record in records)
+        tuple(tuple(record.model_dump_json().encode("utf-8") for record in records)
               for records in (tasks, runs, overlays, justifications)),
     ))
 
