@@ -44,4 +44,4 @@ Implementation branch `codex/durable-delivery-implementation` is published to or
 
 ## Next Action
 
-Profile the reference source setup and identify the remaining full-record scans before timing the 1 GiB fixture.
+Replace the full current-record scan during governed source admission with a bounded SQLite validation path that preserves authorization and preconditions.
