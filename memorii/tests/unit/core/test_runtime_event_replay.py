@@ -141,6 +141,17 @@ def test_replay_orders_by_batch_position_not_timestamps() -> None:
         replay_runtime_batches((second, first))
 
 
+def test_replay_rejects_valid_batches_from_distinct_repositories() -> None:
+    from memorii.core.persistence.runtime_events import RuntimeEventEnvelope, create_runtime_batch
+
+    event = _event("e:other")
+    assert isinstance(event, RuntimeEventEnvelope)
+    first = _batch(1, (_event("e:1"),))
+    second = create_runtime_batch(repository_id="other", sequence=2, events=(event,))
+    with pytest.raises(RuntimeReplayError, match="distinct repositories"):
+        replay_runtime_batches((first, second))
+
+
 def test_identical_redelivery_is_idempotent_divergent_reuse_fails() -> None:
     event = _event("e:1", version=1)
     first = _batch(1, (event,))
@@ -158,6 +169,26 @@ def test_equal_version_non_identical_envelopes_fail_closed() -> None:
     conflicting = _event("e:2", entity_id="e:1", version=2, statement="beta")
     with pytest.raises(RuntimeReplayError, match="memory_integrity_conflict"):
         reduce_runtime_batch(state, _batch(2, (conflicting,)))
+
+
+def test_replay_rejects_divergent_historical_record_version() -> None:
+    initial = _event("e:1", entity_id="node:one", version=1)
+    latest = _event("e:2", entity_id="node:one", version=2, operation="update")
+    state = replay_runtime_batches((_batch(1, (initial, latest)),))
+    divergent_history = _event("e:3", entity_id="node:one", version=1)
+    with pytest.raises(RuntimeReplayError, match="non-identical equal-version"):
+        reduce_runtime_batch(state, _batch(2, (divergent_history,)))
+
+
+def test_event_digest_binds_solver_scope_and_commit_status() -> None:
+    from memorii.core.persistence.runtime_events import RuntimeEventEnvelope
+
+    event = _event("e:1")
+    assert isinstance(event, RuntimeEventEnvelope)
+    payload = event.model_dump()
+    for override in ({"solver_run_id": "solver:other"}, {"is_committed": False}):
+        with pytest.raises(ValueError, match="event digest"):
+            RuntimeEventEnvelope.model_validate(payload | override)
 
 
 def test_delete_is_logical_retirement_and_older_versions_ignored() -> None:
