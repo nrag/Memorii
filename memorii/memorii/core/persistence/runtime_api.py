@@ -40,7 +40,12 @@ from memorii.core.persistence.contracts import (
     RuntimePublicationState,
     canonical_json_digest,
 )
-from memorii.core.persistence.runtime_checkpoint import RuntimeCheckpointError, stage_task_lifecycle_archive
+from memorii.core.persistence.runtime_checkpoint import (
+    RuntimeCheckpointError,
+    TaskLifecycleArchive,
+    read_source_free_task_root,
+    stage_task_lifecycle_archive,
+)
 from memorii.core.persistence.runtime_contracts import (
     ActionAttemptRecord,
     BeliefUpdateProposal,
@@ -222,6 +227,8 @@ class RuntimeCommandService:
         result = None
         if operation_origin is not None and request.kind in {"pause_task", "complete_task"}:
             result = self._apply_managed_lifecycle(connection, repository, request, operation_origin.coordinate)
+        elif operation_origin is not None and request.kind == "resume_task":
+            self._apply_managed_resume(connection, repository, request, operation_origin.coordinate)
         else:
             self._apply_command_effect(connection, repository, request, operation_origin=operation_origin)
         receipt = RuntimeCommandReceipt(
@@ -342,6 +349,93 @@ class RuntimeCommandService:
         )
         repository.apply_consolidation_result(connection, result)
         return result
+
+    def _apply_managed_resume(
+        self,
+        connection: sqlite3.Connection,
+        repository: RuntimeStateRepository,
+        request: RuntimeCommandRequest,
+        coordinate: OperationOriginCoordinate,
+    ) -> None:
+        task = repository.get_task_in(connection, request.task_id or "")
+        revoked = RefreshingRevokedIdentityView(self._administration.installation_root / "control")
+        if task is None or task.principal != coordinate.principal or revoked.is_revoked_task(task.task_id):
+            raise RuntimeCommandError("denied: task resume authority is unavailable")
+        if task.version != request.expected_revision:
+            raise RuntimeCommandError("conflict: task state moved past the expected revision")
+        if task.lifecycle == "active":
+            return
+        if task.lifecycle != "paused":
+            raise RuntimeCommandError("conflict: task cannot be resumed")
+        partition = repository.partition
+        try:
+            root = read_source_free_task_root(repository, connection, task)
+            validated_archives: list[TaskLifecycleArchive] = []
+            for result in repository.list_consolidation_results_in(connection):
+                origin = result.origin
+                if (
+                    origin.installation_id != coordinate.installation_id
+                    or origin.partition_id != coordinate.repository_id
+                    or origin.operation_generation != coordinate.generation_id
+                    or origin.task_id != task.task_id
+                ):
+                    continue
+                for output in result.outputs:
+                    if not isinstance(output.payload, ArchivePackage):
+                        continue
+                    ref = output.payload.reference
+                    row = partition.read_runtime_row(
+                        connection, table="runtime_checkpoints", match=(("checkpoint_id", ref.checkpoint_id),),
+                    )
+                    if row is None:
+                        raise RuntimeCheckpointError("integrity_error: recorded task archive is missing")
+                    archive = TaskLifecycleArchive.model_validate_json(row["record_json"])
+                    if archive.checkpoint.task.version + 1 != task.version:
+                        continue
+                    if (
+                        ref != archive.reference()
+                        or archive.checkpoint.generation_id != coordinate.generation_id
+                        or archive.checkpoint.task.lifecycle != "active"
+                        or archive.checkpoint.task.model_copy(
+                            update={"lifecycle": "paused", "version": task.version},
+                        ) != task
+                        or archive.checkpoint.root_node.model_copy(
+                            update={"status": ExecutionNodeStatus.WAITING, "updated_at": root.updated_at},
+                        ) != root
+                    ):
+                        raise RuntimeCheckpointError("integrity_error: task archive differs from the paused state")
+                    archive.verify_signature(self._administration._signing.verify)
+                    origin_namespace = managed_receipt_namespace(
+                        installation_id=coordinate.installation_id, repository_id=coordinate.repository_id,
+                        generation_id=coordinate.generation_id, principal=coordinate.principal,
+                        client_namespace=origin.client_namespace,
+                    )
+                    receipt = repository.get_command_receipt_in(connection, origin_namespace, origin.operation_id)
+                    expected_origin = coordinate.model_copy(update={
+                        "client_namespace": origin.client_namespace,
+                        "operation_id": origin.operation_id,
+                        "request_digest": origin.request_digest,
+                    })
+                    if (
+                        receipt is None or receipt.status != "committed"
+                        or receipt.operation_origin != expected_origin
+                        or receipt.consolidation_result_id != result.result_id
+                        or receipt.request_digest != origin.request_digest
+                        or receipt.current_revision != result.origin_revision
+                        or receipt.result_digest != hashlib.sha256(result.canonical_bytes()).hexdigest()
+                    ):
+                        raise RuntimeCheckpointError("integrity_error: task archive lacks its exact pause receipt")
+                    validated_archives.append(archive)
+            if len(validated_archives) != 1:
+                raise RuntimeCheckpointError("needs_reconciliation: paused task requires one verified archive")
+        except (RuntimeCheckpointError, ValidationError) as exc:
+            raise RuntimeCommandError(str(exc)) from exc
+        archive_root = validated_archives[0].checkpoint.root_node
+        repository.apply_task(connection, task.model_copy(update={"lifecycle": "active", "version": task.version + 1}))
+        repository.apply_execution_node(
+            connection, task_id=task.task_id, node_id=root.id,
+            node_json=archive_root.model_copy(update={"updated_at": datetime.now(UTC)}).model_dump_json(),
+        )
 
     def _apply_command_effect(
         self,
@@ -712,22 +806,23 @@ class ManagedRuntimeCommandService:
                 released = self._authorize(request, "historical_release", coordinate, state, finalized)
                 if released != authority:
                     raise RuntimeCommandError("needs_reconciliation: historical receipt is held")
-            if receipt is not None and receipt.consolidation_result_id is not None:
+            if receipt is not None and request.task_id is not None:
                 revoked = RefreshingRevokedIdentityView(self._administration.installation_root / "control")
-                task = repository.get_task(request.task_id or "")
+                task = repository.get_task(request.task_id)
                 if task is None or task.principal != authority.principal or revoked.is_revoked_task(task.task_id):
                     raise RuntimeCommandError("denied: task lifecycle authority is unavailable")
-                result = repository.get_consolidation_result(receipt.consolidation_result_id)
-                if (
-                    result is None
-                    or result.origin.task_id != task.task_id
-                    or result.origin_revision != receipt.current_revision
-                    or result.origin.operation_generation != coordinate.generation_id
-                    or result.origin.operation_id != coordinate.operation_id
-                    or result.origin.request_digest != coordinate.request_digest
-                    or hashlib.sha256(result.canonical_bytes()).hexdigest() != receipt.result_digest
-                ):
-                    raise RuntimeCommandError("integrity_error: consolidation receipt does not bind its sealed result")
+                if receipt.consolidation_result_id is not None:
+                    result = repository.get_consolidation_result(receipt.consolidation_result_id)
+                    if (
+                        result is None
+                        or result.origin.task_id != task.task_id
+                        or result.origin_revision != receipt.current_revision
+                        or result.origin.operation_generation != coordinate.generation_id
+                        or result.origin.operation_id != coordinate.operation_id
+                        or result.origin.request_digest != coordinate.request_digest
+                        or hashlib.sha256(result.canonical_bytes()).hexdigest() != receipt.result_digest
+                    ):
+                        raise RuntimeCommandError("integrity_error: consolidation receipt does not bind its sealed result")
             if for_intake and receipt is None:
                 self._require_supported(request)
                 self._require_active(state)
@@ -787,7 +882,7 @@ class ManagedRuntimeCommandService:
     def _require_supported(request: RuntimeCommandRequest) -> None:
         if len(request.operation_id) > 512 or "\0" in request.operation_id:
             raise RuntimeCommandError("invalid_request: operation identity is invalid")
-        if request.kind not in {"start_task", "pause_task", "complete_task"}:
+        if request.kind not in {"start_task", "resume_task", "pause_task", "complete_task"}:
             raise RuntimeCommandError(
                 "unsupported_configuration: managed result and mutation owners are not configured"
             )

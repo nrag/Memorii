@@ -69,6 +69,36 @@ def fresh_task(tmp_path: Path) -> Iterator[tuple[StorageAdministrationService, _
         administration.close()
 
 
+def test_managed_resume_verifies_the_pause_archive_on_a_reopened_installation(
+    fresh_task: tuple[StorageAdministrationService, _ScopedOwner, TaskRecord],
+) -> None:
+    administration, owner, task = fresh_task
+    service = ManagedRuntimeCommandService(administration, authorize=owner)
+    pause = RuntimeCommandRequest(
+        kind="pause_task", operation_id="pause-before-resume",
+        task_id=task.task_id, expected_revision=task.version, pause_reason="Waiting",
+    )
+    service.dispatch(pause, operation_origin=service.prepare(pause))
+    resume = RuntimeCommandRequest(
+        kind="resume_task", operation_id="resume-from-archive",
+        task_id=task.task_id, expected_revision=task.version + 1,
+    )
+    proof = service.prepare(resume)
+    with StorageAdministrationService(administration.installation_root) as reopened:
+        runtime = ManagedRuntimeCommandService(reopened, authorize=owner)
+        receipt = runtime.dispatch(resume, operation_origin=proof)
+        after = reopened.acquire_verified_snapshot()
+        assert runtime.dispatch(resume, operation_origin=proof) == receipt
+        assert reopened.acquire_verified_snapshot() == after
+        repo = RuntimeStateRepository(reopened.partition())
+        assert repo.get_task(task.task_id) == task.model_copy(update={"version": task.version + 2})
+        with reopened.partition().transaction(write=False) as connection:
+            row, = reopened.partition().read_runtime_rows(
+                connection, table="runtime_execution_nodes", match=(("task_id", task.task_id),),
+            )
+            assert ExecutionNode.model_validate_json(row["record_json"]).status == ExecutionNodeStatus.READY
+
+
 @pytest.mark.parametrize("complete", [False, True])
 def test_managed_lifecycle_keeps_sealed_archive_and_result_across_reopen(
     fresh_task: tuple[StorageAdministrationService, _ScopedOwner, TaskRecord],

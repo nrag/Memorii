@@ -131,6 +131,37 @@ class TaskLifecycleArchive(BaseModel):
             raise RuntimeCheckpointError("integrity_error: task checkpoint signature verification failed")
 
 
+def read_source_free_task_root(
+    repository: RuntimeStateRepository, connection: sqlite3.Connection, task: TaskRecord,
+) -> ExecutionNode:
+    """Validate the complete archive/resume graph supported by this owner."""
+    partition = repository.partition
+    rows = partition.read_runtime_rows(
+        connection, table="runtime_execution_nodes", match=(("task_id", task.task_id),),
+    )
+    if (
+        len(rows) != 1
+        or task.active_solver_by_execution_node
+        or repository.list_solver_runs_in(connection, task.task_id)
+        or repository.list_action_attempts_in(connection, task.task_id)
+        or partition.read_runtime_rows(
+            connection, table="runtime_execution_edges", match=(("task_id", task.task_id),),
+        )
+        or connection.execute(
+            "SELECT 1 FROM memory_current_records"
+            " WHERE json_extract(record_json, '$.task_id') = ? LIMIT 1",
+            (task.task_id,),
+        ).fetchone() is not None
+    ):
+        raise RuntimeCheckpointError("unsupported_configuration: full task archive closure is unavailable")
+    root = ExecutionNode.model_validate_json(rows[0]["record_json"])
+    if root.id != task.root_execution_node_id or root.owner != task.principal:
+        raise RuntimeCheckpointError("integrity_error: execution root does not match the task")
+    if root.linked_artifacts or root.linked_constraints:
+        raise RuntimeCheckpointError("unsupported_configuration: linked archive artifacts require their owner")
+    return root
+
+
 def stage_task_lifecycle_archive(
     repository: RuntimeStateRepository,
     connection: sqlite3.Connection,
@@ -147,28 +178,7 @@ def stage_task_lifecycle_archive(
     publication = partition.read_publication_row(connection)
     if publication is None or publication["generation_id"] != generation_id:
         raise RuntimeCheckpointError("integrity_error: task archive publication origin mismatch")
-    rows = partition.read_runtime_rows(
-        connection, table="runtime_execution_nodes", match=(("task_id", task.task_id),),
-    )
-    if (
-        len(rows) != 1
-        or task.active_solver_by_execution_node
-        or repository.list_solver_runs_in(connection, task.task_id)
-        or repository.list_action_attempts_in(connection, task.task_id)
-        or partition.read_runtime_rows(
-            connection, table="runtime_execution_edges", match=(("task_id", task.task_id),),
-        )
-        # Source-backed task closure needs the source owner and explicit grant.
-        or connection.execute(
-            "SELECT 1 FROM memory_current_records"
-            " WHERE json_extract(record_json, '$.task_id') = ? LIMIT 1",
-            (task.task_id,),
-        ).fetchone() is not None
-    ):
-        raise RuntimeCheckpointError("unsupported_configuration: full task archive closure is unavailable")
-    root = ExecutionNode.model_validate_json(rows[0]["record_json"])
-    if root.linked_artifacts or root.linked_constraints:
-        raise RuntimeCheckpointError("unsupported_configuration: linked archive artifacts require their owner")
+    root = read_source_free_task_root(repository, connection, task)
     checkpoint = TaskLifecycleCheckpoint(
         installation_id=installation_id,
         partition_id=partition_id,

@@ -1916,7 +1916,7 @@
     "memorii/memorii/core/harness_state/sidecar.py": "d6d828a54e21e9415f96a2f6258fd2e37cdb6c08bb1e9af8dc6c7830579d05e2",
     "memorii/memorii/core/memory_evolution/revocation_tombstones.py": "5f0c4b6bff0803f46a551697fdf51fc6246dc69727752531a16aa63ff25ac77c",
     "memorii/memorii/core/persistence/contracts.py": "faa50c7841417b97f40b162b5c2b6e20e7cf6d8e94f8c412975f140ba2420e76",
-    "memorii/memorii/core/persistence/runtime_checkpoint.py": "5b1d6923f65ef9ae0ed52568a0c2c5f3c342a23cf1361ab1c80c506ebdfa414d",
+    "memorii/memorii/core/persistence/runtime_checkpoint.py": "92b635c596fa95b82537444de7388d196c748dc35c6cae36b601b5dba365e129",
     "memorii/memorii/core/persistence/runtime_repository.py": "ebfc9e4141f612fd8004e5eaf30f202a4864c76ee638511f396601fab3312143",
     "memorii/memorii/core/semantic_ingestion/structured_fact_read.py": "c09535515f09db15330412e8fa49b19157b4eb6c21961a131adbbe35595513c4",
     "memorii/memorii/core/storage_administration/operator.py": "a59aed0a41853f8ded1102d75e27ecfa382b97743c91c2bb768d64cd021c99d0",
