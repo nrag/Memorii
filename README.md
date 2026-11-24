@@ -128,6 +128,20 @@ For provider configuration and live execution, see
 consume credentials and are meaningful only when intentionally bound to an
 exact clean revision.
 
+For an initialized managed installation, use the operator CLI to inspect its
+mode and revisions and check its health. Pass the installation root that
+contains `control/`, rather than the SQLite file or the legacy JSONL directory.
+
+```bash
+memorii-operator --installation-root /path/to/installation status
+memorii-operator --installation-root /path/to/installation doctor
+```
+
+Review the `status` of each finding in the `doctor` output. The command can
+print warnings or errors and still exit successfully. Pending outbox entries
+indicate that the runtime has queued work; check for a target receipt before
+treating the work as delivered.
+
 ## Provider Integration Surface
 
 `ProviderMemoryService` is the production-facing composition boundary.

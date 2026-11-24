@@ -1,0 +1,3 @@
+# Resume Durable Delivery
+
+Read the [index](implementation.plan.md), [approval evidence](../durable-delivery-design/evidence.md), [production bindings](production_entrypoint_bindings.md), [validation](validation.md), and [first packet](milestones/durable-intent-and-output.plan.md). The approved design is a51ec4e0 and preflight code is 4c390de1. All packets are proposed. Start with the index's single next action. Preserve existing release planning edits. The approved delivery scope has no unresolved product decision. Runtime environment, live CI and implementation state remain to be established.

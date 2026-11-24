@@ -1,58 +1,59 @@
 # Release Conformance
 
-- Parent WorkPlan: [implementation index](../implementation.plan.md)
-- Work type: implementation milestone packet
-- Delivery fidelity: Level 3, bounded slice only
-- Status: active (sub-slice 2 of the generated chain landed: deterministic OpenAPI schema 99e334e2; package matrix, timing manifests, exact-release gates and CI homes remain)
-- Requirements: DUR-01 through DUR-18 (complete aggregate)
-- Dependencies: all earlier packets
-- Baseline revision: bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8 (planning snapshot)
-- Implementation base: 6f5e38b2; sub-slice head 99e334e2
+- Parent WorkPlan: [durable-memory implementation](../implementation.plan.md)
+- Delivery fidelity: Level 3 first production release
+- Status: active. Closeout plan recorded November 23, 2026. All work below awaits current-candidate evidence.
+- Requirements: DUR-01 through DUR-18, with specific gap allocations below
+- Repository baseline: clean codex/durable-memory-release at 4c390de14d63fd1e13961e77bcca2f6b82f693f5
+- Release candidate: unset until implementation gaps and support decisions close
 
-## Observable Acceptance
+The [durable-memory design](../../../design/durable_execution_and_solver_runtime.md) and [coverage ledger](../coverage.md) govern acceptance. OpenAPI generation landed at 99e334e2, the TypeScript SDK and CI integration jobs landed later, and pinned host container and macOS conformance jobs now exist. The [October 5 semantic-forgetting readiness record](../../semantic-forgetting-implementation/implementation.plan.md#first-release-readiness-statement-confirmed-2026-10-05-12ecb2f4-and-bf63c8bd-full-suite-ci-green) records 58/58 CI jobs on code head 12ecb2f4. Treat that run as historical evidence. Establish current PR #124 head, base, required checks and reviews before binding any evidence to a release candidate. The remote PR state was unavailable during planning.
 
-A clean exact candidate installs on supported Linux/macOS, passes all real-root, process/crash/migration/host/operations families, publishes accurate runbooks/capacity evidence and receives whole-branch approval.
+## Order And Ownership
 
-## Owners, Contracts And Expected Files
+| Work | Owner role | Dependency and exit evidence |
+| --- | --- | --- |
+| Production delivery | Runtime and provider owners | Start here. Installed path delivers both outbox kinds and recovers safely. |
+| Operator workflow | Storage administration and release owners | Start migration and key preparation alongside delivery. Run the packaged workflow once the delivery changes are integrated. |
+| Supported hosts and capacity | Harness and storage owners | Prepare fixtures in parallel. Make support decisions and finish proofs before candidate freeze. |
+| Quickstart and release conformance | Documentation and release owners | Draft against the actual install paths in parallel. Validate the quickstart and sign and qualify artifacts after scope and implementation settle. |
 
-Under memorii/memorii/: CI workflows; package manifests/resources; generated OpenAPI/TS/tool artifacts; tests/ci ownership/timing; runbooks/current docs; all changed production owners.
+These are role assignments. The implementation coordinator assigns people and keeps one writer for overlapping files. The parent index owns the single current next action.
 
-Installed-wheel/sidecar/SDK identities; complete field-aware identity mutations; generated cardinality/byte parity and reference-reducer evidence; static/unit/integration/package/platform/actual-host aggregate; exact SHA/tree/package fingerprints and separate external certification.
+## Production Delivery
 
-Exact new symbols, payload/source-kind schemas, SQL catalogs, entrypoints and generated artifacts must match [identity ledger](../identity-and-changes.md) and approved design; expand the actual inventory before creating additional identifiers. [Bindings](../production_entrypoint_bindings.md) supplies current precursor -> proposed callsite/authority -> proof. Zero proposed callers cannot close this packet.
+The [durable-delivery implementation WorkPlan](../../durable-delivery-implementation/implementation.plan.md) owns this bounded work against approved design SHA a51ec4e0. It supersedes the earlier outbox implementation assumptions and records the existing code paths and verification limits. Status is proposed. Require its signed delivery and older-restore closure before enabling the managed worker and qualifying release. Reference capacity belongs to the same child. This release packet retains installed operator, host support, artifact and release closure obligations.
 
-## Compatibility, Migration, Rollout And Rollback
+## Operator Workflow
 
-Only explicit initialized/selected backend roots serve managed traffic. Preserve original domain APIs unless design declares the version boundary. No generic runtime grant, JSONL fallback, partial publication or speculative semantic truth. Relevant generation changes use exact old/new recovery and current control authority. Failed publication/validation leaves prior verified state; post-new-write downgrade requires tested compatibility or read_only forward repair. Release exposure stays limited until all allocated parent requirements close. Domain-specific obligations are in the contract above and [validation](../validation.md).
+**DUR-08 through DUR-13 and DUR-18.** Reconcile the migration packet against the current CLI and authority paths. Close any missing supported staging, external key/catalog validation and rollback commands. Rehearse installation from the wheel, owner-authorized JSONL adoption and cutover, backup verification and restore into a fresh installation with the current independent control anchor. Prove unchanged canonical history, legacy snapshots retained for rollback, safe pre-write rollback and refusal to return to stale JSONL after new SQLite writes. Verify that revocations and forgetting still apply after restore. Retain the existing crash-cut and all-writer fence tests.
 
-## Exact Validation Commands
+Revalidate the recorded eligibility-epoch item against the current pending-epoch publication code. Close it with a real-path proof that a mode or grant change racing a delivery, write or restart cannot expose stale state. Record the current result instead of carrying the old open label forward.
 
-Cwd memorii/. Interpreter is the CI-selected Python 3.11 or 3.12 environment from [gates](../gates.md), with editable `.[local,dev]` dependencies for local code tests. These **planned** new paths are not present/executed yet; create under linked approved test architecture, never add empty files just to make commands pass.
+The installation owner supplies the approved backup and signing configuration through the existing key owner and release environment. Record the status of backup encryption key rotation and release asset signing separately. Rehearse rotation and restore with disposable keys first. The release evidence records key identifiers, archive compatibility and successful restore across the supported rotation boundary. Keep secret material in the key owner. Production rotation and publication are scheduled owner operations.
+
+## Supported Hosts And Capacity
+
+**DUR-06, DUR-11, DUR-13, DUR-17.** Reuse the existing pinned journeys for OpenClaw, Pi and Hermes. Confirm the final artifact and version for each. Add or confirm the OpenClaw forwarded-input assertion in the real journey. For Hermes, prefer a supported surface that demonstrably sends completed-turn evidence. Certify automatic capture across two turns and restart on that surface. If the pinned primary CLI still omits the callback and no supported alternative passes, obtain an explicit scope decision before advertising automatic capture and make the limitation visible in the support table and quickstart.
+
+Run the design reference workload on Linux and macOS and publish workload sizes, latency percentiles, replay and reopen times, verification acquisition, backup pause and storage growth. Use the existing 200-task test as a regression check. If the full reference workload misses a published budget, optimize and retest or obtain explicit approval for a smaller measured support envelope and update the design and release claims. Record environment, fixture version and artifacts for comparison.
+
+## Quickstart And Release Evidence
+
+**DUR-13, DUR-14 and aggregate closure for DUR-01 through DUR-18.** Update the README with one certified installed harness journey. A new user can install, connect that harness, save a fact, restart and recall it by following the instructions on a clean machine. Document supported versions and surfaces, backup and restore, migration and rollback cutoff, status and diagnostics, and the difference between logical forgetting and physical erasure. Run the instructions verbatim against the release build.
+
+Once the changes above and any owner decisions are closed, freeze the reviewed revision and build the wheel, sidecar distribution and SDK package. Verify generated schema and tool parity and package contents, record artifact hashes and signing evidence, and run installed checks outside the checkout on supported platforms. Bind required CI jobs, host proof, migration and recovery artifacts, capacity measurements and governing live component certification to the exact candidate or explicitly identified execution SHA. Use the current workflow definitions and record run URLs. Complete the fresh spec, correctness and test review of the whole branch, reconcile every requirement and record the empty remaining validated P1/P2 list only after closure. Refresh affected evidence if the candidate changes.
+
+The agent-benefit benchmark and the three endpoint-level forgetting walks retain their recorded post-release deferrals. Existing component certification remains in scope under the [certification policy](../../../development/benchmark_certification.md).
+
+## Verification Anchors
+
+Run from memorii/ with the appropriate CI interpreter and dependencies. These are existing regression anchors. Add the real production delivery and installed journey tests to the applicable enforced gate through the linked testing workflow when implementation begins.
 
 ```bash
-python -W error -m pytest tests/unit/core/test_runtime_release_contract.py -p no:cacheprovider
-python -W error -m pytest tests/integration/test_durable_memory_release_acceptance.py -p no:cacheprovider
-python -m ruff check memorii tests
-python -m memorii.tools.identity_hygiene --root .. --allowlist ../.agents/identity_hygiene_allowlist.json
-pyright --pythonpath "$(python -c 'import sys; print(sys.executable)')"
+python -W error -m pytest tests/unit/core/test_runtime_command_dispatch.py tests/unit/core/test_storage_administration_operator.py tests/unit/core/test_control_format_migration.py -p no:cacheprovider
+python -W error -m pytest tests/integration/test_memory_plane_migration_recovery.py tests/integration/test_measured_capacity_envelope.py -p no:cacheprovider
+python -W error -m pytest tests/integration/hostcompat/test_container_certification_journeys.py -p no:cacheprovider -ra
 ```
 
-Run existing owner regressions mapped in validation.md, then every applicable live-workflow gate once on the coherent candidate (do not replace broad required coverage with these focused commands). Additional same-family tests/files are inventoried before writing. Subprocess/package/host/migration matrices remain in explicit slower tiers. Capture cwd, interpreter/dependency/SQLite versions, warnings, environment, command, exit code, logs, exact base/head and dirty-tree status. Required external/OS cases cannot be inferred from local success.
-
-## Proof, Maturity And Completion
-
-Acceptance requires the observable journey plus applicable positive/negative/boundary/retry/concurrency/crash/revocation/compatibility cases in validation.md. Failures must be asserted at real public roots, with no leaked data or partial durable state. Evidence target: implemented and locally verified for the bounded slice; CI-enforced only with actual run evidence, independently reproduced only for a separately authored reducer, operationally verified only for pinned real host/platform/restore journeys. Present maturity: specified only; historical design probes remain separate.
-
-At candidate freeze update live diff, identities, generated authority descendants, root callsites/arguments/caller counts and gates; run spec/correctness/test reviewers once for the coherent milestone. Reconcile all findings before sole-writer remediation. Record exact revision and `remaining_validated_p1_p2: []` only after proof, never prefill it. Any required missing external proof keeps that acceptance open. Parent requirements remain partial until [coverage](../coverage.md) aggregates all allocated packets and release gates.
-
-## Non-Goals
-
-No weakening policies/thresholds/coverage to pass. Fake-oracle is plumbing only. Existing component live certification stays separately required under governing policy; comparative agent-benefit/publication planning remains deferred.
-
-## Progress, Review And Closure
-
-Sub-slice 1 (2026-09-30, commit 6f5e38b2): compatibility protocol fixtures closed in the additional-harnesses packet (spec 22.2 obligation). Sub-slice 2 (2026-09-30, commit 99e334e2): memorii-runtime-schema — the deterministic OpenAPI 3.1 document for the runtime sidecar derived from the owning typed models (SidecarRequest/HarnessStateEnvelope/SidecarError), closed schemas, loopback-only server, bearer security, byte-stable sorted output for digest pinning; registered entry point; tests green.
-
-Remaining in this packet: TypeScript SDK (external prerequisite: Node/npm pin from the owner); CI homes for the integration suites and new gates (linked testing WorkPlan owns the workflow edits); shard timing-manifest refresh; installed-package matrix (wheel outside checkout, both OSes); Linux/macOS platform evidence; exact-release gate aggregation and revision-bound approval evidence; final whole-branch review.
-
-Not started. No production/test edits, validation execution or implementation review exists for this packet. No implementation base/head or approval is claimed. The index owns the single global next action.
+Check that the native-host journeys actually ran. A skip does not qualify an advertised host. Use the [gate ledger](../gates.md) and current workflows for full deterministic and installed checks. Record evidence separately for implemented, locally verified, CI enforced and operationally verified paths.
