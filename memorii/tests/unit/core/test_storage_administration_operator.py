@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -103,6 +104,16 @@ def test_cli_stages_a_reviewed_restore_with_an_owner_only_key(
         assert main([*cli, "restore-verify-stage", "--plan-file", str(plan), "--staging-root", str(staging)]) == 0
         attestation = json.loads(capsys.readouterr().out)
         assert attestation["plan_digest"] == json.loads(plan.read_bytes())["plan_digest"]
+        preview_cli = [*cli, "restore-preview-stage", "--plan-file", str(plan), "--staging-root", str(staging)]
+        assert main(preview_cli) == 0
+        preview = json.loads(capsys.readouterr().out)
+        assert preview["live_publication_digest"] == preview["staged_publication_digest"]
+        assert preview["plan_digest"] == attestation["plan_digest"]
+        assert preview["target_receipts"] == {"identical": 0, "live_only": 0, "staged_only": 0, "changed": 0}
+        denied = [*preview_cli]
+        denied[denied.index("--capability-digest") + 1] = "0" * 64
+        assert main(denied) == 3
+        assert "denied" in capsys.readouterr().err
         assert service.acquire_verified_snapshot() == before
         retained = service.partition()
         activate = [*cli, "restore-activate-current", "--plan-file", str(plan), "--staging-root", str(staging)]
@@ -506,6 +517,76 @@ def test_restore_planning_detects_data_only_watermark_change(tmp_path: Path) -> 
                 capability=capability, plan=renewed, staging_root=staging,
             )
         assert service.acquire_verified_snapshot() == live
+    finally:
+        service.close()
+
+
+def test_older_restore_preview_compares_exact_signed_receipt_and_outbox_rows(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    from memorii.core.persistence.runtime_api import RuntimeOutboxDelivery
+    from memorii.core.persistence.runtime_contracts import RuntimeCommandReceipt
+    from memorii.core.persistence.runtime_repository import RuntimeStateRepository
+    from memorii.core.storage_administration.operator_backup import BackupRestoreOperator, RestoreInventoryDelta
+    from memorii.tools.runtime_operator import main
+
+    operator, service, capability = _fenced_operator(tmp_path)
+    try:
+        backups = BackupRestoreOperator(operator)
+        initial = RuntimeCommandReceipt(
+            operation_id="old-operation", client_namespace="harness", request_digest="a" * 64,
+            base_revision=0, current_revision=1, status="committed", result_digest="a" * 64,
+        )
+        accepted = RuntimeCommandReceipt(
+            operation_id="new-operation", client_namespace="harness", request_digest="b" * 64,
+            base_revision=1, current_revision=2, status="committed", result_digest="c" * 64,
+        )
+        delivery = RuntimeOutboxDelivery(
+            delivery_id="old-delivery", origin_operation_id=initial.operation_id, kind="work_projection",
+            target_protocol="local", payload_digest="d" * 64, fence_token=1,
+        )
+
+        def publish(rows: tuple[RuntimeCommandReceipt, ...], queued: RuntimeOutboxDelivery) -> None:
+            def apply(connection: sqlite3.Connection, repository: RuntimeStateRepository) -> None:
+                for receipt in rows:
+                    repository.apply_command_receipt(connection, receipt)
+                repository.apply_outbox_row(connection, queued)
+
+            publish_runtime_change(service, apply, operation_binding="migrate")
+
+        publish((initial,), delivery)
+        archive, stage = tmp_path / "archive", tmp_path / "stage"
+        key = b"k" * 32
+        manifest = backups.create_backup(
+            capability=capability, archive_root=archive, reason="compare signed receipts", recovery_key=key,
+        )
+        publish((accepted,), delivery.model_copy(update={"fence_token": 2}))
+        plan = backups.plan_restore(capability=capability, archive_root=archive, data_loss_acknowledged=True)
+        backups.apply_restore(capability=capability, plan=plan, staging_root=stage, recovery_key=key)
+        before = service.acquire_verified_snapshot()
+        before_stage = {entry.name: entry.read_bytes() for entry in stage.iterdir() if entry.is_file()}
+        preview = backups.preview_staged_restore(capability=capability, plan=plan, staging_root=stage)
+        assert preview.plan_digest == plan.plan_digest
+        assert preview.live_publication_digest == before.tuple_digest
+        assert preview.staged_publication_digest == manifest.publication_digest
+        assert preview.command_receipts == RestoreInventoryDelta(identical=1, live_only=1, staged_only=0, changed=0)
+        assert preview.outbox_deliveries == RestoreInventoryDelta(identical=0, live_only=0, staged_only=0, changed=1)
+        assert service.acquire_verified_snapshot() == before
+        assert {entry.name: entry.read_bytes() for entry in stage.iterdir() if entry.is_file()} == before_stage
+        publish((), delivery.model_copy(update={"fence_token": 3}))
+        with pytest.raises(OperatorError, match="live restore watermark changed"):
+            backups.preview_staged_restore(capability=capability, plan=plan, staging_root=stage)
+        service._quarantine_state("partition rows do not match the signed materialization manifest")
+        plan_file = tmp_path / "plan.json"
+        plan_file.write_text(plan.model_dump_json())
+        assert main([
+            "--installation-root", str(service.installation_root),
+            "--owner-principal", capability.owner_principal, "--capability-digest", capability.capability_digest,
+            "backup", "restore-preview-stage", "--plan-file", str(plan_file), "--staging-root", str(stage),
+        ]) == 3
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "live restore watermark could not be verified" in captured.err
     finally:
         service.close()
 

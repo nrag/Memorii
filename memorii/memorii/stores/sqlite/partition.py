@@ -674,6 +674,23 @@ class PartitionDataRepository:
         return PartitionDataRepository.read_schema_version(connection) >= _RUNTIME_SOURCE_RELEASE_SCHEMA_VERSION
 
     @staticmethod
+    def restore_inventory_rows(
+        connection: sqlite3.Connection, catalog: str,
+    ) -> Iterator[tuple[tuple[str, ...], str]]:
+        """Stream the exact signed receipt and queue records for owner restore review."""
+        if catalog not in (
+            "runtime_command_receipts", "runtime_target_receipts",
+            "runtime_outbox_deliveries", "writeback_decisions",
+        ):
+            raise ValueError("unsupported restore inventory catalog")
+        version = PartitionDataRepository.read_schema_version(connection)
+        if catalog not in {name for name, _, _ in _MATERIALIZATION_CATALOGS_BY_VERSION[version]}:
+            return
+        columns = ", ".join(f"{name} COLLATE BINARY" for name in _RUNTIME_ROW_LAYOUTS[catalog][0])
+        for row in connection.execute(f"SELECT {columns}, record_json FROM {catalog} ORDER BY {columns}"):
+            yield tuple(row[:-1]), row[-1]
+
+    @staticmethod
     def _runtime_row_layouts(connection: sqlite3.Connection) -> Iterator[tuple[str, tuple[tuple[str, ...], tuple[str, ...]]]]:
         yield from _RUNTIME_ROW_LAYOUTS.items()
         if PartitionDataRepository.supports_runtime_source_release(connection):

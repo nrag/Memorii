@@ -19,6 +19,7 @@ import shutil
 import sqlite3
 import tempfile
 import time
+from collections.abc import Iterator
 from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,7 +48,7 @@ from memorii.core.storage_administration.operator import (
     StorageAdministrationOperator,
     require_owner_capability,
 )
-from memorii.core.storage_administration.service import StorageAdministrationService
+from memorii.core.storage_administration.service import StorageAdministrationError, StorageAdministrationService
 from memorii.stores.sqlite.control import ControlDatabase, ControlJournalChainError
 from memorii.stores.sqlite.partition import PartitionDataRepository
 
@@ -156,6 +157,52 @@ class RestoreStagingAttestation(BaseModel):
         return _canonical_digest(payload)
 
 
+class RestoreInventoryDelta(BaseModel):
+    identical: int = Field(ge=0)
+    live_only: int = Field(ge=0)
+    staged_only: int = Field(ge=0)
+    changed: int = Field(ge=0)
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class RestoreStagePreview(BaseModel):
+    """Evidence about verified catalog differences for the owner's review."""
+
+    plan_digest: _Digest
+    attestation_digest: _Digest
+    live_publication_digest: _Digest
+    staged_publication_digest: _Digest
+    command_receipts: RestoreInventoryDelta
+    target_receipts: RestoreInventoryDelta
+    outbox_deliveries: RestoreInventoryDelta
+    writeback_decisions: RestoreInventoryDelta
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+def _restore_inventory_delta(
+    live: Iterator[tuple[tuple[str, ...], str]], staged: Iterator[tuple[tuple[str, ...], str]],
+) -> RestoreInventoryDelta:
+    identical = live_only = staged_only = changed = 0
+    current, restored = next(live, None), next(staged, None)
+    while current is not None or restored is not None:
+        if current is not None and (restored is None or current[0] < restored[0]):
+            live_only += 1
+            current = next(live, None)
+        elif restored is not None and (current is None or restored[0] < current[0]):
+            staged_only += 1
+            restored = next(staged, None)
+        else:
+            assert current is not None and restored is not None
+            if current[1] == restored[1]:
+                identical += 1
+            else:
+                changed += 1
+            current, restored = next(live, None), next(staged, None)
+    return RestoreInventoryDelta(identical=identical, live_only=live_only, staged_only=staged_only, changed=changed)
+
+
 def _canonical_digest(value: object) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
@@ -179,6 +226,17 @@ def _snapshot_digest(path: Path) -> str:
     if path.is_symlink() or not path.is_file():
         raise OperatorError("integrity_error: staged SQLite snapshot must be a regular file")
     return _sha256_file(path)
+
+
+def _copy_attested_partition(source: Path, target: Path, expected_digest: str) -> None:
+    """Copy only the immutable SQLite bytes named by the attestation."""
+    with source.open("rb") as original, target.open("xb") as clone:
+        os.fchmod(clone.fileno(), 0o600)
+        shutil.copyfileobj(original, clone, length=_CHUNK)
+        clone.flush()
+        os.fsync(clone.fileno())
+    if _snapshot_digest(target) != expected_digest:
+        raise OperatorError("integrity_error: restore partition changed during copy")
 
 
 def _suppression_snapshot_digest(directory: Path) -> str:
@@ -628,12 +686,57 @@ class BackupRestoreOperator:
                 raise OperatorError("integrity_error: staged restore bytes differ from the attestation")
             with service.verified_operation_context() as (state, finalized):
                 self._require_restore_watermark(service, plan, state, finalized)
-                live_suppressions = service.installation_root / "control" / "suppressions"
-                if _suppression_snapshot_digest(live_suppressions) != attestation.suppression_snapshot_digest:
-                    raise OperatorError("conflict: live suppression watermark changed after staging")
+                self._require_staging_suppression(service, attestation)
+        except StorageAdministrationError as exc:
+            raise OperatorError(f"unavailable: live restore watermark could not be verified: {exc}") from exc
         except (OSError, ValidationError) as exc:
             raise OperatorError("integrity_error: restore staging evidence could not be verified") from exc
         return attestation
+
+    def preview_staged_restore(
+        self, *, capability: OwnerCapability, plan: RestorePlan, staging_root: Path,
+    ) -> RestoreStagePreview:
+        """Compare attested staging and current catalogs without changing either."""
+        service = self._operator._administration
+        attestation = self.verify_staged_restore(capability=capability, plan=plan, staging_root=staging_root)
+        try:
+            with tempfile.TemporaryDirectory(prefix="memorii-restore-preview-") as scratch:
+                snapshot = Path(scratch) / "partition.sqlite3"
+                _copy_attested_partition(
+                    staging_root / "partition.sqlite3", snapshot, attestation.partition_snapshot_digest,
+                )
+                uri = snapshot.as_uri() + "?mode=ro&immutable=1"
+                with service.verified_operation_context() as (state, finalized):
+                    require_owner_capability(service, capability)
+                    self._require_restore_watermark(service, plan, state, finalized)
+                    self._require_staging_suppression(service, attestation)
+                    deltas = self._preview_inventory(service, uri)
+        except StorageAdministrationError as exc:
+            raise OperatorError(f"unavailable: live restore watermark could not be verified: {exc}") from exc
+        except (OSError, sqlite3.DatabaseError) as exc:
+            raise OperatorError("integrity_error: restore preview inventory could not be read") from exc
+        return RestoreStagePreview(
+            plan_digest=plan.plan_digest,
+            attestation_digest=attestation.unsigned_digest(),
+            live_publication_digest=finalized.payload_digest(),
+            staged_publication_digest=attestation.source_publication.payload_digest(),
+            command_receipts=deltas["runtime_command_receipts"],
+            target_receipts=deltas["runtime_target_receipts"],
+            outbox_deliveries=deltas["runtime_outbox_deliveries"],
+            writeback_decisions=deltas["writeback_decisions"],
+        )
+
+    @staticmethod
+    def _preview_inventory(service: StorageAdministrationService, uri: str) -> dict[str, RestoreInventoryDelta]:
+        with closing(sqlite3.connect(uri, uri=True)) as staged, service.partition().transaction(write=False) as live:
+            rows = PartitionDataRepository.restore_inventory_rows
+            return {
+                name: _restore_inventory_delta(rows(live, name), rows(staged, name))
+                for name in (
+                    "runtime_command_receipts", "runtime_target_receipts",
+                    "runtime_outbox_deliveries", "writeback_decisions",
+                )
+            }
 
     def activate_exact_current_restore(
         self, *, capability: OwnerCapability, plan: RestorePlan, staging_root: Path,
@@ -651,21 +754,16 @@ class BackupRestoreOperator:
         generations.mkdir(mode=0o700, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix=".exact-current-restore-", dir=generations) as scratch:
             staged_copy = Path(scratch) / "partition.sqlite3"
-            with (staging_root / "partition.sqlite3").open("rb") as original, staged_copy.open("xb") as clone:
-                os.fchmod(clone.fileno(), 0o600)
-                shutil.copyfileobj(original, clone, length=_CHUNK)
-                clone.flush()
-                os.fsync(clone.fileno())
-            if _snapshot_digest(staged_copy) != attestation.partition_snapshot_digest:
-                raise OperatorError("integrity_error: restore partition changed during selection preparation")
+            _copy_attested_partition(
+                staging_root / "partition.sqlite3", staged_copy, attestation.partition_snapshot_digest,
+            )
 
             with service.verified_operation_context() as (state, finalized):
                 require_owner_capability(service, capability)
                 self._require_restore_watermark(service, plan, state, finalized)
-                if source != finalized or _suppression_snapshot_digest(
-                    service.installation_root / "control" / "suppressions",
-                ) != attestation.suppression_snapshot_digest:
+                if source != finalized:
                     raise OperatorError("conflict: restore selection no longer matches the live watermark")
+                self._require_staging_suppression(service, attestation)
                 target = generations / finalized.data_generation_id
                 unsigned = PartitionGenerationSelector(
                     installation_id=finalized.installation_id, repository_id=finalized.repository_id,
@@ -694,6 +792,14 @@ class BackupRestoreOperator:
                     )
                     _sync_directory(service.installation_root / "control")
                     return selector
+
+    @staticmethod
+    def _require_staging_suppression(
+        service: StorageAdministrationService, attestation: RestoreStagingAttestation,
+    ) -> None:
+        live_suppressions = service.installation_root / "control" / "suppressions"
+        if _suppression_snapshot_digest(live_suppressions) != attestation.suppression_snapshot_digest:
+            raise OperatorError("conflict: live suppression watermark changed after staging")
 
     @staticmethod
     def _require_restore_watermark(
