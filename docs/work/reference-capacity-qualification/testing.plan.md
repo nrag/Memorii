@@ -36,7 +36,7 @@ The formal driver starts every acquisition sample from a fresh fixture copy in a
 - GitHub repository runner inventory returned zero registered runners on 2026-11-24. The dedicated-idle variable was absent. The workflow lookup returned 404 and the repository's default branch `main` did not contain its workflow file. No qualification job was dispatched.
 - The former workflow would have measured v7 because the fixture began from default initialization. The branch now passes the staged-format option to preflight, fixture preparation and every timed qualification. The fixture reopens after cutover and creates generation-bound source receipts and a checkpoint in the selected generation.
 - Format numbers remain persisted schema identities. `--raw-payloads` reuses the existing owner CLI terminology and applies only to these test-driver invocations.
-- The 28 focused fixture, driver, upgrade, and capacity regression tests passed locally. An independent correctness reviewer found no validated P1/P2 in the format wiring. The formal run was unavailable and remains unverified.
+- The 28 focused fixture, driver, upgrade, and capacity regression tests passed locally and again from an isolated installation of `9d3436378321719a650329bb26165ac65c6d7e60`. The driver matched the installed inventory to wheel SHA-256 `25b040fa8a570ce7247dfcd7e24562c6e6b0bea9ec15e672e83ed64861f83b65`. Scoped Ruff, Pyright, and repository identity checks passed. An independent correctness reviewer found no validated P1/P2 in the format wiring. The formal run was unavailable and remains unverified.
 
 ## Blockers And Next Action
 
