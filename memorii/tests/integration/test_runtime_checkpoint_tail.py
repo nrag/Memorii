@@ -20,6 +20,11 @@ from memorii.core.persistence.runtime_api import RuntimeCommandService
 from memorii.core.persistence.runtime_contracts import HypothesisContent, RuntimeCommandRequest, SolverRunRecord
 from memorii.core.persistence.runtime_repository import RuntimeStateRepository, publish_runtime_change
 from memorii.core.storage_administration.service import StorageAdministrationService
+from memorii.core.storage_administration.suppression_journal import (
+    SuppressionCoordinate,
+    SuppressionRecord,
+    write_suppression_record,
+)
 from memorii.domain.enums import CommitStatus, ExecutionNodeStatus, ExecutionNodeType, MemoryDomain
 from memorii.domain.execution_graph.nodes import ExecutionNode
 
@@ -107,6 +112,12 @@ def test_selected_checkpoint_skips_its_prefix_and_releases_the_same_tail_state(
         assert envelope.checkpoint_ref == digest
         assert envelope.goal == "Tail goal"
         assert envelope.solver_id == "solver:checkpoint"
+        resumed = ports.resume_bound_state(principal="host")
+        assert resumed.checkpoint_ref == digest
+        assert resumed.goal == "Tail goal"
+        assert resumed.solver_id == "solver:checkpoint"
+        assert replayed == [4, 1, 2, 3, 4, 4]
+        assert reopened.acquire_verified_snapshot() == expected
 
         credentials = SidecarCredentialStore(root / "control" / "credentials")
         _, secret = credentials.issue("host")
@@ -152,6 +163,19 @@ def test_selected_checkpoint_skips_its_prefix_and_releases_the_same_tail_state(
         )
         with pytest.raises(HarnessStateError, match="stale_cursor"):
             ports.read_bound_state(principal="host", cursor=old_cursor)
+
+        write_suppression_record(root / "control", SuppressionRecord(
+            suppression_id="d" * 64, plan_digest="a" * 64, closure_digest="b" * 64,
+            scope_note="suppress the restored task", applied_at_unix=1,
+            suppressed=(SuppressionCoordinate(coordinate_kind="task", coordinate_id=task_id),),
+        ))
+        with pytest.raises(HarnessStateError, match="denied"):
+            ports.resume_bound_state(principal="host")
+        status, raw = sidecar.handle_state_request(
+            bearer_token=secret, origin=None, body=json.dumps({"task_id": task_id}).encode(),
+        )
+        assert status == 403
+        assert b"Tail goal" not in raw
 
 
 @pytest.mark.parametrize("damage", ["member", "index", "anchor", "tail"])

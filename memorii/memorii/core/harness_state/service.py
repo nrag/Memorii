@@ -105,6 +105,8 @@ class HarnessStateService:
         if not grant.authorizes(task_id, now=moment):
             # Denial before lookup: no task-existence disclosure.
             raise HarnessStateError("denied: read grant does not authorize this task")
+        if installation_binding is not None and self._revoked_view is not None and self._revoked_view.is_revoked_task(task_id):
+            raise HarnessStateError("denied: read grant does not authorize this task")
         # One consistent snapshot: every read runs in a single partition
         # read transaction so no field mixes revisions.
         partition = self._repository.partition

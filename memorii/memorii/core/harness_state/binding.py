@@ -26,6 +26,7 @@ from memorii.core.harness_state.service import (
     HarnessStateService,
     RuntimeReadGrant,
 )
+from memorii.core.persistence.runtime_journal import RuntimeJournalError, verify_runtime_history
 from memorii.core.persistence.runtime_repository import RuntimeStateRepository
 from memorii.core.storage_administration.revoked_identity_view import RefreshingRevokedIdentityView
 from memorii.core.storage_administration.service import (
@@ -109,6 +110,20 @@ class HermesRuntimeStatePorts:
         now: Callable[[], datetime] | None = None,
         cursor: str | None = None,
     ) -> HarnessStateEnvelope:
+        return self._read_bound_state(principal=principal, now=now, cursor=cursor, require_checkpoint=False)
+
+    def resume_bound_state(self, *, principal: str) -> HarnessStateEnvelope:
+        """Verify the sealed replay boundary and return current bounded task state."""
+        return self._read_bound_state(principal=principal, now=None, cursor=None, require_checkpoint=True)
+
+    def _read_bound_state(
+        self,
+        *,
+        principal: str,
+        now: Callable[[], datetime] | None,
+        cursor: str | None,
+        require_checkpoint: bool,
+    ) -> HarnessStateEnvelope:
         binding = self._bindings.get(principal)
         if binding is None:
             raise HarnessStateError("denied: no runtime task binding for principal")
@@ -121,19 +136,34 @@ class HermesRuntimeStatePorts:
             expires_at=moment + self._grant_ttl,
         )
         try:
-            with self._administration.verified_operation_context() as (state, finalized):
+            administration = self._administration
+            with administration.verified_operation_context() as (state, finalized):
                 if state.mode == "bypass":
                     raise HarnessStateError("unavailable: installation is in bypass mode")
+                if require_checkpoint:
+                    if finalized.checkpoint_digest is None:
+                        raise HarnessStateError("unavailable: a signed runtime checkpoint has not been published")
+                    with administration.partition().transaction(write=False) as connection:
+                        signer = administration._signer_key_id
+                        verify_runtime_history(
+                            connection, finalized=finalized,
+                            verify=lambda purpose, digest, signature: administration._verify_journal_signature(
+                                signer, purpose, digest, signature,
+                            ),
+                            checkpoint_signer_key_id=signer,
+                            checkpoint_signer_fingerprint=administration._signing.public_key_fingerprint(signer),
+                        )
                 return self._service.read_state(
                     task_id=binding.installation_task_id, grant=grant, now=moment,
                     cursor=cursor, checkpoint_ref=finalized.checkpoint_digest,
+                    view="history" if require_checkpoint else "summary",
                     installation_binding=(
                         finalized.data_generation_id, state.eligibility_epoch + state.pending_epoch_increments,
                     ),
                 )
         except HarnessCursorError as exc:
             raise HarnessStateError(str(exc)) from exc
-        except InstallationIntegrityError as exc:
+        except (InstallationIntegrityError, RuntimeJournalError) as exc:
             raise HarnessStateError("integrity_error: managed runtime state could not be verified") from exc
         except StorageAdministrationError as exc:
             raise HarnessStateError("unavailable: reopen the managed runtime state port") from exc

@@ -1912,7 +1912,7 @@
     "docs/work/semantic-forgetting-implementation/implementation.plan.md": "0729684ba4983b31c2b4ba7bb37c519d0a0ed69ac835cd6965ce654e0e5b8c73",
     "docs/design/durable_execution_and_solver_runtime.md": "a51ec4e02a62b05a5b28dc2afed146263a56b125ac2bae8f9abbaf22cbb4f9f2",
     "docs/design/semantic_forgetting.md": "f75f7b80f6a019839c0450a2c0497722cb49ceeaf780c5599a77e99fb5503889",
-    "memorii/memorii/core/harness_state/service.py": "ee717c9d25652c4a864e75320f8eea50654a160203f4bf87f3427b04b9c959b4",
+    "memorii/memorii/core/harness_state/service.py": "fbf9205a8ddd00310c6ca51d60641c43fcb4e93b4d2e8467fd2d7169e22279a5",
     "memorii/memorii/core/harness_state/sidecar.py": "fdb5af54c8aeee07f313432116320ee43df00a9ad904431afede7b9206b66191",
     "memorii/memorii/core/memory_evolution/revocation_tombstones.py": "5f0c4b6bff0803f46a551697fdf51fc6246dc69727752531a16aa63ff25ac77c",
     "memorii/memorii/core/persistence/contracts.py": "8d93cb730267b1752f59195e29607c65ae7285c226bcdcc18832b65fac784aa1",
