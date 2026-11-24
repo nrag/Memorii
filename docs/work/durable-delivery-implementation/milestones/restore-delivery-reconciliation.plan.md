@@ -34,4 +34,4 @@ Use the approved design and existing semantic owners. Keep unsupported roots vis
 
 ## Progress And Review
 
-Proposed. No product edits, tests or milestone approvals recorded.
+The authenticated origin path refuses cross-generation reuse. Independent review replayed an already accepted proof after an older empty backup booted into its old generation. To prevent that exposure, direct fresh boot now refuses every managed-capable partition, including an empty backup. The encrypted backup, planning and staging journey remains available. Legacy schema v1 direct boot still passes and cannot mint managed proofs. Signed staged-generation activation, durable hold evidence, owner reconciliation and legacy queue migration remain open.

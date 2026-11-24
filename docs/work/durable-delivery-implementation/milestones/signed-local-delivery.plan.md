@@ -34,4 +34,6 @@ Use the approved design and existing semantic owners. Keep unsupported roots vis
 
 ## Progress And Review
 
-Proposed. No product edits, tests or milestone approvals recorded.
+494508d3 records an authorization-bound work projection at managed pause and exercises the registered target through a transactional claim, effect, receipt, terminal queue state and idempotent retry in a real managed installation. The provider staging validator checks exact acceptance selectors and current source closure and produces inert candidate records. Candidate publication, protected skill storage, managed projection read composition, legacy conversion and installed polling remain open. Polling stays behind the activation gate.
+
+Independent review reproduced lease reuse after owner pause and resume. Claim and recovery now check the control revision and eligibility epoch. Task suppression is rechecked during claim and publication, and terminal receipt retry requires the exact completed claim.

@@ -34,4 +34,6 @@ Use the approved design and existing semantic owners. Keep unsupported roots vis
 
 ## Progress And Review
 
-Proposed. No product edits, tests or milestone approvals recorded.
+494508d3 wires the scoped result reader to installed managed sidecar composition, exact offer selectors, signed archive verification, authorization and suppression checks, and bound paging. The Python and TypeScript clients expose the reader. Current results can be read by an authorized host. The signed decision prepare and submit operations and transactional acceptance and enqueue remain open. The packet has no milestone approval.
+
+Review found an exception escaping the HTTP results envelope when the snapshot could not be acquired. The read route now maps storage and integrity failures to the existing closed response codes.

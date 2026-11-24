@@ -34,4 +34,4 @@ Use the approved design and existing semantic owners. Keep unsupported roots vis
 
 ## Progress And Review
 
-Proposed. No product edits, tests or milestone approvals recorded.
+The reference input generator defines the two deterministic workload distributions and sample coordinates. Focused tests cover counts, repeatability and bounded source body generation. The installed fixture loader, timed runner and Linux and macOS qualification artifacts remain open. The existing smaller measured integration test stays a regression.

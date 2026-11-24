@@ -34,4 +34,4 @@ Use Python environment matching each workflow job. New dependencies or changed C
 
 ## Next Action
 
-Run the first-slice origin tests and the existing dispatch, consumer and sidecar regression anchors after the worker returns.
+Add committed-and-reopened replay assertions for the complete runtime event batches through the managed publication path.
