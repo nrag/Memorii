@@ -24,11 +24,11 @@ DUR-01/02/03/05/06/07/08/10/11/12/13/14/17 apply in the slices below. Parent cla
 
 | Packet | Observable result | Depends on | Status |
 | --- | --- | --- | --- |
-| [Durable intent and output](milestones/durable-intent-and-output.plan.md) | New operations carry authenticated fixed origin across ingress and produce sealed outputs that survive restart | refreshed binding, registry and test preflight | Partial. Signed SQLite replay and bounded source-backed lifecycle verified |
+| [Durable intent and output](milestones/durable-intent-and-output.plan.md) | New operations carry authenticated fixed origin across ingress and produce sealed outputs that survive restart | refreshed binding, registry and test preflight | Partial. Signed checkpoint-tail acquisition and installed bounded resume verified |
 | [Host result and decision](milestones/host-result-and-decision.plan.md) | Authorized host reads an offer after restart and explicitly accepts or declines it | durable intent and output | Partial. Signed decision verified with a native Hermes episodic source |
 | [Signed local delivery](milestones/signed-local-delivery.plan.md) | Installed worker publishes a target effect, receipt and terminal delivery together | host result and decision for implementation, see activation gate below | Partial. Enrolled workers and embedded projection recall verified |
-| [Restore delivery reconciliation](milestones/restore-delivery-reconciliation.plan.md) | Old generations cannot resend uncertain effects or rebind old commands | durable intent and output, exercise worker from signed local delivery | Active. Exact-current selection and owner inventory preview verified |
-| [Reference capacity](milestones/reference-capacity.plan.md) | Same frozen fixture and procedure produce comparable Linux and macOS gate results | fixture/tool preparation can start early, timed acceptance requires the reviewed implementation | Partial. Installed diagnostic loader |
+| [Restore delivery reconciliation](milestones/restore-delivery-reconciliation.plan.md) | Old generations cannot resend uncertain effects or rebind old commands | durable intent and output, exercise worker from signed local delivery | Partial. Signed cutover, legacy conversion and owner rejection verified |
+| [Reference capacity](milestones/reference-capacity.plan.md) | Same frozen fixture and procedure produce comparable Linux and macOS gate results | fixture/tool preparation can start early, timed acceptance requires the reviewed implementation | Active. Installed fixture and driver verified at diagnostic scale. Dedicated runners unavailable |
 
 **Activation gate.** Keep the managed worker disabled outside the bounded test root until signed delivery and restore reconciliation both pass, including the legacy upgrade and current authority tests. This gate controls rollout. The delivery implementation has no dependency on completed rollout. The capacity fixture can be prepared in parallel with delivery, without overlapping writer files. The parent still owns signing, platform and host certification, quickstart and release decisions.
 
@@ -44,4 +44,4 @@ Implementation branch `codex/durable-delivery-implementation` is published to or
 
 ## Next Action
 
-Wire the authenticated generation-change intent and replay ancestry into the restore owner before enabling installed delivery polling.
+Implement the incremental manifest accumulator required by the reference-scale command budget.

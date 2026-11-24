@@ -25,14 +25,19 @@ def test_signed_fixture_retains_sources_and_exact_graph_counts(tmp_path: Path) -
     assert first.partition_tuple_digest != second.partition_tuple_digest
     assert first.graph_digest == second.graph_digest
     assert first.sources_digest == second.sources_digest
-    assert first.event_inventory_digest == second.event_inventory_digest
+    assert first.source_receipts_digest == second.source_receipts_digest
+    assert first.event_inventory_digest != second.event_inventory_digest
     assert (first.source_count, first.source_body_bytes) == (2, 2 * SOURCE_BODY_BYTES)
+    assert first.source_receipt_count == 2
     assert first.graph_row_counts == {
         "runtime_tasks": 1, "runtime_execution_nodes": 3, "runtime_execution_edges": 2,
         "runtime_solver_runs": 1, "runtime_solver_nodes": 9, "runtime_solver_edges": 2,
         "runtime_overlay_versions": 1,
     }
-    assert first.runtime_event_count == sum(first.graph_row_counts.values()) == 19
+    assert sum(first.graph_row_counts.values()) == 19
+    assert first.runtime_event_count == 25
+    assert first.checkpoint_digest is None
+    assert first.checkpoint_tail_count == 0
     assert first.qualification_blockers
 
 
@@ -53,25 +58,27 @@ def test_solver_edge_owner_refuses_an_endpoint_outside_the_run(tmp_path: Path) -
         assert service.acquire_verified_snapshot() == before
 
 
-def test_fill_keeps_ordered_updates_before_the_unavailable_checkpoint(
+def test_full_fixture_seals_boundary_and_replays_exact_single_event_tail(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("tests.support.reference_capacity_fixture.EVENT_COUNT", 23)
+    monkeypatch.setattr("tests.support.reference_capacity_fixture.EVENT_COUNT", 29)
     monkeypatch.setattr("tests.support.reference_capacity_fixture.CHECKPOINT_TAIL_COUNT", 2)
 
     def planned_fill(mandatory_count: int) -> list[EventFillInput]:
-        assert mandatory_count == 19
+        assert mandatory_count == 25
         return [
             EventFillInput(
                 ordinal=ordinal, task_id=_TASK.task_id, timestamp=FIXTURE_START + timedelta(seconds=ordinal),
-                kind="status_update", checkpoint_tail=ordinal >= 21,
-            ) for ordinal in range(19, 23)
+                kind="status_update", checkpoint_tail=ordinal >= 27,
+            ) for ordinal in range(25, 29)
         ]
 
     audit = _prepare(tmp_path / "fixture", "balanced", (_TASK,), fill=planned_fill)
-    assert audit.runtime_event_count == 21
-    assert audit.runtime_event_batch_count == 3
-    assert audit.runtime_operation_counts["runtime_execution_nodes/execution/node/update"] == 2
+    assert audit.runtime_event_count == 29
+    assert audit.runtime_event_batch_count == 8
+    assert audit.runtime_operation_counts["runtime_execution_nodes/execution/node/update"] == 4
+    assert audit.checkpoint_digest
+    assert audit.checkpoint_tail_count == 2
     assert "runtime_checkpoints" not in audit.graph_row_counts
 
 
@@ -83,7 +90,5 @@ def test_qualification_preflight_exposes_missing_owner_paths_without_writing(
     assert not root.exists()
     assert json.loads(capsys.readouterr().err) == {
         "status": "unavailable",
-        "blockers": [
-            "native_source_admission_receipt_bridge_unavailable", "validated_checkpoint_tail_unavailable",
-        ],
+        "blockers": ["timed_reference_workload_not_measured"],
     }

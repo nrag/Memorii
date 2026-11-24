@@ -3,9 +3,9 @@
 Run the engineering module from a driver directory containing tests/support
 and an interpreter with the candidate wheel installed. The driver directory
 must not also expose the source checkout's memorii package.
-Transcript bodies use the signed memory-plane publication owner. The current
-candidate has no native capture-to-runtime receipt bridge or full checkpoint
-tail verifier, so this artifact is explicitly ineligible for timed qualification.
+Transcript bodies go through the native source owner and signed managed
+observation. Full fixture preparation also seals the approved checkpoint
+and tail. Timed qualification requires both named runner profiles.
 """
 
 from __future__ import annotations
@@ -20,23 +20,28 @@ from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import asdict, dataclass
 from datetime import timedelta
 from importlib.metadata import distribution as installed_distribution
-from itertools import islice
+from itertools import groupby, islice
 from pathlib import Path
 from typing import TypeVar
 from zipfile import ZipFile
 
 import memorii
+from memorii.core.memory_evolution.admission import source_admission_source_digest
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.store import record_digest
+from memorii.core.persistence.contracts import BatchPosition, RuntimePublicationState, canonical_json_digest
+from memorii.core.persistence.runtime_api import RuntimeOperationAttempt, operation_origin_namespace
 from memorii.core.persistence.runtime_contracts import (
     HypothesisContent,
     NodeEvidenceReference,
     ObservationContent,
     OverlayJustificationBinding,
+    RuntimeCommandReceipt,
     RuntimeOverlayVersion,
     SolverRunRecord,
     TaskRecord,
 )
+from memorii.core.persistence.runtime_journal import verify_runtime_history
 from memorii.core.persistence.runtime_repository import RuntimeStateRepository, publish_runtime_change
 from memorii.core.storage_administration.service import StorageAdministrationService
 from memorii.domain.common import SolverEdgeMetadata, SolverNodeMetadata
@@ -47,6 +52,7 @@ from memorii.domain.enums import (
     ExecutionNodeStatus,
     ExecutionNodeType,
     MemoryDomain,
+    MemoryRecordVisibility,
     SolverCreatedBy,
     SolverEdgeType,
 )
@@ -66,15 +72,16 @@ from tests.support.reference_capacity import (
     task_allocations,
     workload_manifest,
 )
-
-_PRINCIPAL = "reference-capacity-owner"
-_SOURCE_KIND = "reference_capacity_fixture"
-_GRAPH_CHUNK = 512
-_SOURCE_CHUNK = 32
-_QUALIFICATION_BLOCKERS = (
-    "native_source_admission_receipt_bridge_unavailable",
-    "validated_checkpoint_tail_unavailable",
+from tests.support.reference_capacity_sources import (
+    REFERENCE_NAMESPACE,
+    REFERENCE_PRINCIPAL,
+    ReferenceSourceCapture,
+    reference_delivery,
 )
+
+_GRAPH_CHUNK = 512
+_SOURCE_RUNTIME_CATALOGS = frozenset({"runtime_command_receipts", "runtime_operation_attempts"})
+_QUALIFICATION_BLOCKERS = ("timed_reference_workload_not_measured",)
 _T = TypeVar("_T")
 _Mutation = Callable[[sqlite3.Connection, RuntimeStateRepository], None]
 
@@ -89,16 +96,21 @@ class ReferenceStorageAudit:
     workload_digest: str
     generator_digest: str
     loader_digest: str
+    source_driver_digest: str
     partition_tuple_digest: str
     graph_digest: str
     sources_digest: str
+    source_receipts_digest: str
     event_inventory_digest: str
     graph_row_counts: dict[str, int]
     source_count: int
+    source_receipt_count: int
     source_body_bytes: int
     runtime_event_count: int
     runtime_event_batch_count: int
     runtime_operation_counts: dict[str, int]
+    checkpoint_digest: str | None
+    checkpoint_tail_count: int
     qualification_blockers: tuple[str, ...] = _QUALIFICATION_BLOCKERS
 
 
@@ -121,36 +133,12 @@ def _root_node(task: TaskAllocation, *, execution_ordinal: int = 0) -> Execution
     )
 
 
-def _observation_refs(
-    service: StorageAdministrationService, allocations: Sequence[TaskAllocation],
-) -> dict[str, NodeEvidenceReference]:
-    def records() -> Iterator[CanonicalMemoryRecord]:
-        for task in allocations:
-            for source in task.source_inputs():
-                yield CanonicalMemoryRecord(
-                    memory_id=source.coordinate, domain=MemoryDomain.TRANSCRIPT, text=source.body().decode("ascii"),
-                    source_kind=_SOURCE_KIND, status=CommitStatus.COMMITTED, timestamp=source.timestamp,
-                    task_id=source.task_id, user_id=_PRINCIPAL, is_raw_event=True,
-                )
-
-    refs: dict[str, NodeEvidenceReference] = {}
-    for block in _chunks(records(), _SOURCE_CHUNK):
-        service.publish_memory_plane_batch(block)
-        refs.update({record.memory_id: NodeEvidenceReference(
-            source_id=record.memory_id, source_digest=record_digest(record),
-        ) for record in block})
-    return refs
-
-
-def _graph_changes(
-    allocations: Sequence[TaskAllocation], refs: dict[str, NodeEvidenceReference],
-) -> Iterator[_Mutation]:
+def _execution_changes(allocations: Sequence[TaskAllocation]) -> Iterator[_Mutation]:
     execution_ordinal = 0
     for task in allocations:
         root = _root_node(task, execution_ordinal=execution_ordinal)
-        initial_overlay = f"{task.solver_id}:overlay:initial"
         yield lambda connection, repo, task=task, root=root: repo.apply_task(connection, TaskRecord(
-            task_id=task.task_id, principal=_PRINCIPAL, goal=root.title, created_at=root.created_at,
+            task_id=task.task_id, principal=REFERENCE_PRINCIPAL, goal=root.title, created_at=root.created_at,
             root_execution_node_id=root.id, active_solver_by_execution_node={root.id: task.solver_id},
         ))
         for index in range(task.execution_nodes):
@@ -175,10 +163,18 @@ def _graph_changes(
             yield lambda connection, repo, edge=edge, task=task: repo.apply_execution_edge(
                 connection, task_id=task.task_id, edge_id=edge.id, edge_json=edge.model_dump_json(),
             )
+
+
+def _solver_changes(
+    allocations: Sequence[TaskAllocation], refs: dict[str, NodeEvidenceReference],
+) -> Iterator[_Mutation]:
+    for task in allocations:
+        root = _root_node(task)
+        initial_overlay = f"{task.solver_id}:overlay:initial"
         yield lambda connection, repo, root=root, task=task, initial_overlay=initial_overlay: repo.apply_solver_run(
             connection, SolverRunRecord(
                 solver_id=task.solver_id, task_id=task.task_id, parent_execution_node_id=root.id,
-                category="diagnostic", created_by=_PRINCIPAL, selected_overlay_id=initial_overlay,
+                category="diagnostic", created_by=REFERENCE_PRINCIPAL, selected_overlay_id=initial_overlay,
             ),
         )
         observations = dict(task.observation_inputs())
@@ -195,7 +191,7 @@ def _graph_changes(
                 created_at=FIXTURE_START + timedelta(seconds=task.first_solver_node + index),
                 created_by=SolverCreatedBy.SYSTEM,
                 candidate_state=CommitStatus.CANDIDATE if source_input is None else CommitStatus.COMMITTED,
-                source_refs=[] if source_input is None else [source_input.coordinate],
+                source_refs=[] if source_input is None else [refs[source_input.coordinate].source_id],
             )
             yield lambda connection, repo, task=task, node_id=node_id, content=content, metadata=metadata: (
                 repo.apply_solver_node(
@@ -225,15 +221,27 @@ def _graph_changes(
 
 def _publish_changes(
     service: StorageAdministrationService, changes: Iterable[_Mutation], *, batch_size: int = _GRAPH_CHUNK,
+    checkpoint_at_end: bool = False,
 ) -> None:
-    for block in _chunks(changes, batch_size):
-        def write(
-            connection: sqlite3.Connection, repository: RuntimeStateRepository, block: tuple[_Mutation, ...] = block,
-        ) -> None:
+    def publish(block: tuple[_Mutation, ...], *, checkpoint: bool = False) -> None:
+        def write(connection: sqlite3.Connection, repository: RuntimeStateRepository) -> None:
             for change in block:
                 change(connection, repository)
 
-        publish_runtime_change(service, write)
+        publish_runtime_change(service, write, checkpoint_requested=checkpoint)
+
+    blocks = _chunks(changes, batch_size)
+    if checkpoint_at_end:
+        previous = next(blocks, None)
+        if previous is None:
+            raise ReferenceFixtureError("reference fixture checkpoint requires an ordinary boundary batch")
+        for block in blocks:
+            publish(previous)
+            previous = block
+        publish(previous, checkpoint=True)
+    else:
+        for block in blocks:
+            publish(block)
 
 
 def _fill_changes(allocations: Sequence[TaskAllocation], steps: Iterable[EventFillInput]) -> Iterator[_Mutation]:
@@ -245,8 +253,6 @@ def _fill_changes(allocations: Sequence[TaskAllocation], steps: Iterable[EventFi
         roots[task.task_id] = _root_node(task, execution_ordinal=execution_ordinal)
         execution_ordinal += task.execution_nodes
     for step in steps:
-        if step.checkpoint_tail:
-            return
         task = tasks[step.task_id]
         if step.kind == "status_update":
             node = roots[step.task_id].model_copy(
@@ -284,7 +290,7 @@ def _event_inventory(connection: sqlite3.Connection) -> tuple[int, int, Counter[
 def _verify_graph(
     observed: Sequence[RuntimeMaterializedRow],
     allocations: Sequence[TaskAllocation],
-    source_digests: dict[str, str],
+    source_refs: dict[str, NodeEvidenceReference],
 ) -> None:
     tasks = {task.task_id: task for task in allocations}
     runs = {task.solver_id: task for task in allocations}
@@ -317,7 +323,7 @@ def _verify_graph(
             record = TaskRecord.model_validate_json(row.record_json)
             task = tasks.pop(record.task_id, None)
             if (
-                task is None or row.key != (task.task_id,) or record.principal != _PRINCIPAL
+                task is None or row.key != (task.task_id,) or record.principal != REFERENCE_PRINCIPAL
                 or record.root_execution_node_id != _root_node(task).id
                 or record.active_solver_by_execution_node != {_root_node(task).id: task.solver_id}
             ):
@@ -347,9 +353,7 @@ def _verify_graph(
             source_id = observations.pop(coordinate, None)
             if source_id is None:
                 HypothesisContent.model_validate(content)
-            elif ObservationContent.model_validate(content).source_refs != (NodeEvidenceReference(
-                source_id=source_id, source_digest=source_digests[source_id],
-            ),):
+            elif ObservationContent.model_validate(content).source_refs != (source_refs[source_id],):
                 raise ReferenceFixtureError("observation source closure is incomplete")
         elif row.catalog == "runtime_execution_edges":
             edge = ExecutionEdge.model_validate_json(row.record_json)
@@ -384,35 +388,20 @@ def _audit(
     allocations: Sequence[TaskAllocation],
     *,
     expected_events: int,
+    expected_tail: int,
 ) -> ReferenceStorageAudit:
-    expected_sources = {source.coordinate: source for task in allocations for source in task.source_inputs()}
     graph_digest = hashlib.sha256()
-    source_digest = hashlib.sha256()
     counts: Counter[str] = Counter()
-    source_count = source_bytes = 0
     partition = service.partition()
     with service.verified_operation_context() as (_state, finalized):
         with partition.transaction(write=False) as connection:
-            expected_refs: dict[str, str] = {}
-            for row in connection.execute(
-                "SELECT memory_id, record_json FROM memory_current_records ORDER BY memory_id",
-            ):
-                record = CanonicalMemoryRecord.model_validate_json(row["record_json"])
-                source = expected_sources.pop(record.memory_id, None)
-                if (
-                    source is None or row["memory_id"] != record.memory_id or record.task_id != source.task_id
-                    or record.timestamp != source.timestamp or record.text.encode("ascii") != source.body()
-                    or record.domain != MemoryDomain.TRANSCRIPT or record.source_kind != _SOURCE_KIND
-                    or record.status != CommitStatus.COMMITTED or not record.is_raw_event or record.user_id != _PRINCIPAL
-                ):
-                    raise ReferenceFixtureError("retained source differs from the fixture")
-                source_count += 1
-                source_bytes += len(record.text)
-                expected_refs[record.memory_id] = record_digest(record)
-                source_digest.update(_canonical((record.memory_id, expected_refs[record.memory_id])) + b"\n")
-            if expected_sources:
-                raise ReferenceFixtureError("retained fixture sources are missing")
-            observed = sorted(partition.runtime_materialized_rows(connection), key=lambda row: (row.catalog, row.key))
+            expected_refs, source_bytes, source_digest, receipt_digest = _audit_native_sources(
+                connection, finalized, allocations,
+            )
+            observed = sorted(
+                (row for row in partition.runtime_materialized_rows(connection) if row.catalog not in _SOURCE_RUNTIME_CATALOGS),
+                key=lambda row: (row.catalog, row.key),
+            )
             _verify_graph(observed, allocations, expected_refs)
             for row in observed:
                 counts[row.catalog] += 1
@@ -422,15 +411,145 @@ def _audit(
                 connection,
             )):
                 raise ReferenceFixtureError(f"expected {expected_events} verified runtime events, got {events}")
+            checkpoint_digest = finalized.checkpoint_digest
+            if expected_tail:
+                _verify_checkpoint_tail(service, connection, finalized, expected_tail)
+            elif checkpoint_digest is not None:
+                raise ReferenceFixtureError("unexpected checkpoint in the diagnostic fixture")
         return ReferenceStorageAudit(
             distribution=distribution, workload_digest=hashlib.sha256(workload_manifest(distribution)).hexdigest(),
             generator_digest=hashlib.sha256(Path(workload_manifest.__code__.co_filename).read_bytes()).hexdigest(),
             loader_digest=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            source_driver_digest=hashlib.sha256(Path(ReferenceSourceCapture.capture.__code__.co_filename).read_bytes()).hexdigest(),
             partition_tuple_digest=finalized.payload_digest(), graph_digest=graph_digest.hexdigest(),
-            sources_digest=source_digest.hexdigest(), event_inventory_digest=event_digest,
-            graph_row_counts=dict(counts), source_count=source_count, source_body_bytes=source_bytes,
+            sources_digest=source_digest, source_receipts_digest=receipt_digest, event_inventory_digest=event_digest,
+            graph_row_counts=dict(counts), source_count=len(expected_refs), source_receipt_count=len(expected_refs),
+            source_body_bytes=source_bytes,
             runtime_event_count=events, runtime_event_batch_count=batches, runtime_operation_counts=dict(operations),
+            checkpoint_digest=checkpoint_digest, checkpoint_tail_count=expected_tail,
         )
+
+
+def _verify_checkpoint_tail(
+    service: StorageAdministrationService, connection: sqlite3.Connection,
+    finalized: RuntimePublicationState, expected_tail: int,
+) -> None:
+    digest = finalized.checkpoint_digest
+    head = finalized.vector.runtime_position
+    if digest is None or not isinstance(head, BatchPosition):
+        raise ReferenceFixtureError("reference fixture has no signed checkpoint and tail")
+    boundary = connection.execute(
+        "SELECT json_extract(record_json, '$.manifest.through_position.sequence') "
+        "FROM runtime_replay_checkpoints WHERE checkpoint_digest = ?", (digest,),
+    ).fetchone()
+    if boundary is None or type(boundary[0]) is not int or head.sequence - boundary[0] != expected_tail:
+        raise ReferenceFixtureError("signed checkpoint boundary does not have the exact reference tail")
+    rows = connection.execute(
+        "SELECT record_json FROM runtime_event_batches WHERE sequence > ? ORDER BY sequence", (boundary[0],),
+    )
+    for (raw,) in rows:
+        events = json.loads(raw)["batch"]["events"]
+        if (
+            len(events) != 1 or events[0]["operation"] != "update"
+            or events[0]["entity"]["catalog"] != "runtime_execution_nodes"
+        ):
+            raise ReferenceFixtureError("checkpoint tail must contain one execution status update per batch")
+    # The released snapshot above verifies checkpoint-plus-tail. Verify the
+    # identical head independently through genesis before timing starts.
+    verify_runtime_history(
+        connection, finalized=finalized,
+        verify=lambda purpose, value, signature: service._verify_journal_signature(
+            service._signer_key_id, purpose, value, signature,
+        ),
+        use_checkpoint=False,
+    )
+
+
+def _audit_native_sources(
+    connection: sqlite3.Connection, finalized: RuntimePublicationState, allocations: Sequence[TaskAllocation],
+) -> tuple[dict[str, NodeEvidenceReference], int, str, str]:
+    sources = {}
+    for task in allocations:
+        for source in task.source_inputs():
+            session, _, identity = reference_delivery(source)
+            source_id = f"semantic_ingestion:source:{identity.delivery_key_digest}"
+            sources[source_id] = (source, session, identity)
+    pending = dict(sources)
+    references: dict[str, NodeEvidenceReference] = {}
+    provider_digests: dict[str, str] = {}
+    source_bytes = 0
+    source_digest = hashlib.sha256()
+    for row in connection.execute(
+        "SELECT memory_id, record_json FROM memory_current_records WHERE domain = ? ORDER BY memory_id",
+        (MemoryDomain.TRANSCRIPT.value,),
+    ):
+        record = CanonicalMemoryRecord.model_validate_json(row["record_json"])
+        if not record.is_raw_event:
+            continue
+        descriptor = pending.pop(record.memory_id, None)
+        if descriptor is None:
+            raise ReferenceFixtureError("unexpected or duplicate retained fixture source")
+        source, session, _ = descriptor
+        body = record.text.encode("ascii")
+        if (
+            row["memory_id"] != record.memory_id or record.task_id != source.task_id or record.session_id != session
+            or record.timestamp != source.timestamp or body != source.body()
+            or record.domain != MemoryDomain.TRANSCRIPT or record.source_kind != "semantic_ingestion_source"
+            or record.status != CommitStatus.COMMITTED or record.visibility != MemoryRecordVisibility.INTERNAL_CONTROL
+            or record.user_id != REFERENCE_PRINCIPAL
+        ):
+            raise ReferenceFixtureError("retained source differs from the fixture")
+        ref = NodeEvidenceReference(source_id=record.memory_id, source_digest=record_digest(record))
+        provider_digests[record.memory_id] = source_admission_source_digest(record)
+        references[source.coordinate] = ref
+        source_bytes += len(body)
+        source_digest.update(_canonical((source.coordinate, ref.source_id, ref.source_digest)) + b"\n")
+    if pending:
+        raise ReferenceFixtureError("retained fixture sources are missing")
+
+    receipt_digest = hashlib.sha256()
+    attempts = {}
+    for row in connection.execute(
+        "SELECT client_namespace, operation_id, record_json FROM runtime_command_receipts ORDER BY operation_id",
+    ):
+        receipt = RuntimeCommandReceipt.model_validate_json(row["record_json"])
+        origin, admission = receipt.operation_origin, receipt.source_admission
+        if origin is None or admission is None or receipt.status != "committed":
+            raise ReferenceFixtureError("fixture command receipt lacks native source admission")
+        descriptor = sources.pop(admission.source_id, None)
+        if descriptor is None:
+            raise ReferenceFixtureError("unexpected or duplicate native source receipt")
+        source, _, identity = descriptor
+        if (
+            row["client_namespace"] != operation_origin_namespace(origin) or row["operation_id"] != receipt.operation_id
+            or receipt.operation_id != f"{source.coordinate}:observe" or receipt.client_namespace != REFERENCE_NAMESPACE
+            or origin.principal != REFERENCE_PRINCIPAL or origin.installation_id != finalized.installation_id
+            or origin.repository_id != finalized.repository_id or origin.generation_id != finalized.data_generation_id
+            or admission.source_record_digest != references[source.coordinate].source_digest
+            or admission.provider_source_digest != provider_digests[admission.source_id]
+            or admission.delivery_key_digest != identity.delivery_key_digest
+            or admission.task_id != source.task_id or admission.retained_at != source.timestamp
+            or admission.source_write_revision > finalized.vector.memory_write_revision
+        ):
+            raise ReferenceFixtureError("signed observation receipt does not match the exact retained source")
+        receipt_digest.update(_canonical((receipt.operation_id, admission.model_dump(mode="json"))) + b"\n")
+        receipt_id = canonical_json_digest({"namespace": row["client_namespace"], "operation_id": receipt.operation_id})
+        attempts[receipt_id] = (receipt.request_digest, receipt.current_revision)
+    if sources:
+        raise ReferenceFixtureError("native source receipt closure is incomplete")
+    for row in connection.execute(
+        "SELECT receipt_id, attempt_ordinal, record_json FROM runtime_operation_attempts ORDER BY receipt_id, attempt_ordinal",
+    ):
+        attempt = RuntimeOperationAttempt.model_validate_json(row["record_json"])
+        if (
+            attempt.receipt_id != row["receipt_id"] or row["attempt_ordinal"] != 1 or attempt.attempt_ordinal != 1
+            or attempt.stage != "committed" or attempt.model_binding != "no-model" or attempt.invocation_count != 0
+            or attempts.pop(attempt.receipt_id, None) != (attempt.request_digest, attempt.base_task_revision)
+        ):
+            raise ReferenceFixtureError("unexpected or mismatched managed observation attempt")
+    if attempts:
+        raise ReferenceFixtureError("native source operation attempt closure is incomplete")
+    return references, source_bytes, source_digest.hexdigest(), receipt_digest.hexdigest()
 
 
 def _prepare(
@@ -443,22 +562,36 @@ def _prepare(
     if root.exists():
         raise ReferenceFixtureError("fixture root already exists; supply a fresh path")
     with StorageAdministrationService(root) as service:
-        service.initialize()
-        refs = _observation_refs(service, allocations)
-        _publish_changes(service, _graph_changes(allocations, refs))
+        installation = service.initialize()
+        _publish_changes(service, _execution_changes(allocations))
+        capture = ReferenceSourceCapture(service, installation, tuple(task.task_id for task in allocations))
+        refs = {source.coordinate: capture.capture(source) for task in allocations for source in task.source_inputs()}
+        _publish_changes(service, _solver_changes(allocations, refs))
         with service.partition().transaction(write=False) as connection:
             mandatory_events = _event_inventory(connection)[0]
         if fill is None:
             expected_events = mandatory_events
+            expected_tail = 0
         else:
-            # Capture keeps one full state per coordinate in a publication.
-            # The generator cycles tasks, so no root repeats within this size.
-            _publish_changes(service, _fill_changes(allocations, fill(mandatory_events)), batch_size=len(allocations))
-            expected_events = EVENT_COUNT - CHECKPOINT_TAIL_COUNT
+            steps = iter(groupby(fill(mandatory_events), key=lambda step: step.checkpoint_tail))
+            before = next(steps, None)
+            if before is None or before[0]:
+                raise ReferenceFixtureError("checkpoint must follow the non-tail reference updates")
+            # The generator cycles tasks, so no root repeats within this batch.
+            _publish_changes(
+                service, _fill_changes(allocations, before[1]), batch_size=len(allocations), checkpoint_at_end=True,
+            )
+            tail = next(steps, None)
+            if tail is None or not tail[0]:
+                raise ReferenceFixtureError("reference fixture is missing its checkpoint tail")
+            _publish_changes(service, _fill_changes(allocations, tail[1]), batch_size=1)
+            if next(steps, None) is not None:
+                raise ReferenceFixtureError("non-tail reference event follows the checkpoint tail")
+            expected_events, expected_tail = EVENT_COUNT, CHECKPOINT_TAIL_COUNT
     # The fresh process-compatible handle verifies signatures, replay, and
     # projections from bytes on disk rather than trusting our writer cache.
     with StorageAdministrationService(root) as service:
-        return _audit(service, distribution, allocations, expected_events=expected_events)
+        return _audit(service, distribution, allocations, expected_events=expected_events, expected_tail=expected_tail)
 
 
 def _installed_wheel_digest(wheel: Path) -> str:

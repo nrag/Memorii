@@ -1,0 +1,126 @@
+name: Reference capacity qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      approved_revision:
+        description: Full reviewed commit SHA for this workflow dispatch
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reference-capacity-qualification
+  cancel-in-progress: false
+
+jobs:
+  wheel:
+    name: Freeze candidate wheel and driver
+    runs-on: ubuntu-latest
+    steps:
+      - name: Match the reviewed and dispatched revision
+        env:
+          APPROVED_REVISION: ${{ inputs.approved_revision }}
+        run: test "$APPROVED_REVISION" = "$GITHUB_SHA"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.16"
+      - name: Build the reviewed wheel and package the standalone driver
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reference-candidate/driver/tests/support
+          cp memorii/tests/support/reference_capacity_dependencies/{build,runtime}.lock reference-candidate/
+          python -m pip install --require-hashes -r reference-candidate/build.lock
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          python -m pip wheel --no-build-isolation --no-deps --wheel-dir reference-candidate ./memorii
+          cp memorii/tests/__init__.py reference-candidate/driver/tests/
+          cp memorii/tests/support/__init__.py memorii/tests/support/reference_capacity*.py reference-candidate/driver/tests/support/
+          git rev-parse HEAD > reference-candidate/revision
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reference-capacity-candidate
+          path: reference-candidate
+          if-no-files-found: error
+
+  qualify:
+    name: Qualify on ${{ matrix.profile }}
+    needs: wheel
+    runs-on: ${{ matrix.labels }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: linux
+            labels: [self-hosted, Linux, memorii-reference-capacity]
+          - profile: macos
+            labels: [self-hosted, macOS, memorii-reference-capacity]
+    timeout-minutes: 2880
+    env:
+      DEDICATED_IDLE: ${{ vars.MEMORII_REFERENCE_RUNNER_DEDICATED_IDLE }}
+      PROFILE: ${{ matrix.profile }}
+      REVISION: ${{ inputs.approved_revision }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: reference-capacity-candidate
+          path: reference-candidate
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.16"
+      - name: Install the wheel and qualify both distributions serially
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$DEDICATED_IDLE" = true
+          test "$(cat reference-candidate/revision)" = "$REVISION"
+          candidate="$PWD/reference-candidate"
+          mkdir -p reports
+          reports="$PWD/reports"
+          pkg-config --modversion icu-i18n
+          # The reviewed candidate supplies all Python package hashes. PyICU
+          # needs the dedicated host's native ICU development library.
+          scratch="$(mktemp -d "$RUNNER_TEMP/memorii-reference.XXXXXXXX")"
+          trap 'rm -rf -- "$scratch"' EXIT
+          python -m venv "$scratch/env"
+          interpreter="$scratch/env/bin/python"
+          "$interpreter" -m pip install --require-hashes -r "$candidate/build.lock"
+          "$interpreter" -m pip install --no-build-isolation --require-hashes -r "$candidate/runtime.lock"
+          wheels=("$candidate"/*.whl)
+          test "${#wheels[@]}" -eq 1
+          wheel="${wheels[0]}"
+          "$interpreter" -m pip install --no-deps "$wheel"
+          "$interpreter" -m pip check
+          cd "$candidate/driver"
+          "$interpreter" -m tests.support.reference_capacity_measure preflight \
+            --work-root "$scratch" --wheel "$wheel" --dependency-lock "$candidate/runtime.lock" \
+            --builder-lock "$candidate/build.lock" \
+            --revision "$REVISION" --profile "$PROFILE" --dedicated-idle --report "$reports/preflight.json"
+          qualified=0
+          for distribution in balanced concentrated; do
+            fixture="$scratch/$distribution"
+            if ! "$interpreter" -m tests.support.reference_capacity_fixture \
+              --installation-root "$fixture" --distribution "$distribution" --candidate-wheel "$wheel" \
+              > "$reports/$distribution-fixture.json"; then
+              qualified=1
+              continue
+            fi
+            "$interpreter" -m tests.support.reference_capacity_measure run \
+              --base "$fixture" --work-root "$scratch" --wheel "$wheel" --dependency-lock "$candidate/runtime.lock" \
+              --builder-lock "$candidate/build.lock" \
+              --revision "$REVISION" --profile "$PROFILE" --distribution "$distribution" --dedicated-idle \
+              --report "$reports/$distribution-measurement.json" || qualified=1
+          done
+          exit "$qualified"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reference-capacity-${{ matrix.profile }}
+          path: reports
+          if-no-files-found: warn
