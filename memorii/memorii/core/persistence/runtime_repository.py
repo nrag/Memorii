@@ -34,6 +34,7 @@ from memorii.core.persistence.runtime_contracts import (
     SolverRunRecord,
     TaskRecord,
 )
+from memorii.core.persistence.runtime_journal import append_runtime_changes
 from memorii.core.storage_administration.service import (
     StorageAdministrationService,
 )
@@ -492,7 +493,7 @@ class RuntimeStateRepository:
         )
         if not rows:
             return None
-        if _is_managed_work_projection(str(rows[0]["record_json"])):
+        if _managed_outbox_type(str(rows[0]["record_json"])) is not None:
             return None
         return RuntimeOutboxDelivery.model_validate_json(str(rows[0]["record_json"]))
 
@@ -507,7 +508,7 @@ class RuntimeStateRepository:
         entries = tuple(
             RuntimeOutboxDelivery.model_validate_json(str(row["record_json"]))
             for row in rows
-            if not _is_managed_work_projection(str(row["record_json"]))
+            if _managed_outbox_type(str(row["record_json"])) is None
         )
         # Drainable surface: only pending rows, in primary-key order.
         return tuple(entry for entry in entries if entry.status == "pending")
@@ -524,7 +525,7 @@ class RuntimeStateRepository:
         if row is None:
             return None
         record = str(row["record_json"])
-        if not _is_managed_work_projection(record):
+        if _managed_outbox_type(record) != "managed_work_projection":
             raise RuntimeStateError("needs_reconciliation: outbox row has no managed projection payload")
         entry = ManagedWorkProjectionDelivery.model_validate_json(record)
         if entry.delivery.request.delivery_id != delivery_id:
@@ -617,9 +618,10 @@ class RuntimeStateRepository:
         return tuple(model.model_validate_json(row["record_json"]) for row in rows)
 
 
-def _is_managed_work_projection(record_json: str) -> bool:
+def _managed_outbox_type(record_json: str) -> str | None:
     raw = re.loads(record_json)
-    return isinstance(raw, dict) and raw.get("record_type") == "managed_work_projection"
+    kind = raw.get("record_type") if isinstance(raw, dict) else None
+    return kind if kind in ("managed_work_projection", "managed_writeback_candidate") else None
 
 
 def publish_runtime_change(
@@ -680,7 +682,7 @@ def publish_runtime_change(
         if finalized is None:
             raise RuntimeStateError("installation is not initialized")
         state = administration._require_operational()
-        administration._verified_snapshot_locked(state)
+        administration._verified_snapshot_locked()
         if validate_authority is not None:
             validate_authority(state, finalized)
         partition = administration.partition()
@@ -694,14 +696,28 @@ def publish_runtime_change(
                     "partition pre-state does not match the finalized control tuple"
                 )
             runtime_revision = partition.bump_runtime_revision(connection)
-            apply(connection, repository)
+            with partition.capture_runtime_rows(connection) as changes:
+                apply(connection, repository)
+            runtime_position = (
+                append_runtime_changes(
+                    connection,
+                    changes=changes,
+                    previous=finalized,
+                    runtime_revision=runtime_revision,
+                    sign=lambda purpose, digest: administration._signing.sign(
+                        administration._signer_key_id, purpose, digest,
+                    ),
+                )
+                if partition.supports_runtime_history(connection)
+                else None
+            )
             manifest_entries = partition.compute_materialization_manifest(connection)
             manifest = RuntimeMaterializationManifest(catalogs=manifest_entries)
             memory_write, memory_data = partition.read_revision_state(connection)
             prior_ordinal = int(pre_state["ordinal"])
             vector = PartitionRevisionVector(
                 partition_ordinal=prior_ordinal + 1,
-                runtime_position=BatchPosition(
+                runtime_position=runtime_position if runtime_position is not None else BatchPosition(
                     sequence=runtime_revision, digest=manifest.digest()
                 ),
                 memory_write_revision=memory_write,
@@ -755,6 +771,7 @@ def publish_runtime_change(
                     after_digest=candidate.payload_digest(),
                 ),
             )
+            data_version = partition.data_version(connection)
             handle.commit()
         administration._finalize_publication(candidate)
         administration._control.write_intent(
@@ -765,5 +782,5 @@ def publish_runtime_change(
                 after_digest=candidate.payload_digest(),
             ),
         )
-        administration._verified_tuples[candidate.payload_digest()] = True
+        administration._verified_tuples[candidate.payload_digest()] = data_version
         return runtime_revision

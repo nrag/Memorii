@@ -87,7 +87,7 @@ def _seed(
         # This invokes the target stage port from the signed command transaction.
         # The separately owned production command wiring is qualified elsewhere.
         revision = repository.read_runtime_revision_in(connection)
-        repository.apply_task(connection, task.model_copy(update={"lifecycle": "paused"}))
+        repository.apply_task(connection, task.model_copy(update={"lifecycle": "paused", "version": task.version + 1}))
         repository.apply_command_receipt(
             connection,
             RuntimeCommandReceipt(

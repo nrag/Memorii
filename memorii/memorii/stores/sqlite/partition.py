@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import json
 import sqlite3
 import threading
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -27,10 +29,11 @@ if TYPE_CHECKING:
     from memorii.core.persistence.contracts import MaterializationCatalogEntry
     from memorii.core.semantic_ingestion.ontology_index import OntologyIndexProjection
 
-PARTITION_SCHEMA_VERSION = 3
+PARTITION_SCHEMA_VERSION = 4
 _INITIAL_PARTITION_SCHEMA_VERSION = 1
 _CONSOLIDATION_SCHEMA_VERSION = 2
 _DELIVERY_SCHEMA_VERSION = 3
+_RUNTIME_HISTORY_SCHEMA_VERSION = 4
 _DEFAULT_BUSY_TIMEOUT_MS = 5_000
 
 _SCHEMA_STATEMENTS = (
@@ -297,7 +300,11 @@ _DELIVERY_CATALOGS = (
     ("runtime_work_projections", "delivery_id", "record_json"),
     ("runtime_target_receipts", "delivery_id", "record_json"),
 )
-DeliveryCatalog = Literal["writeback_decisions", "runtime_work_projections", "runtime_target_receipts"]
+_SKILL_CANDIDATE_CATALOG = ("runtime_skill_candidates", "candidate_id", "record_json")
+_CURRENT_DELIVERY_CATALOGS = (*_DELIVERY_CATALOGS, _SKILL_CANDIDATE_CATALOG)
+DeliveryCatalog = Literal[
+    "writeback_decisions", "runtime_work_projections", "runtime_target_receipts", "runtime_skill_candidates",
+]
 
 # Authoritative materialized catalogs covered by the signed manifest. The
 # fold is canonical: per-row digest over (primary key, payload), chained in
@@ -364,11 +371,24 @@ _INITIAL_MATERIALIZATION_CATALOGS = (
     ("runtime_checkpoints", "checkpoint_id", "record_json"),
 )
 _CONSOLIDATION_CATALOG = ("consolidation_results", "result_id", "record_json")
+_RUNTIME_EVENT_INDEX_CATALOGS = (
+    ("runtime_event_id_bindings", "event_id", "binding_json"),
+    ("runtime_dedupe_bindings", "dedupe_key", "binding_json"),
+    ("runtime_record_version_bindings", "record_version_id", "binding_json"),
+)
+_RUNTIME_HISTORY_TABLES = (
+    "runtime_event_batches", _SKILL_CANDIDATE_CATALOG[0],
+    *(catalog for catalog, _, _ in _RUNTIME_EVENT_INDEX_CATALOGS),
+)
 _MATERIALIZATION_CATALOGS_BY_VERSION = {
     _INITIAL_PARTITION_SCHEMA_VERSION: _INITIAL_MATERIALIZATION_CATALOGS,
     _CONSOLIDATION_SCHEMA_VERSION: (*_INITIAL_MATERIALIZATION_CATALOGS, _CONSOLIDATION_CATALOG),
     _DELIVERY_SCHEMA_VERSION: (
         *_INITIAL_MATERIALIZATION_CATALOGS, _CONSOLIDATION_CATALOG, *_DELIVERY_CATALOGS,
+    ),
+    _RUNTIME_HISTORY_SCHEMA_VERSION: (
+        *_INITIAL_MATERIALIZATION_CATALOGS, _CONSOLIDATION_CATALOG, *_DELIVERY_CATALOGS,
+        _SKILL_CANDIDATE_CATALOG, *_RUNTIME_EVENT_INDEX_CATALOGS,
     ),
 }
 _CATALOG_SEED_DOMAIN = b"memorii.materialization-catalog.v1\x00"
@@ -395,6 +415,43 @@ _RUNTIME_UPSERT_TABLES = frozenset(
         "runtime_checkpoints",
     }
 )
+
+# Physical materialization identity. The replay check compares the stored
+# filtering coordinates as well as the exact owner-encoded record bytes.
+_RUNTIME_ROW_LAYOUTS = {
+    "runtime_tasks": (("task_id",), ()),
+    "runtime_execution_nodes": (("task_id", "node_id"), ()),
+    "runtime_execution_edges": (("task_id", "edge_id"), ()),
+    "runtime_solver_runs": (("solver_id",), ("task_id",)),
+    "runtime_solver_nodes": (("solver_id", "node_id"), ()),
+    "runtime_solver_edges": (("solver_id", "edge_id"), ()),
+    "runtime_overlay_versions": (("version_id",), ("solver_id",)),
+    "runtime_justifications": (("justification_id",), ("solver_id",)),
+    "runtime_action_attempts": (
+        ("action_id",), ("task_id", "recommendation_id", "recommendation_revision"),
+    ),
+    "runtime_command_receipts": (("client_namespace", "operation_id"), ()),
+    "runtime_operation_attempts": (("receipt_id", "attempt_ordinal"), ()),
+    "runtime_outbox_deliveries": (("delivery_id",), ()),
+    "runtime_checkpoints": (("checkpoint_id",), ("task_id",)),
+    "consolidation_results": (("result_id",), ()),
+    **{table: ((key,), ()) for table, key, _ in _CURRENT_DELIVERY_CATALOGS},
+}
+
+
+@dataclass(frozen=True)
+class RuntimeMaterializedRow:
+    catalog: str
+    key: tuple[str | int, ...]
+    indexed: tuple[str | int, ...]
+    record_json: str
+
+
+@dataclass(frozen=True)
+class RuntimeRowChange:
+    row: RuntimeMaterializedRow
+    operation: Literal["create", "update"]
+    prior_record_json: str | None
 
 
 class PartitionWriteTransaction:
@@ -517,6 +574,10 @@ class PartitionDataRepository:
             self._has_catalog(connection, name) for name, _, _ in _DELIVERY_CATALOGS
         ):
             raise sqlite3.DatabaseError("delivery catalog is outside the declared partition schema")
+        if version < _RUNTIME_HISTORY_SCHEMA_VERSION and any(
+            self._has_catalog(connection, name) for name in _RUNTIME_HISTORY_TABLES
+        ):
+            raise sqlite3.DatabaseError("runtime history catalog is outside the declared partition schema")
         entries: list[MaterializationCatalogEntry] = []
         for catalog, key_expression, payload_column in catalogs:
             rows = connection.execute(
@@ -571,6 +632,146 @@ class PartitionDataRepository:
     @staticmethod
     def supports_managed_runtime(connection: sqlite3.Connection) -> bool:
         return PartitionDataRepository.read_schema_version(connection) >= _CONSOLIDATION_SCHEMA_VERSION
+
+    @staticmethod
+    def supports_runtime_history(connection: sqlite3.Connection) -> bool:
+        return PartitionDataRepository.read_schema_version(connection) >= _RUNTIME_HISTORY_SCHEMA_VERSION
+
+    @staticmethod
+    def data_version(connection: sqlite3.Connection) -> int:
+        return int(connection.execute("PRAGMA data_version").fetchone()[0])
+
+    @staticmethod
+    def _install_runtime_history(connection: sqlite3.Connection) -> None:
+        connection.execute(
+            "CREATE TABLE runtime_event_batches ("
+            " sequence INTEGER PRIMARY KEY, record_json TEXT NOT NULL)"
+        )
+        for catalog, key, payload in (*_RUNTIME_EVENT_INDEX_CATALOGS, _SKILL_CANDIDATE_CATALOG):
+            connection.execute(
+                f"CREATE TABLE {catalog} ({key} TEXT PRIMARY KEY NOT NULL, {payload} TEXT NOT NULL)"
+            )
+
+    @contextmanager
+    def capture_runtime_rows(self, connection: sqlite3.Connection) -> Iterator[list[RuntimeRowChange]]:
+        """Collect exact materialization changes inside this publisher's transaction."""
+        changes: list[RuntimeRowChange] = []
+        if not self.supports_runtime_history(connection):
+            yield changes
+            return
+        if not connection.in_transaction:
+            raise sqlite3.DatabaseError("runtime write capture requires a transaction")
+        connection.execute(
+            "CREATE TEMP TABLE runtime_publication_changes ("
+            " ordinal INTEGER PRIMARY KEY, catalog TEXT NOT NULL, operation TEXT NOT NULL,"
+            " key_json TEXT NOT NULL, indexed_json TEXT NOT NULL, record_json TEXT NOT NULL,"
+            " prior_record_json TEXT)"
+        )
+        triggers: list[str] = []
+        try:
+            for catalog, (keys, indexed) in _RUNTIME_ROW_LAYOUTS.items():
+                triggers.extend(self._capture_runtime_catalog(connection, catalog, keys, indexed))
+            yield changes
+            observed: dict[tuple[str, str], RuntimeRowChange] = {}
+            for row in connection.execute(
+                "SELECT catalog, operation, key_json, indexed_json, record_json, prior_record_json"
+                " FROM runtime_publication_changes ORDER BY ordinal"
+            ):
+                coordinate = (str(row["catalog"]), str(row["key_json"]))
+                previous = observed.get(coordinate)
+                operation: Literal["create", "update"] = (
+                    "create"
+                    if row["operation"] == "create" or (previous is not None and previous.operation == "create")
+                    else "update"
+                )
+                observed[coordinate] = RuntimeRowChange(RuntimeMaterializedRow(
+                    catalog=coordinate[0],
+                    key=tuple(json.loads(coordinate[1])),
+                    indexed=tuple(json.loads(row["indexed_json"])),
+                    record_json=str(row["record_json"]),
+                ), operation, row["prior_record_json"] if previous is None else previous.prior_record_json)
+            changes.extend(observed.values())
+        finally:
+            for trigger in triggers:
+                connection.execute(f"DROP TRIGGER temp.{trigger}")
+            connection.execute("DROP TABLE temp.runtime_publication_changes")
+
+    @staticmethod
+    def _capture_runtime_catalog(
+        connection: sqlite3.Connection,
+        catalog: str,
+        keys: tuple[str, ...],
+        indexed: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        key_json = ", ".join(f"NEW.{column}" for column in keys)
+        indexed_json = ", ".join(f"NEW.{column}" for column in indexed)
+        key_changed = " OR ".join(f"OLD.{column} IS NOT NEW.{column}" for column in keys)
+        row_changed = " OR ".join(f"OLD.{column} IS NOT NEW.{column}" for column in (*indexed, "record_json"))
+        inserted = f"{catalog}_capture_insert"
+        updated = f"{catalog}_capture_update"
+        deleted = f"{catalog}_capture_delete"
+        connection.execute(
+            f"CREATE TEMP TRIGGER {inserted} AFTER INSERT ON main.{catalog} BEGIN"
+            " INSERT INTO runtime_publication_changes"
+            " (catalog, operation, key_json, indexed_json, record_json) VALUES"
+            f" ('{catalog}', 'create', json_array({key_json}), json_array({indexed_json}), NEW.record_json); END"
+        )
+        connection.execute(
+            f"CREATE TEMP TRIGGER {updated} AFTER UPDATE ON main.{catalog} BEGIN"
+            f" SELECT RAISE(ABORT, 'runtime record identity is immutable') WHERE {key_changed};"
+            " INSERT INTO runtime_publication_changes"
+            " (catalog, operation, key_json, indexed_json, record_json, prior_record_json)"
+            f" SELECT '{catalog}', 'update', json_array({key_json}), json_array({indexed_json}),"
+            " NEW.record_json, OLD.record_json"
+            f" WHERE {row_changed}; END"
+        )
+        connection.execute(
+            f"CREATE TEMP TRIGGER {deleted} BEFORE DELETE ON main.{catalog}"
+            " BEGIN SELECT RAISE(ABORT, 'runtime records require logical retirement'); END"
+        )
+        return inserted, updated, deleted
+
+    @staticmethod
+    def runtime_materialized_rows(connection: sqlite3.Connection) -> Iterator[RuntimeMaterializedRow]:
+        for catalog, (keys, indexed) in _RUNTIME_ROW_LAYOUTS.items():
+            columns = ", ".join((*keys, *indexed, "record_json"))
+            for row in connection.execute(f"SELECT {columns} FROM {catalog}"):
+                yield RuntimeMaterializedRow(
+                    catalog=catalog,
+                    key=tuple(row[column] for column in keys),
+                    indexed=tuple(row[column] for column in indexed),
+                    record_json=str(row["record_json"]),
+                )
+
+    @staticmethod
+    def runtime_event_batch_rows(connection: sqlite3.Connection) -> Iterator[tuple[int, str]]:
+        for row in connection.execute("SELECT sequence, record_json FROM runtime_event_batches ORDER BY sequence"):
+            yield int(row[0]), str(row[1])
+
+    @staticmethod
+    def runtime_replay_bindings(connection: sqlite3.Connection) -> tuple[dict[str, str], ...]:
+        return tuple(
+            {str(row[0]): str(row[1]) for row in connection.execute(f"SELECT {key}, {payload} FROM {catalog}")}
+            for catalog, key, payload in _RUNTIME_EVENT_INDEX_CATALOGS
+        )
+
+    @staticmethod
+    def insert_runtime_event_batch(
+        connection: sqlite3.Connection,
+        *,
+        sequence: int,
+        record_json: str,
+        bindings: tuple[dict[str, str], dict[str, str], dict[str, str]],
+    ) -> None:
+        for (catalog, key, payload), identity_rows in zip(_RUNTIME_EVENT_INDEX_CATALOGS, bindings, strict=True):
+            connection.executemany(
+                f"INSERT INTO {catalog} ({key}, {payload}) VALUES (?, ?)",
+                identity_rows.items(),
+            )
+        connection.execute(
+            "INSERT INTO runtime_event_batches (sequence, record_json) VALUES (?, ?)",
+            (sequence, record_json),
+        )
 
     @staticmethod
     def _has_consolidation_catalog(connection: sqlite3.Connection) -> bool:
@@ -635,7 +836,7 @@ class PartitionDataRepository:
         record_id: str,
     ) -> str | None:
         PartitionDataRepository.require_delivery_catalogs(connection)
-        key = PartitionDataRepository._delivery_catalog_key(catalog)
+        key = PartitionDataRepository._delivery_catalog_key(connection, catalog)
         row = connection.execute(
             f"SELECT record_json FROM {catalog} WHERE {key} = ?", (record_id,),
         ).fetchone()
@@ -650,14 +851,16 @@ class PartitionDataRepository:
         record_json: str,
     ) -> None:
         PartitionDataRepository.require_delivery_catalogs(connection)
-        key = PartitionDataRepository._delivery_catalog_key(catalog)
+        key = PartitionDataRepository._delivery_catalog_key(connection, catalog)
         connection.execute(
             f"INSERT INTO {catalog} ({key}, record_json) VALUES (?, ?)", (record_id, record_json),
         )
 
     @staticmethod
-    def _delivery_catalog_key(catalog: str) -> str:
-        for known_catalog, key, _ in _DELIVERY_CATALOGS:
+    def _delivery_catalog_key(connection: sqlite3.Connection, catalog: str) -> str:
+        if catalog == _SKILL_CANDIDATE_CATALOG[0] and not PartitionDataRepository.supports_runtime_history(connection):
+            raise sqlite3.DatabaseError("partition schema upgrade required for protected skill candidates")
+        for known_catalog, key, _ in _CURRENT_DELIVERY_CATALOGS:
             if known_catalog == catalog:
                 return key
         raise ValueError("unsupported delivery catalog")
@@ -1123,6 +1326,8 @@ class PartitionDataRepository:
                 self._install_consolidation_catalog(connection)
             if PARTITION_SCHEMA_VERSION >= _DELIVERY_SCHEMA_VERSION:
                 self._install_delivery_catalogs(connection)
+            if PARTITION_SCHEMA_VERSION >= _RUNTIME_HISTORY_SCHEMA_VERSION:
+                self._install_runtime_history(connection)
             connection.execute(
                 "INSERT INTO memory_revision_state (id, write_revision, data_revision)"
                 " VALUES (1, 0, 0)"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from hashlib import sha256
 from pathlib import Path
@@ -25,6 +26,8 @@ from memorii.core.persistence.runtime_contracts import (
 )
 from memorii.core.persistence.runtime_repository import RuntimeStateRepository, publish_runtime_change
 from memorii.core.storage_administration.service import StorageAdministrationService
+from memorii.domain.enums import ExecutionNodeStatus, ExecutionNodeType
+from memorii.domain.execution_graph.nodes import ExecutionNode
 
 
 class _ScopedOwner:
@@ -85,6 +88,9 @@ def test_managed_lifecycle_keeps_sealed_archive_and_result_across_reopen(
     receipt = service.dispatch(command, operation_origin=proof)
     assert receipt.consolidation_result_id is not None
     signed = administration.acquire_verified_snapshot()
+    runtime_position = signed.vector.runtime_position
+    assert runtime_position.kind == "batch"
+    assert runtime_position.sequence == 2
     reopened = StorageAdministrationService(administration.installation_root)
     try:
         assert reopened.acquire_verified_snapshot() == signed
@@ -101,6 +107,18 @@ def test_managed_lifecycle_keeps_sealed_archive_and_result_across_reopen(
         assert not follow_up.items
         assert isinstance(archived, ArchivePackage)
         with reopened.partition().transaction(write=False) as connection:
+            batches = tuple(reopened.partition().runtime_event_batch_rows(connection))
+            assert [sequence for sequence, _ in batches] == [1, 2]
+            first, second = (json.loads(payload) for _, payload in batches)
+            assert second["previous_position"]["sequence"] == 1
+            first_events, second_events = first["batch"]["events"], second["batch"]["events"]
+            assert {event["entity"]["catalog"] for event in second_events} == {
+                "runtime_tasks", "runtime_execution_nodes", "runtime_checkpoints",
+                "consolidation_results", "runtime_command_receipts", "runtime_operation_attempts",
+            }
+            assert [len(index) for index in reopened.partition().runtime_replay_bindings(connection)] == [
+                len(first_events) + len(second_events)
+            ] * 3
             row = reopened.partition().read_runtime_row(
                 connection, table="runtime_checkpoints",
                 match=(("checkpoint_id", archived.reference.checkpoint_id),),
@@ -125,7 +143,7 @@ def test_managed_lifecycle_keeps_sealed_archive_and_result_across_reopen(
         reopened.close()
 
 
-def test_unverified_completion_claims_and_missing_archive_roll_back(
+def test_unverified_completion_claims_and_incomplete_archive_roll_back(
     fresh_task: tuple[StorageAdministrationService, _ScopedOwner, TaskRecord],
 ) -> None:
     administration, owner, task = fresh_task
@@ -140,10 +158,20 @@ def test_unverified_completion_claims_and_missing_archive_roll_back(
         service.dispatch(claimed, operation_origin=service.prepare(claimed))
     assert administration.acquire_verified_snapshot() == before
 
+    additional_root = ExecutionNode(
+        id="exec:additional",
+        type=ExecutionNodeType.WORK_ITEM,
+        title="Additional node",
+        description="Requires full archive",
+        status=ExecutionNodeStatus.NOT_STARTED,
+        created_at=task.created_at,
+        updated_at=task.created_at,
+    )
     publish_runtime_change(
         administration,
-        lambda connection, repo: connection.execute(
-            "DELETE FROM runtime_execution_nodes WHERE task_id = ?", (task.task_id,),
+        lambda connection, repo: repo.apply_execution_node(
+            connection, task_id=task.task_id,
+            node_id=additional_root.id, node_json=additional_root.model_dump_json(),
         ),
     )
     pause = RuntimeCommandRequest(
