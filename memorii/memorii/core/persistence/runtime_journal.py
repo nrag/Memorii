@@ -294,6 +294,8 @@ def verify_runtime_history(
         revision = signed.runtime_revision
     if position != finalized.vector.runtime_position:
         raise RuntimeJournalError("integrity_error: runtime history does not match the signed head")
+    if revision != PartitionDataRepository.read_runtime_revision(connection):
+        raise RuntimeJournalError("integrity_error: runtime revision does not match the signed history")
     if PartitionDataRepository.runtime_replay_bindings(connection) != bindings:
         raise RuntimeJournalError("integrity_error: runtime replay indexes do not match the event history")
     actual = {

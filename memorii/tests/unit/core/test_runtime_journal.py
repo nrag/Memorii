@@ -12,7 +12,7 @@ from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.persistence.runtime_contracts import HypothesisContent, SolverRunRecord, TaskRecord
 from memorii.core.persistence.runtime_journal import RuntimeJournalError
 from memorii.core.persistence.runtime_repository import RuntimeStateRepository, publish_runtime_change
-from memorii.core.storage_administration.service import StorageAdministrationService
+from memorii.core.storage_administration.service import InstallationIntegrityError, StorageAdministrationService
 from memorii.domain.enums import CommitStatus, ExecutionNodeStatus, ExecutionNodeType, MemoryDomain
 from memorii.domain.execution_graph.nodes import ExecutionNode
 
@@ -96,6 +96,32 @@ def test_divergent_historical_record_version_rolls_back_signed_publication(tmp_p
             publish_runtime_change(service, lambda connection, repo: repo.apply_task(connection, invalid_task))
         assert service.acquire_verified_snapshot() == before
         assert RuntimeStateRepository(service.partition()).get_task(_TASK.task_id) == next_task
+
+
+def test_runtime_revision_is_covered_by_the_signed_history(tmp_path: Path) -> None:
+    with StorageAdministrationService(tmp_path / "installation") as service:
+        service.initialize()
+        publish_runtime_change(service, _seed_graph)
+        before = service.acquire_verified_snapshot()
+        assert publish_runtime_change(service, lambda _connection, _repository: None) == 1
+        assert service.acquire_verified_snapshot() == before
+        with service.partition().transaction(write=True) as connection:
+            service.partition().bump_runtime_revision(connection)
+        with pytest.raises(InstallationIntegrityError, match="signed tuple"):
+            service.acquire_verified_snapshot()
+
+
+def test_shared_partition_out_of_publication_write_invalidates_cached_snapshot(tmp_path: Path) -> None:
+    with StorageAdministrationService(tmp_path / "installation") as service:
+        service.initialize()
+        publish_runtime_change(service, _seed_graph)
+        service.acquire_verified_snapshot()
+        service.memory_plane_store().apply_batch((CanonicalMemoryRecord(
+            memory_id="memory:unpublished", domain=MemoryDomain.TRANSCRIPT, text="Unpublished",
+            status=CommitStatus.COMMITTED,
+        ),), expected_revision=None)
+        with pytest.raises(InstallationIntegrityError, match="signed tuple"):
+            service.acquire_verified_snapshot()
 
 
 @pytest.mark.parametrize("cut", ["after_prepare", "after_data_commit", "tampered_after_data_commit"])

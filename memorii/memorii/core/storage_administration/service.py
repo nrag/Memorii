@@ -134,7 +134,7 @@ class StorageAdministrationService:
                 f"control journal validation failed: {exc}"
             ) from exc
         self._partition: PartitionDataRepository | None = None
-        self._verified_tuples: dict[str, int] = {}
+        self._verified_tuples: dict[str, tuple[int, int]] = {}
         # Wired by the governance enforcement entry: re-emits one journal
         # entry's revocation directive. Until wired, pending enforcements
         # are reported (never silently dropped) by the drain.
@@ -736,7 +736,7 @@ class StorageAdministrationService:
                         after_digest=candidate.payload_digest(),
                     ),
                 )
-                data_version = partition.data_version(connection)
+                cookie = partition.verification_cookie(connection)
                 handle.commit()
             self._finalize_publication(candidate)
             self._control.write_intent(
@@ -747,7 +747,7 @@ class StorageAdministrationService:
                     after_digest=candidate.payload_digest(),
                 ),
             )
-            self._verified_tuples[candidate.payload_digest()] = data_version
+            self._verified_tuples = {candidate.payload_digest(): cookie}
             return PublicationOutcome(
                 ordinal=candidate.vector.partition_ordinal,
                 write_revision=candidate.vector.memory_write_revision,
@@ -891,15 +891,15 @@ class StorageAdministrationService:
                 row, finalized,
             ):
                 raise InstallationIntegrityError("partition metadata does not match the signed publication")
-            data_version = partition.data_version(connection)
-            if self._verified_tuples.get(finalized.payload_digest()) != data_version:
+            cookie = partition.verification_cookie(connection)
+            if self._verified_tuples.get(finalized.payload_digest()) != cookie:
                 manifest_mismatch = not self._matches_materialization(connection, finalized)
         if manifest_mismatch:
             self._quarantine_manifest_mismatch(finalized)
             raise InstallationIntegrityError(
                 "materialization manifest does not match the signed tuple"
             )
-        self._verified_tuples[finalized.payload_digest()] = data_version
+        self._verified_tuples = {finalized.payload_digest(): cookie}
         return PartitionVerificationSnapshot(
             tuple_digest=finalized.payload_digest(),
             ordinal=finalized.vector.partition_ordinal,
@@ -927,7 +927,12 @@ class StorageAdministrationService:
 
     def _matches_materialization(self, connection: sqlite3.Connection, finalized: RuntimePublicationState) -> bool:
         try:
-            entries = self.partition().compute_materialization_manifest(connection)
+            partition = self.partition()
+            if partition.supports_runtime_history(connection) and partition.read_revision_state(connection) != (
+                finalized.vector.memory_write_revision, finalized.vector.memory_data_revision,
+            ):
+                return False
+            entries = partition.compute_materialization_manifest(connection)
             if RuntimeMaterializationManifest(catalogs=entries).digest() != finalized.manifest_digest:
                 return False
             verify_runtime_history(

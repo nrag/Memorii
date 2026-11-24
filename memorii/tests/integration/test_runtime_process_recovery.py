@@ -187,7 +187,16 @@ def test_second_runtime_publication_advances_both_heads(tmp_path: Path) -> None:
     try:
         service.initialize()
         first = publish_runtime_change(
-            service, lambda connection, repository: None
+            service,
+            lambda connection, repository: repository.apply_task(
+                connection, TaskRecord(
+                    task_id="task:first",
+                    principal="principal:a",
+                    goal="First task",
+                    created_at=_NOW,
+                    root_execution_node_id="exec:first",
+                ),
+            ),
         )
         second = publish_runtime_change(
             service,

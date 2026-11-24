@@ -638,8 +638,10 @@ class PartitionDataRepository:
         return PartitionDataRepository.read_schema_version(connection) >= _RUNTIME_HISTORY_SCHEMA_VERSION
 
     @staticmethod
-    def data_version(connection: sqlite3.Connection) -> int:
-        return int(connection.execute("PRAGMA data_version").fetchone()[0])
+    def verification_cookie(connection: sqlite3.Connection) -> tuple[int, int]:
+        # SQLite's data_version advances for other connections. The local
+        # change count invalidates a cached acquisition for this connection.
+        return int(connection.execute("PRAGMA data_version").fetchone()[0]), connection.total_changes
 
     @staticmethod
     def _install_runtime_history(connection: sqlite3.Connection) -> None:
@@ -1113,7 +1115,8 @@ class PartitionDataRepository:
             raise sqlite3.DatabaseError("memory revision state is missing")
         return int(row["write_revision"]), int(row["data_revision"])
 
-    def read_runtime_revision(self, connection: sqlite3.Connection) -> int:
+    @staticmethod
+    def read_runtime_revision(connection: sqlite3.Connection) -> int:
         row = connection.execute(
             "SELECT runtime_revision FROM runtime_revision_state WHERE id = 1"
         ).fetchone()

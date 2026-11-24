@@ -698,6 +698,8 @@ def publish_runtime_change(
             runtime_revision = partition.bump_runtime_revision(connection)
             with partition.capture_runtime_rows(connection) as changes:
                 apply(connection, repository)
+            if partition.supports_runtime_history(connection) and not changes:
+                return runtime_revision - 1
             runtime_position = (
                 append_runtime_changes(
                     connection,
@@ -771,7 +773,7 @@ def publish_runtime_change(
                     after_digest=candidate.payload_digest(),
                 ),
             )
-            data_version = partition.data_version(connection)
+            cookie = partition.verification_cookie(connection)
             handle.commit()
         administration._finalize_publication(candidate)
         administration._control.write_intent(
@@ -782,5 +784,5 @@ def publish_runtime_change(
                 after_digest=candidate.payload_digest(),
             ),
         )
-        administration._verified_tuples[candidate.payload_digest()] = data_version
+        administration._verified_tuples = {candidate.payload_digest(): cookie}
         return runtime_revision
