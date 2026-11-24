@@ -2,7 +2,8 @@
 
 A cursor binds the query (task, view, offset), the principal and its
 grant identity/epoch, the runtime revision it was minted at, and an
-expiry — authenticated with an installation-controlled key. A forged
+expiry. Managed cursors also bind the data generation and eligibility epoch.
+Each cursor is authenticated with an installation-controlled key. A forged
 cursor, a cursor from another query or principal, a cursor crossing a
 runtime revision boundary, or an expired cursor is rejected; on revision
 or authorization change the caller receives ``stale_cursor`` and must
@@ -15,6 +16,10 @@ from __future__ import annotations
 import hashlib
 import hmac
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from memorii.stores.sqlite.partition import PartitionDataRepository
 
 HARNESS_CURSOR_PURPOSE = "harness-continuation-cursor"
 HARNESS_CURSOR_DOMAIN = b"memorii.harness-continuation-cursor.v1\x00"
@@ -44,6 +49,7 @@ class HarnessPageCodec:
         view: str,
         offset: int,
         expires_at: datetime,
+        installation_binding: tuple[str, int] | None = None,
     ) -> str:
         if expires_at.tzinfo is None:
             raise ValueError("cursor expiry must be timezone-aware")
@@ -56,6 +62,7 @@ class HarnessPageCodec:
             view=view,
             offset=offset,
             expires_at=expires_at.astimezone(UTC),
+            installation_binding=installation_binding,
         )
         signature = hmac.new(self._key, payload, hashlib.sha256).hexdigest()
         return f"{payload.hex()}.{signature}"
@@ -71,6 +78,7 @@ class HarnessPageCodec:
         runtime_revision: int,
         view: str,
         now: datetime,
+        installation_binding: tuple[str, int] | None = None,
     ) -> int:
         """Validate the cursor against the current page context.
 
@@ -88,7 +96,7 @@ class HarnessPageCodec:
         if not hmac.compare_digest(signature, expected):
             raise HarnessCursorError("forged cursor: signature is invalid")
         parts = payload.decode("utf-8").split("\x00")
-        if len(parts) != 8:
+        if len(parts) not in (8, 10):
             raise HarnessCursorError("forged cursor: payload is malformed")
         (
             cursor_task,
@@ -99,7 +107,7 @@ class HarnessPageCodec:
             cursor_view,
             offset_text,
             expiry_text,
-        ) = parts
+        ) = parts[:8]
         if cursor_task != task_id or cursor_view != view:
             raise HarnessCursorError("forged cursor: bound to another query")
         if cursor_principal != principal:
@@ -111,6 +119,10 @@ class HarnessPageCodec:
         if int(cursor_revision) != runtime_revision:
             raise HarnessCursorError(
                 "stale_cursor: runtime revision changed; restart paging"
+            )
+        if parts[8:] != self._installation_fields(installation_binding):
+            raise HarnessCursorError(
+                "stale_cursor: installation generation or eligibility changed; restart paging"
             )
         if now.tzinfo is None:
             raise ValueError("cursor verification time must be timezone-aware")
@@ -133,6 +145,7 @@ class HarnessPageCodec:
         view: str,
         offset: int,
         expires_at: datetime,
+        installation_binding: tuple[str, int] | None,
     ) -> bytes:
         return "\x00".join(
             (
@@ -144,11 +157,16 @@ class HarnessPageCodec:
                 view,
                 str(offset),
                 expires_at.isoformat(),
+                *HarnessPageCodec._installation_fields(installation_binding),
             )
         ).encode("utf-8")
 
+    @staticmethod
+    def _installation_fields(binding: tuple[str, int] | None) -> list[str]:
+        return [] if binding is None else [binding[0], str(binding[1])]
 
-def cursor_codec_for(partition: object) -> HarnessPageCodec:
+
+def cursor_codec_for(partition: PartitionDataRepository) -> HarnessPageCodec:
     """Build the codec from the installation's protected-secret owner."""
     from memorii.core.memory_plane.sqlite_store import SqliteMemoryPlaneStore
 

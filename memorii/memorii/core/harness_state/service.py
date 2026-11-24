@@ -88,6 +88,8 @@ class HarnessStateService:
         view: str = "summary",
         now: datetime | None = None,
         cursor: str | None = None,
+        checkpoint_ref: str | None = None,
+        installation_binding: tuple[str, int] | None = None,
     ) -> HarnessStateEnvelope:
         if self._grant_registry is not None:
             try:
@@ -138,6 +140,7 @@ class HarnessStateService:
                 runtime_revision=revision,
                 view=view,
                 now=moment,
+                installation_binding=installation_binding,
             )
         pending_actions = tuple(
             attempt.action_id
@@ -182,6 +185,7 @@ class HarnessStateService:
                 view=view,
                 offset=offset + 16,
                 expires_at=moment + DEFAULT_CURSOR_LIFETIME,
+                installation_binding=installation_binding,
             )
         unexplained = tuple(
             HarnessOutputBlock(kind="evidence", label=binding.node_id)
@@ -221,6 +225,7 @@ class HarnessStateService:
             protocol_version=1,
             task_id=task_id,
             revision=revision,
+            checkpoint_ref=checkpoint_ref,
             status=status,
             goal=task.goal,
             current_execution_node=task.root_execution_node_id,

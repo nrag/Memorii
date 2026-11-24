@@ -29,12 +29,13 @@ if TYPE_CHECKING:
     from memorii.core.persistence.contracts import MaterializationCatalogEntry
     from memorii.core.semantic_ingestion.ontology_index import OntologyIndexProjection
 
-PARTITION_SCHEMA_VERSION = 5
+PARTITION_SCHEMA_VERSION = 6
 _INITIAL_PARTITION_SCHEMA_VERSION = 1
 _CONSOLIDATION_SCHEMA_VERSION = 2
 _DELIVERY_SCHEMA_VERSION = 3
 _RUNTIME_HISTORY_SCHEMA_VERSION = 4
 _RUNTIME_SOURCE_RELEASE_SCHEMA_VERSION = 5
+_RUNTIME_REPLAY_CHECKPOINT_SCHEMA_VERSION = 6
 _DEFAULT_BUSY_TIMEOUT_MS = 5_000
 
 _SCHEMA_STATEMENTS = (
@@ -303,6 +304,8 @@ _DELIVERY_CATALOGS = (
 )
 _SKILL_CANDIDATE_CATALOG = ("runtime_skill_candidates", "candidate_id", "record_json")
 _RUNTIME_SOURCE_RELEASE_CATALOG = ("runtime_source_release_grants", "grant_id", "record_json")
+_DELIVERY_RESTORE_HOLD_CATALOG = ("runtime_delivery_restore_holds", "hold_id", "record_json")
+_RUNTIME_REPLAY_CHECKPOINT_TABLE = "runtime_replay_checkpoints"
 _CURRENT_DELIVERY_CATALOGS = (*_DELIVERY_CATALOGS, _SKILL_CANDIDATE_CATALOG)
 DeliveryCatalog = Literal[
     "writeback_decisions", "runtime_work_projections", "runtime_target_receipts", "runtime_skill_candidates",
@@ -395,6 +398,11 @@ _MATERIALIZATION_CATALOGS_BY_VERSION = {
     _RUNTIME_SOURCE_RELEASE_SCHEMA_VERSION: (
         *_INITIAL_MATERIALIZATION_CATALOGS, _CONSOLIDATION_CATALOG, *_DELIVERY_CATALOGS,
         _SKILL_CANDIDATE_CATALOG, *_RUNTIME_EVENT_INDEX_CATALOGS, _RUNTIME_SOURCE_RELEASE_CATALOG,
+    ),
+    _RUNTIME_REPLAY_CHECKPOINT_SCHEMA_VERSION: (
+        *_INITIAL_MATERIALIZATION_CATALOGS, _CONSOLIDATION_CATALOG, *_DELIVERY_CATALOGS,
+        _SKILL_CANDIDATE_CATALOG, *_RUNTIME_EVENT_INDEX_CATALOGS, _RUNTIME_SOURCE_RELEASE_CATALOG,
+        _DELIVERY_RESTORE_HOLD_CATALOG,
     ),
 }
 _CATALOG_SEED_DOMAIN = b"memorii.materialization-catalog.v1\x00"
@@ -608,6 +616,7 @@ class PartitionDataRepository:
             connection, _RUNTIME_SOURCE_RELEASE_CATALOG[0],
         ):
             raise sqlite3.DatabaseError("runtime source release catalog is outside the declared partition schema")
+        self.supports_runtime_replay_checkpoints(connection)
         entries: list[MaterializationCatalogEntry] = []
         for catalog, key_expression, payload_column in catalogs:
             rows = connection.execute(
@@ -674,6 +683,14 @@ class PartitionDataRepository:
         return PartitionDataRepository.read_schema_version(connection) >= _RUNTIME_SOURCE_RELEASE_SCHEMA_VERSION
 
     @staticmethod
+    def supports_runtime_replay_checkpoints(connection: sqlite3.Connection) -> bool:
+        supports = PartitionDataRepository.read_schema_version(connection) >= _RUNTIME_REPLAY_CHECKPOINT_SCHEMA_VERSION
+        for table in (_RUNTIME_REPLAY_CHECKPOINT_TABLE, _DELIVERY_RESTORE_HOLD_CATALOG[0]):
+            if PartitionDataRepository._has_catalog(connection, table) != supports:
+                raise sqlite3.DatabaseError("runtime recovery catalog does not match the declared partition schema")
+        return supports
+
+    @staticmethod
     def restore_inventory_rows(
         connection: sqlite3.Connection, catalog: str,
     ) -> Iterator[tuple[tuple[str, ...], str]]:
@@ -695,6 +712,47 @@ class PartitionDataRepository:
         yield from _RUNTIME_ROW_LAYOUTS.items()
         if PartitionDataRepository.supports_runtime_source_release(connection):
             yield _RUNTIME_SOURCE_RELEASE_CATALOG[0], ((_RUNTIME_SOURCE_RELEASE_CATALOG[1],), ())
+        if PartitionDataRepository.supports_runtime_replay_checkpoints(connection):
+            yield _DELIVERY_RESTORE_HOLD_CATALOG[0], ((_DELIVERY_RESTORE_HOLD_CATALOG[1],), ())
+
+    def stage_runtime_recovery_upgrade(self, connection: sqlite3.Connection, *, source_digest: str) -> None:
+        """Install recovery catalogs in a working copy of a verified signed journal."""
+        row = self.read_publication_row(connection)
+        version = self.read_schema_version(connection)
+        if not connection.in_transaction or row is None or row["tuple_digest"] != source_digest:
+            raise sqlite3.DatabaseError("recovery upgrade requires the exact staged source publication")
+        if version < _RUNTIME_HISTORY_SCHEMA_VERSION:
+            raise sqlite3.DatabaseError("recovery upgrade requires an authenticated runtime event journal")
+        if self.supports_runtime_replay_checkpoints(connection):
+            return
+        if version < _RUNTIME_SOURCE_RELEASE_SCHEMA_VERSION:
+            self._install_source_release_catalog(connection)
+        self._install_runtime_recovery_catalogs(connection)
+        connection.execute(
+            "UPDATE partition_schema SET value = ? WHERE key = 'schema_version'",
+            (str(_RUNTIME_REPLAY_CHECKPOINT_SCHEMA_VERSION),),
+        )
+
+    @staticmethod
+    def _install_source_release_catalog(connection: sqlite3.Connection) -> None:
+        connection.execute(
+            "CREATE TABLE runtime_source_release_grants (grant_id TEXT PRIMARY KEY NOT NULL, record_json TEXT NOT NULL)"
+        )
+
+    @staticmethod
+    def _install_runtime_recovery_catalogs(connection: sqlite3.Connection) -> None:
+        connection.execute(
+            "CREATE TABLE runtime_replay_checkpoints (checkpoint_digest TEXT PRIMARY KEY NOT NULL, record_json TEXT NOT NULL)"
+        )
+        connection.execute(
+            "CREATE TABLE runtime_delivery_restore_holds (hold_id TEXT PRIMARY KEY NOT NULL, record_json TEXT NOT NULL)"
+        )
+
+    @staticmethod
+    def insert_delivery_restore_hold(connection: sqlite3.Connection, *, hold_id: str, record_json: str) -> None:
+        connection.execute(
+            "INSERT INTO runtime_delivery_restore_holds (hold_id, record_json) VALUES (?, ?)", (hold_id, record_json),
+        )
 
     @staticmethod
     def verification_cookie(connection: sqlite3.Connection) -> tuple[int, int]:
@@ -1427,10 +1485,9 @@ class PartitionDataRepository:
             if PARTITION_SCHEMA_VERSION >= _RUNTIME_HISTORY_SCHEMA_VERSION:
                 self._install_runtime_history(connection)
             if PARTITION_SCHEMA_VERSION >= _RUNTIME_SOURCE_RELEASE_SCHEMA_VERSION:
-                connection.execute(
-                    "CREATE TABLE runtime_source_release_grants ("
-                    " grant_id TEXT PRIMARY KEY NOT NULL, record_json TEXT NOT NULL)"
-                )
+                self._install_source_release_catalog(connection)
+            if PARTITION_SCHEMA_VERSION >= _RUNTIME_REPLAY_CHECKPOINT_SCHEMA_VERSION:
+                self._install_runtime_recovery_catalogs(connection)
             connection.execute(
                 "INSERT INTO memory_revision_state (id, write_revision, data_revision)"
                 " VALUES (1, 0, 0)"

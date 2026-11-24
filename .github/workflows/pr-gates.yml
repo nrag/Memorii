@@ -435,6 +435,7 @@ jobs:
           pytest -W error
           tests/integration/test_partition_storage_recovery.py
           tests/integration/test_partition_generation_selection.py
+          tests/integration/test_older_restore_generation.py
           tests/integration/test_shared_sqlite_provider_paths.py
           tests/integration/test_shared_sqlite_semantic_owners.py
           tests/integration/test_memory_plane_migration_recovery.py
@@ -627,9 +628,11 @@ jobs:
           pytest -W error
           tests/integration/test_runtime_process_recovery.py
           tests/integration/test_runtime_resume_checkpoint.py
+          tests/integration/test_runtime_checkpoint_tail.py
           tests/integration/test_runtime_sidecar.py
           tests/integration/test_consolidation_read_sidecar.py
           tests/integration/test_managed_candidate_delivery.py
+          tests/integration/test_legacy_outbox_reconciliation.py
           tests/integration/test_runtime_source_authority.py
           tests/integration/test_managed_work_projection_recall.py
           tests/unit/core/test_runtime_journal.py

@@ -26,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from memorii.core.consolidation.runtime_outputs import ArchivePackageRef, SourceReferences
 from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
 from memorii.core.persistence.runtime_contracts import (
+    AssumptionContent,
     RuntimeOverlayVersion,
     SolverJustificationRecord,
     SolverRunRecord,
@@ -433,40 +434,31 @@ def build_resume_envelope(
 ) -> HarnessResumeEnvelope:
     """Restore one consistent view; never rerun or auto-complete actions."""
     moment = now or datetime.now(UTC)
-    task = repository.get_task(task_id)
-    if task is None:
-        raise RuntimeCheckpointError(f"not_found: task {task_id} does not exist")
-    runs = repository.list_solver_runs(task_id)
-    overlays: list[RuntimeOverlayVersion] = []
-    justifications: list[SolverJustificationRecord] = []
-    for run in runs:
-        overlays.extend(repository.list_overlays(run.solver_id))
-        justifications.extend(repository.list_justifications(run.solver_id))
-    pending_actions = [
-        attempt.action_id
-        for attempt in repository.list_action_attempts(task_id)
-        if attempt.status in ("dispatched", "outcome_unknown")
-    ]
-    # Temporal revalidation: an ASSUMPTION node whose valid_to has passed
-    # (or whose valid_from has not yet arrived) relative to the resume
-    # moment lists its node for revalidation; dependent recommendations
-    # surface as revalidation_required instead of ready.
-    revalidation: list[str] = []
-    for run in runs:
-        with repository._partition.transaction(write=False) as connection:
-            nodes = repository.list_solver_nodes_in(connection, run.solver_id)
-        for _solver_id, node_id, content in nodes:
-            kind = getattr(content, "kind", None)
-            if kind != "ASSUMPTION":
-                continue
-            valid_from = getattr(content, "valid_from", None)
-            valid_to = getattr(content, "valid_to", None)
-            expired = valid_to is not None and valid_to < moment
-            premature = valid_from is not None and valid_from > moment
-            if expired or premature:
-                revalidation.append(
-                    f"{node_id}:{'expired' if expired else 'not_yet_valid'}"
-                )
+    with repository.partition.transaction(write=False) as connection:
+        task = repository.get_task_in(connection, task_id)
+        if task is None:
+            raise RuntimeCheckpointError(f"not_found: task {task_id} does not exist")
+        revision = repository.read_runtime_revision_in(connection)
+        runs = repository.list_solver_runs_in(connection, task_id)
+        overlays = tuple(
+            overlay for run in runs for overlay in repository.list_overlays_in(connection, run.solver_id)
+        )
+        justifications = tuple(
+            item for run in runs for item in repository.list_justifications_in(connection, run.solver_id)
+        )
+        pending_actions = tuple(
+            attempt.action_id for attempt in repository.list_action_attempts_in(connection, task_id)
+            if attempt.status in ("dispatched", "outcome_unknown")
+        )
+        revalidation: list[str] = []
+        for run in runs:
+            for _, node_id, content in repository.list_solver_nodes_in(connection, run.solver_id):
+                if not isinstance(content, AssumptionContent):
+                    continue
+                expired = content.valid_to is not None and content.valid_to < moment
+                premature = content.valid_from is not None and content.valid_from > moment
+                if expired or premature:
+                    revalidation.append(f"{node_id}:{'expired' if expired else 'not_yet_valid'}")
     # Revocation revalidation: a justification whose evidence was revoked
     # can no longer sponsor a served conclusion; it lists for revalidation
     # exactly like an expired assumption.
@@ -476,29 +468,25 @@ def build_resume_envelope(
                 revalidation.append(
                     f"{justification.justification_id}:revoked_evidence"
                 )
-    del moment  # consumed by the temporal walk above
-    if (
-        checkpoint is not None
-        and checkpoint.manifest.runtime_revision > repository.runtime_revision()
-    ):
+    if checkpoint is not None and checkpoint.manifest.runtime_revision > revision:
         raise RuntimeCheckpointError(
             "integrity_error: checkpoint revision exceeds current state"
         )
-    status: str = "ready"
+    status: Literal["ready", "revalidation_required", "reconcile_required"] = "ready"
     if pending_actions:
         status = "reconcile_required"
     if revalidation:
         status = "revalidation_required"
     return HarnessResumeEnvelope(
         task_id=task_id,
-        runtime_revision=repository.runtime_revision(),
+        runtime_revision=revision,
         checkpoint_id=None if checkpoint is None else checkpoint.checkpoint_id,
-        status=status,  # type: ignore[arg-type]
+        status=status,
         task=task,
-        solver_runs=tuple(runs),
-        overlays=tuple(overlays),
-        justifications=tuple(justifications),
-        pending_actions=tuple(pending_actions),
+        solver_runs=runs,
+        overlays=overlays,
+        justifications=justifications,
+        pending_actions=pending_actions,
         revalidation_reasons=tuple(revalidation),
     )
 

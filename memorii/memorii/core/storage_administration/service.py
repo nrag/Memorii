@@ -19,6 +19,7 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from pydantic import ValidationError
 
@@ -36,6 +37,7 @@ from memorii.core.persistence.contracts import (
     GenesisPosition,
     InstallationControlJournalEntry,
     InstallationControlState,
+    InstallationGenerationChangeIntent,
     PartitionRevisionVector,
     RuntimeMaterializationManifest,
     RuntimePublicationIntent,
@@ -53,6 +55,7 @@ from memorii.core.persistence.key_owner import (
 from memorii.core.persistence.runtime_contracts import OperationOrigin, OperationOriginCoordinate
 from memorii.core.persistence.runtime_journal import RuntimeJournalError, verify_runtime_history
 from memorii.core.storage_administration.generation_selection import (
+    PartitionGenerationSelector,
     read_partition_generation_selector,
     selected_partition_path,
 )
@@ -287,6 +290,11 @@ class StorageAdministrationService:
         """Resolve only a selector signed for the currently finalized generation."""
         partition_root = self._root / "partition"
         try:
+            current = self._control.read_control_state()
+            if current is not None:
+                change = self._control.read_generation_change(f"{current.installation_id}:default-partition")
+                if change is not None and change.phase == "prepared":
+                    raise InstallationIntegrityError("partition generation change requires recovery")
             selector = read_partition_generation_selector(self._root / "control")
             if selector is None:
                 return partition_root / "partition.sqlite3", None
@@ -295,16 +303,10 @@ class StorageAdministrationService:
             finalized = self._control.read_publication_state(repository_id)
             if (
                 finalized is None
-                or selector.installation_id != state.installation_id
-                or selector.repository_id != repository_id
-                or selector.generation_id != finalized.data_generation_id
                 or finalized.installation_id != state.installation_id
                 or finalized.repository_id != repository_id
                 or finalized.eligibility_epoch != state.eligibility_epoch
-                or not self._signing.verify(
-                    self._signer_key_id, PARTITION_GENERATION_SIGNATURE_PURPOSE,
-                    selector.unsigned_digest(), selector.signature,
-                )
+                or not self._selector_matches(selector, finalized)
                 or not self._signing.verify(
                     self._signer_key_id, RUNTIME_PUBLICATION_SIGNATURE_PURPOSE,
                     finalized.payload_digest(), finalized.signature,
@@ -314,6 +316,17 @@ class StorageAdministrationService:
             return selected_partition_path(partition_root, selector.generation_id), finalized
         except (OSError, ValueError) as exc:
             raise InstallationIntegrityError("partition generation selection is unavailable") from exc
+
+    def _selector_matches(self, selector: PartitionGenerationSelector, publication: RuntimePublicationState) -> bool:
+        return (
+            selector.installation_id == publication.installation_id
+            and selector.repository_id == publication.repository_id
+            and selector.generation_id == publication.data_generation_id
+            and self._signing.verify(
+                self._signer_key_id, PARTITION_GENERATION_SIGNATURE_PURPOSE,
+                selector.unsigned_digest(), selector.signature,
+            )
+        )
 
     @staticmethod
     def _partition_file_identity(path: Path) -> tuple[int, int]:
@@ -859,6 +872,9 @@ class StorageAdministrationService:
     def resolve_pending_publication(self) -> Resolution:
         """Recover a prepared intent: exact-old aborts, exact-new finalizes."""
         repository_id = self._repository_id()
+        change = self._control.read_generation_change(repository_id)
+        if change is not None and change.phase == "prepared":
+            return self._recover_generation_change(change)
         intent = self._control.read_pending_intent(repository_id)
         if intent is None:
             return Resolution(disposition="clean", tuple_digest=None)
@@ -922,6 +938,51 @@ class StorageAdministrationService:
                 return Resolution(disposition="finalized", tuple_digest=candidate_digest)
         self._quarantine(intent)
         return Resolution(disposition="quarantined", tuple_digest=data_digest)
+
+    def _recover_generation_change(self, intent: InstallationGenerationChangeIntent) -> Resolution:
+        """Resolve the cutover from its authenticated physical selector and exact SQLite tuple."""
+        partition_root = self._root / "partition"
+        old, new = intent.old_publication, intent.candidate_publication
+        publication = None
+        phase: Literal["aborted", "finalized", "quarantined"] = "quarantined"
+        try:
+            selector = read_partition_generation_selector(self._root / "control")
+            if selector is None and not intent.old_named_selector:
+                default_path = partition_root / "partition.sqlite3"
+                if not partition_root.is_symlink() and not default_path.is_symlink():
+                    publication, path = old, default_path
+            elif selector is not None:
+                if self._selector_matches(selector, new):
+                    publication = new
+                elif intent.old_named_selector and self._selector_matches(selector, old):
+                    publication = old
+                if publication is not None:
+                    path = selected_partition_path(partition_root, publication.data_generation_id)
+            if publication is not None:
+                with PartitionDataRepository(path, require_existing=True) as partition, partition.transaction(
+                    write=False,
+                ) as connection:
+                    row = partition.read_publication_row(connection)
+                    if (
+                        row is not None and row["tuple_digest"] == publication.payload_digest()
+                        and self._matches_signed_publication(row, publication)
+                        and self._matches_materialization(connection, publication, partition=partition)
+                    ):
+                        phase = "aborted" if publication == old else "finalized"
+        except (OSError, ValueError, sqlite3.DatabaseError):
+            # The selector or its chosen bytes did not authenticate either state.
+            publication = None
+        terminal = intent.model_copy(update={"phase": phase})
+        self._control.write_generation_change(
+            terminal,
+            self._journal_entry(
+                operation=f"generation_change_{phase}",
+                before_digest=intent.binding_digest(),
+                after_digest=terminal.binding_digest(),
+            ),
+        )
+        selected_digest = None if publication is None or phase == "quarantined" else publication.payload_digest()
+        return Resolution(disposition=phase, tuple_digest=selected_digest)
 
     def acquire_verified_snapshot(self) -> PartitionVerificationSnapshot:
         """Tier A plus Tier B verification of the released partition state.
@@ -1030,9 +1091,13 @@ class StorageAdministrationService:
         except (PermissionError, ValidationError):
             return False
 
-    def _matches_materialization(self, connection: sqlite3.Connection, finalized: RuntimePublicationState) -> bool:
+    def _matches_materialization(
+        self, connection: sqlite3.Connection, finalized: RuntimePublicationState,
+        *, partition: PartitionDataRepository | None = None,
+    ) -> bool:
         try:
-            partition = self.partition()
+            if partition is None:
+                partition = self.partition()
             if partition.supports_runtime_history(connection) and partition.read_revision_state(connection) != (
                 finalized.vector.memory_write_revision, finalized.vector.memory_data_revision,
             ):
@@ -1045,6 +1110,11 @@ class StorageAdministrationService:
                 finalized=finalized,
                 verify=lambda purpose, digest, signature: self._signing.verify(
                     self._signer_key_id, purpose, digest, signature,
+                ),
+                checkpoint_signer_key_id=self._signer_key_id,
+                checkpoint_signer_fingerprint=(
+                    self._signing.public_key_fingerprint(self._signer_key_id)
+                    if finalized.checkpoint_digest is not None else None
                 ),
             )
         except (PermissionError, RuntimeJournalError, ValidationError, sqlite3.DatabaseError):
@@ -1096,6 +1166,7 @@ class StorageAdministrationService:
                 empty_pointer_set_digest() if previous is None else previous.vector.ontology_pointer_digest
             ),
         )
+        trust_digest = self._trust_registry_digest()
         unsigned = RuntimePublicationState(
             installation_id=state.installation_id,
             repository_id=self._repository_id(),
@@ -1104,9 +1175,13 @@ class StorageAdministrationService:
                 sequence=prior_ordinal + 1, digest=manifest.digest()
             ),
             manifest_digest=manifest.digest(),
-            trust_registry_digest=self._trust_registry_digest(),
+            trust_registry_digest=trust_digest,
             eligibility_epoch=epoch,
             vector=vector,
+            runtime_history_ancestry=() if previous is None else previous.runtime_history_ancestry,
+            checkpoint_digest=(
+                previous.checkpoint_digest if previous is not None and previous.trust_registry_digest == trust_digest else None
+            ),
             signature="0" * 64,
         )
         return self._sign_state(unsigned)

@@ -20,12 +20,14 @@ from memorii.core.harness_state.envelope import (
     HarnessStateEnvelope,
     render_harness_state,
 )
+from memorii.core.harness_state.paging import HarnessCursorError
 from memorii.core.harness_state.service import (
     HarnessStateError,
     HarnessStateService,
     RuntimeReadGrant,
 )
 from memorii.core.persistence.runtime_repository import RuntimeStateRepository
+from memorii.core.storage_administration.revoked_identity_view import RefreshingRevokedIdentityView
 from memorii.core.storage_administration.service import (
     InstallationIntegrityError,
     StorageAdministrationError,
@@ -59,7 +61,8 @@ class HermesRuntimeStatePorts:
         self._administration = administration
         self._grant_ttl = grant_ttl
         self._service = HarnessStateService(
-            RuntimeStateRepository(administration.partition())
+            RuntimeStateRepository(administration.partition()),
+            revoked_view=RefreshingRevokedIdentityView(administration.installation_root / "control"),
         )
         self._bindings: dict[str, RuntimeTaskBinding] = {}
 
@@ -104,6 +107,7 @@ class HermesRuntimeStatePorts:
         *,
         principal: str,
         now: Callable[[], datetime] | None = None,
+        cursor: str | None = None,
     ) -> HarnessStateEnvelope:
         binding = self._bindings.get(principal)
         if binding is None:
@@ -117,9 +121,18 @@ class HermesRuntimeStatePorts:
             expires_at=moment + self._grant_ttl,
         )
         try:
-            return self._service.read_state(
-                task_id=binding.installation_task_id, grant=grant, now=moment
-            )
+            with self._administration.verified_operation_context() as (state, finalized):
+                if state.mode == "bypass":
+                    raise HarnessStateError("unavailable: installation is in bypass mode")
+                return self._service.read_state(
+                    task_id=binding.installation_task_id, grant=grant, now=moment,
+                    cursor=cursor, checkpoint_ref=finalized.checkpoint_digest,
+                    installation_binding=(
+                        finalized.data_generation_id, state.eligibility_epoch + state.pending_epoch_increments,
+                    ),
+                )
+        except HarnessCursorError as exc:
+            raise HarnessStateError(str(exc)) from exc
         except InstallationIntegrityError as exc:
             raise HarnessStateError("integrity_error: managed runtime state could not be verified") from exc
         except StorageAdministrationError as exc:

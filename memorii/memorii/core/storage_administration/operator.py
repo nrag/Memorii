@@ -70,14 +70,10 @@ class StorageAdministrationOperator:
 
     def status(self) -> InstallationStatus:
         service = self._administration
-        state = service._control_state()
-        partition = service.partition()
-        with partition.transaction(write=False) as connection:
-            runtime_revision = partition.read_runtime_revision(connection)
-            memory_write, _memory_data = partition.read_revision_state(connection)
-        # The memory data revision rides the signed vector of the last
-        # verified snapshot rather than a second uncoupled read.
-        snapshot = service.acquire_verified_snapshot()
+        with service.verified_operation_context() as (state, finalized):
+            partition = service.partition()
+            with partition.transaction(write=False) as connection:
+                runtime_revision = partition.read_runtime_revision(connection)
         return InstallationStatus(
             mode=state.mode,
             control_revision=state.control_revision,
@@ -85,8 +81,8 @@ class StorageAdministrationOperator:
             pending_epoch_increments=state.pending_epoch_increments,
             quarantined=state.quarantined_reason is not None,
             runtime_revision=runtime_revision,
-            memory_write_revision=memory_write,
-            memory_data_revision=snapshot.vector.memory_data_revision,
+            memory_write_revision=finalized.vector.memory_write_revision,
+            memory_data_revision=finalized.vector.memory_data_revision,
         )
 
     def change_mode(
@@ -100,6 +96,7 @@ class StorageAdministrationOperator:
         # The transition takes the publication fence so an in-flight
         # publisher cannot commit across the mode change boundary.
         with service._publication_fence():
+            service.resolve_pending_publication()
             state = service._control_state()
             if state.quarantined_reason is not None:
                 raise OperatorError(
@@ -112,27 +109,26 @@ class StorageAdministrationOperator:
                     f" expected {request.expected_control_revision},"
                     f" current {state.control_revision}"
                 )
-            if state.mode == request.target_mode:
-                return self.status()
-            if state.mode == "bypass" and request.target_mode != "active":
-                raise OperatorError("invalid_request: bypass returns to active only")
-            service._control.write_control_state(
-                state.model_copy(
-                    update={
-                        "control_revision": state.control_revision + 1,
-                        "mode": request.target_mode,
-                    }
-                ),
-                service._journal_entry(
-                    operation="mode_changed",
-                    before_digest=canonical_json_digest(
-                        {"mode": state.mode, "reason": request.reason}
+            if state.mode != request.target_mode:
+                if state.mode == "bypass" and request.target_mode != "active":
+                    raise OperatorError("invalid_request: bypass returns to active only")
+                service._control.write_control_state(
+                    state.model_copy(
+                        update={
+                            "control_revision": state.control_revision + 1,
+                            "mode": request.target_mode,
+                        }
                     ),
-                    after_digest=canonical_json_digest(
-                        {"mode": request.target_mode, "reason": request.reason}
+                    service._journal_entry(
+                        operation="mode_changed",
+                        before_digest=canonical_json_digest(
+                            {"mode": state.mode, "reason": request.reason}
+                        ),
+                        after_digest=canonical_json_digest(
+                            {"mode": request.target_mode, "reason": request.reason}
+                        ),
                     ),
-                ),
-            )
+                )
         if state.mode == "read_only" and request.target_mode != "read_only":
             # Leaving the barrier is the live-process trigger for forget
             # enforcement: pending reconciliations drain before the owner

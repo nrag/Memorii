@@ -27,6 +27,20 @@ class _DeliveryRecord(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
 
 
+class DeliveryRestoreHold(_DeliveryRecord):
+    """Hold pre-cutover delivery authority while the restored generation is selected."""
+
+    hold_id: Digest
+    installation_id: Identity
+    partition_id: Identity
+    restored_generation_id: Identity
+    source_generation_id: Identity
+    source_publication_digest: Digest
+    live_publication_digest: Digest
+    preview_digest: Digest
+    status: Literal["needs_reconciliation"] = "needs_reconciliation"
+
+
 class _TaskTarget(_DeliveryRecord):
     partition_id: Identity
     task_id: Identity

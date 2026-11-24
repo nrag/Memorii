@@ -35,7 +35,11 @@ from memorii.core.persistence.managed_delivery import (
     recover_delivery_claim,
     reject_pending_delivery,
 )
-from memorii.core.persistence.runtime_api import operation_origin_namespace, operation_origin_proof_digest
+from memorii.core.persistence.runtime_api import (
+    operation_origin_namespace,
+    operation_origin_proof_digest,
+    require_no_legacy_delivery,
+)
 from memorii.core.persistence.runtime_contracts import OperationOriginCoordinate, RuntimeSourceAdmissionReceipt
 from memorii.core.persistence.runtime_repository import (
     RuntimeStateError,
@@ -228,6 +232,7 @@ class ManagedCandidateDeliveryWorker:
             try:
                 entry = CandidateDeliveryEntry.model_validate_json(row["record_json"])
             except ValidationError as exc:
+                require_no_legacy_delivery(delivery_id, row["record_json"])
                 raise DeliveryTransitionError("integrity_error: invalid writeback queue record") from exc
             if entry.delivery.request.delivery_id != delivery_id:
                 raise DeliveryTransitionError("integrity_error: mismatched writeback delivery ID")

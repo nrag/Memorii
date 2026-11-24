@@ -14,6 +14,7 @@ delivered and never reinterprets an unknown target result.
 from __future__ import annotations
 
 import hashlib
+import json
 import sqlite3
 import uuid
 from collections.abc import Callable
@@ -43,6 +44,7 @@ from memorii.core.persistence.contracts import (
     RuntimePublicationState,
     canonical_json_digest,
 )
+from memorii.core.persistence.managed_delivery import DeliveryTransitionError
 from memorii.core.persistence.runtime_checkpoint import (
     RuntimeCheckpointError,
     TaskLifecycleArchive,
@@ -144,6 +146,59 @@ class RuntimeOutboxDelivery(BaseModel):
         return self
 
 
+class LegacyUnresolvedDelivery(BaseModel):
+    """Quarantine a digest-only delivery while retaining its exact historical bytes."""
+
+    record_type: Literal["legacy_unresolved_delivery"] = "legacy_unresolved_delivery"
+    delivery_id: str = Field(min_length=1)
+    status: Literal["needs_reconciliation"] = "needs_reconciliation"
+    original_record_json: str
+    original_record_digest: str = Field(pattern=_HEX_64)
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def original_matches_delivery(self) -> LegacyUnresolvedDelivery:
+        original = RuntimeOutboxDelivery.model_validate_json(self.original_record_json)
+        if (
+            original.delivery_id != self.delivery_id
+            or hashlib.sha256(self.original_record_json.encode("utf-8")).hexdigest() != self.original_record_digest
+        ):
+            raise ValueError("quarantined legacy delivery differs from its retained record")
+        return self
+
+
+def convert_legacy_outbox_record(delivery_id: str, record_json: str) -> LegacyUnresolvedDelivery | None:
+    """Convert one digest-only record, leaving the known managed formats to their owners."""
+    payload = json.loads(record_json)
+    if not isinstance(payload, dict):
+        raise ValueError("outbox row must contain an object")
+    record_type = payload.get("record_type")
+    if record_type in ("managed_work_projection", "managed_writeback_candidate"):
+        return None
+    if record_type == "legacy_unresolved_delivery":
+        legacy = LegacyUnresolvedDelivery.model_validate(payload)
+    else:
+        legacy = LegacyUnresolvedDelivery(
+            delivery_id=delivery_id,
+            original_record_json=record_json,
+            original_record_digest=hashlib.sha256(record_json.encode("utf-8")).hexdigest(),
+        )
+    if legacy.delivery_id != delivery_id:
+        raise ValueError("legacy outbox row disagrees with its storage key")
+    return legacy
+
+
+def require_no_legacy_delivery(delivery_id: str, record_json: str) -> None:
+    """Give managed target owners a closed diagnostic for a selected legacy row."""
+    try:
+        legacy = convert_legacy_outbox_record(delivery_id, record_json)
+    except ValueError as exc:
+        raise DeliveryTransitionError("integrity_error: invalid outbox delivery record") from exc
+    if legacy is not None:
+        raise DeliveryTransitionError("needs_reconciliation: legacy digest-only delivery requires owner review")
+
+
 def command_request_digest(request: RuntimeCommandRequest) -> str:
     import json
 
@@ -194,6 +249,7 @@ class RuntimeCommandService:
                 connection, repository, request, digest
             ),
             operation_binding=f"runtime_command:{request.kind}",
+            checkpoint_requested=request.kind == "checkpoint_task",
         )
         receipt = self._repository.get_command_receipt(
             self._client_namespace, request.operation_id
@@ -831,6 +887,7 @@ class ManagedRuntimeCommandService:
                 apply,
                 operation_binding=f"runtime_command:{request.kind}",
                 validate_authority=validate,
+                checkpoint_requested=request.kind == "checkpoint_task",
             )
         receipt = self._read_receipt(request, operation_origin)
         if receipt is None:
@@ -1011,7 +1068,7 @@ class ManagedRuntimeCommandService:
             raise RuntimeCommandError("invalid_request: operation identity is invalid")
         if request.kind == "record_observation" and self._observation_source is not None:
             return
-        if request.kind not in {"start_task", "resume_task", "pause_task", "complete_task"}:
+        if request.kind not in {"start_task", "resume_task", "pause_task", "complete_task", "checkpoint_task"}:
             raise RuntimeCommandError(
                 "unsupported_configuration: managed result and mutation owners are not configured"
             )
@@ -1141,7 +1198,10 @@ def deliver_outbox(
     delivered: list[RuntimeOutboxDelivery] = []
     with repository._partition.manual_write_transaction() as handle:
         connection = handle.connection
-        if repository.partition.supports_managed_runtime(connection):
+        if (
+            repository.partition.read_publication_row(connection) is not None
+            or repository.partition.supports_managed_runtime(connection)
+        ):
             raise RuntimeCommandError("needs_reconciliation: legacy digest-only deliveries require owner review")
         for entry in repository.list_outbox_deliveries(connection):
             receipt = deliver(entry)
@@ -1235,6 +1295,7 @@ def reserve_dispatch(
 
 
 __all__ = [
+    "LegacyUnresolvedDelivery",
     "ManagedRuntimeCommandService",
     "ResolvedRuntimeCommandAuthority",
     "RuntimeCommandAuthorizer",
@@ -1243,6 +1304,7 @@ __all__ = [
     "RuntimeOperationAttempt",
     "RuntimeOutboxDelivery",
     "command_request_digest",
+    "convert_legacy_outbox_record",
     "fence_takeover",
     "reserve_dispatch",
 ]

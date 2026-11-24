@@ -922,25 +922,25 @@ class GovernanceOperator:
         if erase:
             import shutil
 
-            # The isolated partition and the signing keys are destroyed; the
-            # control database survives as the independent authority that
-            # retains the content-free receipt and the journal.
-            for name in ("partition", os.path.join("control", "keys")):
-                target = service.installation_root / name
-                if target.exists():
-                    shutil.rmtree(target)
-            partition_database = service.partition_path()
-            if partition_database.exists():
-                partition_database.unlink()
-        from memorii.core.persistence.contracts import canonical_json_digest
+            from memorii.core.persistence.contracts import canonical_json_digest
+            from memorii.core.storage_administration.generation_selection import PARTITION_GENERATION_SELECTOR
 
-        if erase:
-            # Only actual destruction advances control state; the dry plan is
-            # inert. The epoch rides with the destruction because every
-            # subsequent verified read of the erased installation is refused
-            # by the missing partition anyway.
-            state = service._control_state()
             with service._publication_fence():
+                state = service._control_state()
+                journal_entry = service._journal_entry(
+                    operation="partition_erasure_applied",
+                    before_digest=canonical_json_digest({"epoch": state.eligibility_epoch}),
+                    after_digest=canonical_json_digest(
+                        {"epoch": state.eligibility_epoch + 1, "incomplete": incomplete}
+                    ),
+                )
+                # Remove the entire isolated tree, including every named data
+                # generation. Once it is gone the selector cannot resolve.
+                control_root = service.installation_root / "control"
+                for target in (service.installation_root / "partition", control_root / "keys"):
+                    if target.exists():
+                        shutil.rmtree(target)
+                (control_root / PARTITION_GENERATION_SELECTOR).unlink(missing_ok=True)
                 service._control.write_control_state(
                     state.model_copy(
                         update={
@@ -948,18 +948,7 @@ class GovernanceOperator:
                             "eligibility_epoch": state.eligibility_epoch + 1,
                         }
                     ),
-                    service._journal_entry(
-                        operation="partition_erasure_applied",
-                        before_digest=canonical_json_digest(
-                            {"epoch": state.eligibility_epoch}
-                        ),
-                        after_digest=canonical_json_digest(
-                            {
-                                "epoch": state.eligibility_epoch + 1,
-                                "incomplete": incomplete,
-                            }
-                        ),
-                    ),
+                    journal_entry,
                 )
         receipt = ErasureReceipt(
             installation_id=plan.installation_id,

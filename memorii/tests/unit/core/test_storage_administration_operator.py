@@ -733,16 +733,18 @@ def test_restore_staging_refuses_decrypted_history_mismatch(
         recovery_key = b"k" * 32
         backups.create_backup(capability=capability, archive_root=archive, reason="valid", recovery_key=recovery_key)
         plan = backups.plan_restore(capability=capability, archive_root=archive, data_loss_acknowledged=False)
-        original = operator_backup._atomic_write
+        original = operator_backup.decrypt_backup_participant
 
-        def remove_history(path: Path, payload: bytes, mode: int = 0o600) -> None:
-            original(path, payload, mode)
+        def remove_history(
+            source: Path, path: Path, *, key: bytes, nonce: bytes, expected_digest: str, expected_size: int,
+        ) -> None:
+            original(source, path, key=key, nonce=nonce, expected_digest=expected_digest, expected_size=expected_size)
             if path.name == "partition.sqlite3":
                 with closing(sqlite3.connect(path)) as connection:
                     connection.execute("DELETE FROM runtime_event_batches")
                     connection.commit()
 
-        monkeypatch.setattr(operator_backup, "_atomic_write", remove_history)
+        monkeypatch.setattr(operator_backup, "decrypt_backup_participant", remove_history)
         staging = tmp_path / "staged"
         with pytest.raises(OperatorError, match="staged backup verification failed"):
             backups.apply_restore(capability=capability, plan=plan, staging_root=staging, recovery_key=recovery_key)
@@ -1118,7 +1120,10 @@ def test_writer_enrollment_gates_publication(tmp_path: Path) -> None:
         service.close()
 
 
-def test_erasure_destroys_the_real_layout_and_keys(tmp_path: Path) -> None:
+@pytest.mark.parametrize("named_generation", [False, True])
+def test_erasure_destroys_the_real_layout_and_keys(tmp_path: Path, named_generation: bool) -> None:
+    from memorii.core.storage_administration.generation_selection import PARTITION_GENERATION_SELECTOR
+    from memorii.core.storage_administration.operator_backup import BackupRestoreOperator
     from memorii.core.storage_administration.operator_governance import (
         GovernanceOperator,
     )
@@ -1129,6 +1134,29 @@ def test_erasure_destroys_the_real_layout_and_keys(tmp_path: Path) -> None:
     root = tmp_path / "installation"
     service = StorageAdministrationService(root)
     service.initialize()
+    if named_generation:
+        operator = StorageAdministrationOperator(service)
+        capability = _capability(service)
+        operator.change_mode(
+            ModeChangeRequest(
+                target_mode="read_only", expected_control_revision=operator.status().control_revision,
+                reason="test erasure of named generation",
+            ),
+            capability=capability,
+        )
+        backups = BackupRestoreOperator(operator)
+        archive, staging = tmp_path / "archive", tmp_path / "staging"
+        recovery_key = b"k" * 32
+        backups.create_backup(
+            capability=capability, archive_root=archive, reason="test backup", recovery_key=recovery_key,
+        )
+        restore_plan = backups.plan_restore(
+            capability=capability, archive_root=archive, data_loss_acknowledged=False,
+        )
+        backups.apply_restore(
+            capability=capability, plan=restore_plan, staging_root=staging, recovery_key=recovery_key,
+        )
+        backups.activate_exact_current_restore(capability=capability, plan=restore_plan, staging_root=staging)
     service.close()
 
     service = StorageAdministrationService(root)
@@ -1146,6 +1174,7 @@ def test_erasure_destroys_the_real_layout_and_keys(tmp_path: Path) -> None:
         # as the independent authority holding the content-free receipt.
         assert not service.partition_path().exists()
         assert not (root / "control" / "keys").exists()
+        assert not (root / "control" / PARTITION_GENERATION_SELECTOR).exists()
         assert service.control_path().exists()
         receipts = list(
             (root / "control" / "erasure-receipts").glob("erasure-*.json")

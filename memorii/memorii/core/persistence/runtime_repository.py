@@ -34,7 +34,7 @@ from memorii.core.persistence.runtime_contracts import (
     SolverRunRecord,
     TaskRecord,
 )
-from memorii.core.persistence.runtime_journal import append_runtime_changes
+from memorii.core.persistence.runtime_journal import append_runtime_changes, persist_runtime_replay_checkpoint
 from memorii.core.storage_administration.service import (
     StorageAdministrationService,
 )
@@ -653,7 +653,7 @@ class RuntimeStateRepository:
 def _managed_outbox_type(record_json: str) -> str | None:
     raw = re.loads(record_json)
     kind = raw.get("record_type") if isinstance(raw, dict) else None
-    return kind if kind in ("managed_work_projection", "managed_writeback_candidate") else None
+    return kind if kind in ("managed_work_projection", "managed_writeback_candidate", "legacy_unresolved_delivery") else None
 
 
 def publish_runtime_change(
@@ -662,6 +662,7 @@ def publish_runtime_change(
     *,
     operation_binding: str = "runtime_change",
     validate_authority: Callable[[InstallationControlState, RuntimePublicationState], None] | None = None,
+    checkpoint_requested: bool = False,
 ) -> int:
     """Apply one runtime change and publish it atomically.
 
@@ -749,6 +750,24 @@ def publish_runtime_change(
             manifest = RuntimeMaterializationManifest(catalogs=manifest_entries)
             memory_write, memory_data = partition.read_revision_state(connection)
             prior_ordinal = int(pre_state["ordinal"])
+            epoch = state.eligibility_epoch + state.pending_epoch_increments
+            checkpoint_digest = finalized.checkpoint_digest
+            if (
+                checkpoint_requested
+                and isinstance(runtime_position, BatchPosition)
+                and partition.supports_runtime_replay_checkpoints(connection)
+            ):
+                signer_key_id = administration._signer_key_id
+                checkpoint_digest = persist_runtime_replay_checkpoint(
+                    connection,
+                    previous=finalized,
+                    through_position=runtime_position,
+                    runtime_revision=runtime_revision,
+                    eligibility_epoch=epoch,
+                    signer_key_id=signer_key_id,
+                    signer_key_fingerprint=administration._signing.public_key_fingerprint(signer_key_id),
+                    sign=lambda purpose, digest: administration._signing.sign(signer_key_id, purpose, digest),
+                )
             vector = PartitionRevisionVector(
                 partition_ordinal=prior_ordinal + 1,
                 runtime_position=runtime_position if runtime_position is not None else BatchPosition(
@@ -767,11 +786,11 @@ def publish_runtime_change(
                     sequence=prior_ordinal + 1, digest=manifest.digest()
                 ),
                 manifest_digest=manifest.digest(),
+                checkpoint_digest=checkpoint_digest,
                 trust_registry_digest=finalized.trust_registry_digest,
-                eligibility_epoch=(
-                    state.eligibility_epoch + state.pending_epoch_increments
-                ),
+                eligibility_epoch=epoch,
                 vector=vector,
+                runtime_history_ancestry=finalized.runtime_history_ancestry,
                 signature="0" * 64,
             )
             candidate = administration._sign_state(unsigned)
@@ -792,9 +811,7 @@ def publish_runtime_change(
                 expected_old_discriminator=finalized.payload_digest(),
                 candidate_state=candidate,
                 operation_binding=operation_binding,
-                authority_epoch=(
-                    state.eligibility_epoch + state.pending_epoch_increments
-                ),
+                authority_epoch=epoch,
                 fence_token=prior_ordinal + 1,
             )
             administration._control.write_intent(

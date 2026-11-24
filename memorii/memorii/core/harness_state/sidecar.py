@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Literal
@@ -38,6 +39,7 @@ from memorii.core.harness_state.consumer import (
 )
 from memorii.core.harness_state.credentials import SidecarCredentialStore
 from memorii.core.harness_state.grant_registry import GrantEpochRegistry
+from memorii.core.harness_state.paging import HarnessCursorError
 from memorii.core.harness_state.service import (
     HarnessStateError,
     HarnessStateService,
@@ -158,8 +160,10 @@ class RuntimeSidecar:
         writeback_factory: Callable[[str], WritebackDecisionService] | None = None,
         grant_registry: GrantEpochRegistry | None = None,
         revoked_view: RevokedIdentityServingGate | None = None,
+        administration: StorageAdministrationService | None = None,
     ) -> None:
         self._repository = repository
+        self._administration = administration
         self._credentials = credentials
         self._grant_factory = grant_factory
         self._intake_factory = intake_factory
@@ -179,6 +183,8 @@ class RuntimeSidecar:
             try:
                 grant_registry = GrantEpochRegistry(registry_root)
             except OSError:
+                if administration is not None:
+                    raise
                 grant_registry = None
         # The revoked-identity view composes by default from the same
         # installation control state so revoked justifications never sponsor
@@ -193,6 +199,8 @@ class RuntimeSidecar:
                     repository.partition.protected_storage_root.parent / "control"
                 )
             except (OSError, ValueError):
+                if administration is not None:
+                    raise
                 revoked_view = None
         self._service = HarnessStateService(
             repository, grant_registry=grant_registry, revoked_view=revoked_view
@@ -228,6 +236,7 @@ class RuntimeSidecar:
                 administration, credentials, secret, grant_factory,
             ),
             writeback_factory=lambda secret: WritebackDecisionService(administration, credentials, secret),
+            administration=administration,
         )
 
     def _principal_for(self, secret: str) -> str | None:
@@ -258,17 +267,34 @@ class RuntimeSidecar:
         except ValueError:
             return _error(400, "invalid_request", "body is not a closed v1 request")
         grant = self._grant_factory(principal)
+        if grant.principal != principal or not grant.authorizes(request.task_id):
+            return _error(403, "denied", None)
+        administration = self._administration
         try:
-            envelope = self._service.read_state(
-                task_id=request.task_id,
-                grant=grant,
-                view=request.view,
-                cursor=request.cursor,
-                # history/neighborhood page through the summary view until
-                # their paged carriers exist; the request still fails closed
-                # on unsupported forms through the service's view gate.
-            )
-        except HarnessStateError as exc:
+            with (
+                nullcontext() if administration is None else administration.verified_operation_context()
+            ) as verified:
+                checkpoint_ref = None
+                installation_binding = None
+                if verified is not None:
+                    state, finalized = verified
+                    if state.mode == "bypass":
+                        return _error(503, "unavailable", None)
+                    checkpoint_ref = finalized.checkpoint_digest
+                    installation_binding = (
+                        finalized.data_generation_id, state.eligibility_epoch + state.pending_epoch_increments,
+                    )
+                envelope = self._service.read_state(
+                    task_id=request.task_id,
+                    grant=grant,
+                    view=request.view,
+                    cursor=request.cursor,
+                    checkpoint_ref=checkpoint_ref,
+                    installation_binding=installation_binding,
+                )
+                if self._principal_for(bearer_token or "") != principal:
+                    return _error(401, "unauthenticated", None)
+        except (HarnessStateError, HarnessCursorError) as exc:
             code = _harness_error_code(str(exc))
             return _error(_ERROR_STATUS.get(code, 400), code, None)
         except (InstallationIntegrityError, InstallationQuarantinedError, sqlite3.DatabaseError):

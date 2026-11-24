@@ -19,6 +19,7 @@ import shutil
 import sqlite3
 import tempfile
 import time
+import uuid
 from collections.abc import Iterator
 from contextlib import closing
 from dataclasses import dataclass
@@ -29,17 +30,24 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from memorii.core.persistence.contracts import (
+    BatchPosition,
     InstallationControlState,
+    InstallationGenerationChangeIntent,
+    RuntimeHistoryInterval,
     RuntimeMaterializationManifest,
     RuntimePublicationState,
     canonical_json_digest,
     empty_pointer_set_digest,
 )
 from memorii.core.persistence.key_owner import PARTITION_GENERATION_SIGNATURE_PURPOSE, RESTORE_STAGING_SIGNATURE_PURPOSE
-from memorii.core.persistence.runtime_journal import RuntimeJournalError, verify_runtime_history
+from memorii.core.persistence.managed_delivery import DeliveryRestoreHold
+from memorii.core.persistence.runtime_api import convert_legacy_outbox_record
+from memorii.core.persistence.runtime_journal import RuntimeJournalError, append_runtime_changes, verify_runtime_history
+from memorii.core.storage_administration.backup_cipher import decrypt_backup_participant, encrypt_backup_participant
 from memorii.core.storage_administration.generation_selection import (
     PARTITION_GENERATION_SELECTOR,
     PartitionGenerationSelector,
+    read_partition_generation_selector,
     selected_partition_path,
 )
 from memorii.core.storage_administration.operator import (
@@ -179,6 +187,9 @@ class RestoreStagePreview(BaseModel):
     writeback_decisions: RestoreInventoryDelta
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    def digest(self) -> str:
+        return _canonical_digest(self.model_dump(mode="json"))
 
 
 def _restore_inventory_delta(
@@ -363,18 +374,17 @@ class BackupRestoreOperator:
             )
             for participant_id in _ALLOWED_PARTICIPANTS:
                 nonce = os.urandom(12)
-                ciphertext = AESGCM(content_key).encrypt(
-                    nonce, (copies / f"{participant_id}.sqlite3").read_bytes(), None,
-                )
                 snapshot_path = encrypted / f"{participant_id}.sqlite3.enc"
-                _atomic_write(snapshot_path, ciphertext)
+                digest, size = encrypt_backup_participant(
+                    copies / f"{participant_id}.sqlite3", snapshot_path, key=content_key, nonce=nonce,
+                )
                 participants.append(
                     BackupParticipant(
                         participant_id=participant_id,
                         kind="sqlite",
                         filename=snapshot_path.name,
-                        sha256=hashlib.sha256(ciphertext).hexdigest(),
-                        size_bytes=len(ciphertext),
+                        sha256=digest,
+                        size_bytes=size,
                         nonce=base64.b64encode(nonce).decode("ascii"),
                     )
                 )
@@ -596,13 +606,11 @@ class BackupRestoreOperator:
             staging = Path(scratch)
             for participant in manifest.participants:
                 source = archive_root / _validate_participant(participant)
-                ciphertext = source.read_bytes()
-                if hashlib.sha256(ciphertext).hexdigest() != participant.sha256:
-                    raise OperatorError("integrity_error: archive mutated during restore")
-                plaintext = AESGCM(content_key).decrypt(
-                    base64.b64decode(participant.nonce), ciphertext, None,
+                decrypt_backup_participant(
+                    source, staging / f"{participant.participant_id}.sqlite3",
+                    key=content_key, nonce=base64.b64decode(participant.nonce),
+                    expected_digest=participant.sha256, expected_size=participant.size_bytes,
                 )
-                _atomic_write(staging / f"{participant.participant_id}.sqlite3", plaintext)
             source = _verify_staged_backup(service, staging, manifest)
             control_snapshot_digest = _snapshot_digest(staging / "control.sqlite3")
             partition_snapshot_digest = _snapshot_digest(staging / "partition.sqlite3")
@@ -793,6 +801,198 @@ class BackupRestoreOperator:
                     _sync_directory(service.installation_root / "control")
                     return selector
 
+    def activate_older_restore(
+        self,
+        *,
+        capability: OwnerCapability,
+        plan: RestorePlan,
+        staging_root: Path,
+        preview_digest: str,
+    ) -> InstallationGenerationChangeIntent:
+        """Select a separately verified generation with the old delivery authority held."""
+        if not plan.data_loss_acknowledged:
+            raise OperatorError("conflict: older restore requires the reviewed data-loss acknowledgement")
+        return self._activate_staged_generation(
+            capability=capability, plan=plan, staging_root=staging_root, preview_digest=preview_digest,
+            operation="restore",
+        )
+
+    def upgrade_current_runtime(
+        self,
+        *,
+        capability: OwnerCapability,
+        plan: RestorePlan,
+        staging_root: Path,
+        preview_digest: str,
+    ) -> InstallationGenerationChangeIntent:
+        """Upgrade an exact-current signed runtime copy under a reviewed generation cutover."""
+        return self._activate_staged_generation(
+            capability=capability, plan=plan, staging_root=staging_root, preview_digest=preview_digest,
+            operation="migrate",
+        )
+
+    def _activate_staged_generation(
+        self,
+        *,
+        capability: OwnerCapability,
+        plan: RestorePlan,
+        staging_root: Path,
+        preview_digest: str,
+        operation: Literal["restore", "migrate"],
+    ) -> InstallationGenerationChangeIntent:
+        service = self._operator._administration
+        require_owner_capability(service, capability)
+        if plan.unsigned_digest() != plan.plan_digest:
+            raise OperatorError("conflict: generation change requires the reviewed plan digest")
+        with service.verified_operation_context() as (_state, finalized):
+            prior = service._control.read_generation_change(finalized.repository_id)
+            if (
+                prior is not None and prior.operation == operation and prior.phase == "finalized"
+                and prior.preview_digest == preview_digest
+                and prior.old_publication.payload_digest() == plan.expected_publication_digest
+                and prior.expected_control_revision == plan.expected_control_revision
+                and prior.candidate_publication.data_generation_id == finalized.data_generation_id
+            ):
+                return prior
+        preview = self.preview_staged_restore(capability=capability, plan=plan, staging_root=staging_root)
+        is_current = preview.live_publication_digest == preview.staged_publication_digest
+        if preview.digest() != preview_digest or is_current != (operation == "migrate"):
+            raise OperatorError("conflict: generation change requires the exact reviewed preview for this operation")
+        attestation = self.verify_staged_restore(capability=capability, plan=plan, staging_root=staging_root)
+        if preview.attestation_digest != attestation.unsigned_digest():
+            raise OperatorError("conflict: restore staging changed after preview")
+        partition_root = service.installation_root / "partition"
+        generations = partition_root / "generations"
+        if partition_root.is_symlink() or generations.is_symlink():
+            raise OperatorError("integrity_error: generation storage must not use symlinks")
+        generations.mkdir(mode=0o700, exist_ok=True)
+        try:
+            with tempfile.TemporaryDirectory(prefix=".older-restore-", dir=generations) as scratch:
+                working = Path(scratch) / "partition.sqlite3"
+                _copy_attested_partition(staging_root / "partition.sqlite3", working, attestation.partition_snapshot_digest)
+                with service.verified_operation_context() as (state, finalized):
+                    require_owner_capability(service, capability)
+                    self._require_restore_watermark(service, plan, state, finalized)
+                    self._require_staging_suppression(service, attestation)
+                    target = self._prepare_restored_generation(
+                        working, source=attestation.source_publication, live=finalized, preview_digest=preview_digest,
+                        require_upgrade=operation == "migrate",
+                    )
+                    old_selector = read_partition_generation_selector(service.installation_root / "control")
+                    intent = InstallationGenerationChangeIntent(
+                        intent_id=preview_digest, operation=operation,
+                        old_publication=finalized, candidate_publication=target,
+                        old_named_selector=old_selector is not None,
+                        expected_control_revision=state.control_revision, preview_digest=preview_digest,
+                        data_loss_acknowledged=plan.data_loss_acknowledged,
+                    )
+                    return self._select_replacement(generations, working.parent, intent)
+        except (OSError, ValidationError, sqlite3.DatabaseError, RuntimeJournalError) as exc:
+            raise OperatorError("integrity_error: older restore candidate could not be prepared or published") from exc
+
+    def _prepare_restored_generation(
+        self,
+        working: Path,
+        *,
+        source: RuntimePublicationState,
+        live: RuntimePublicationState,
+        preview_digest: str,
+        require_upgrade: bool,
+    ) -> RuntimePublicationState:
+        service = self._operator._administration
+        generation_id = uuid.uuid4().hex
+        ancestry = source.runtime_history_ancestry
+        source_head = source.vector.runtime_position
+        if isinstance(source_head, BatchPosition) and (not ancestry or ancestry[-1].through_position != source_head):
+            ancestry = (*ancestry, RuntimeHistoryInterval(
+                generation_id=source.data_generation_id, through_position=source_head,
+            ))
+        hold = DeliveryRestoreHold(
+            hold_id=preview_digest, installation_id=live.installation_id, partition_id=live.repository_id,
+            restored_generation_id=generation_id, source_generation_id=source.data_generation_id,
+            source_publication_digest=source.payload_digest(), live_publication_digest=live.payload_digest(),
+            preview_digest=preview_digest,
+        )
+        with (
+            PartitionDataRepository(working, require_existing=True) as staged,
+            staged.transaction(write=True) as connection,
+        ):
+            upgrade_needed = not staged.supports_runtime_replay_checkpoints(connection)
+            staged.stage_runtime_recovery_upgrade(connection, source_digest=source.payload_digest())
+            previous = source.model_copy(update={"data_generation_id": generation_id})
+            revision = staged.bump_runtime_revision(connection)
+            with staged.capture_runtime_rows(connection) as changes:
+                staged.insert_delivery_restore_hold(connection, hold_id=hold.hold_id, record_json=hold.model_dump_json())
+                for key, raw in tuple(staged.restore_inventory_rows(connection, "runtime_outbox_deliveries")):
+                    legacy = convert_legacy_outbox_record(key[0], raw)
+                    if legacy is not None and legacy.model_dump_json() != raw:
+                        upgrade_needed = True
+                        staged.upsert_runtime_row(
+                            connection, table="runtime_outbox_deliveries", keys=("delivery_id",),
+                            values=key, record_json=legacy.model_dump_json(),
+                        )
+            if require_upgrade and not upgrade_needed:
+                raise OperatorError("conflict: current generation already has the recovery format and typed outbox")
+            head = append_runtime_changes(
+                connection, changes=changes, previous=previous, runtime_revision=revision,
+                sign=lambda purpose, digest: service._signing.sign(service._signer_key_id, purpose, digest),
+            )
+            manifest = RuntimeMaterializationManifest(catalogs=staged.compute_materialization_manifest(connection))
+            ordinal = live.vector.partition_ordinal + 1
+            publication = service._sign_state(RuntimePublicationState(
+                installation_id=live.installation_id, repository_id=live.repository_id,
+                data_generation_id=generation_id, position=BatchPosition(sequence=ordinal, digest=manifest.digest()),
+                manifest_digest=manifest.digest(), trust_registry_digest=live.trust_registry_digest,
+                eligibility_epoch=live.eligibility_epoch,
+                vector=source.vector.model_copy(update={"partition_ordinal": ordinal, "runtime_position": head}),
+                runtime_history_ancestry=ancestry, signature="0" * 128,
+            ))
+            staged.write_publication_row(
+                connection, ordinal=ordinal, position_kind="batch", position_sequence=ordinal,
+                position_digest=manifest.digest(), tuple_digest=publication.payload_digest(),
+                generation_id=generation_id, vector_json=publication.vector.model_dump_json(),
+                manifest_digest=manifest.digest(),
+            )
+            if not service._matches_materialization(connection, publication, partition=staged):
+                raise OperatorError("integrity_error: restored generation does not replay to its signed tuple")
+        _snapshot_digest(working)
+        with working.open("rb") as database:
+            os.fsync(database.fileno())
+        return publication
+
+    def _select_replacement(
+        self, generations: Path, working: Path, intent: InstallationGenerationChangeIntent,
+    ) -> InstallationGenerationChangeIntent:
+        service = self._operator._administration
+        publication = intent.candidate_publication
+        unsigned = PartitionGenerationSelector(
+            installation_id=publication.installation_id, repository_id=publication.repository_id,
+            generation_id=publication.data_generation_id, signature="0" * 128,
+        )
+        selector = unsigned.model_copy(update={"signature": service._signing.sign(
+            service._signer_key_id, PARTITION_GENERATION_SIGNATURE_PURPOSE, unsigned.unsigned_digest(),
+        )})
+        with service.partition().manual_write_transaction():
+            _sync_directory(working)
+            os.rename(working, generations / publication.data_generation_id)
+            _sync_directory(generations)
+            service._control.write_generation_change(
+                intent,
+                service._journal_entry(
+                    operation="generation_change_prepared",
+                    before_digest=intent.old_publication.payload_digest(), after_digest=intent.binding_digest(),
+                ),
+            )
+            _atomic_write(
+                service.installation_root / "control" / PARTITION_GENERATION_SELECTOR,
+                (selector.model_dump_json() + "\n").encode(),
+            )
+            _sync_directory(service.installation_root / "control")
+        outcome = service._recover_generation_change(intent)
+        if outcome.disposition != "finalized":
+            raise OperatorError("integrity_error: restored generation did not finalize")
+        return intent.model_copy(update={"phase": "finalized"})
+
     @staticmethod
     def _require_staging_suppression(
         service: StorageAdministrationService, attestation: RestoreStagingAttestation,
@@ -835,6 +1035,7 @@ def _verify_staged_backup(
             finalized = control.read_publication_state(repository)
             control_tip_digest = control.next_journal_position()[1]
             trust_entries = control.list_trust_entries()
+            generation_change = control.read_generation_change(repository)
             trust_digest = (
                 canonical_json_digest({"entries": [entry.model_dump_json() for entry in trust_entries]})
                 if trust_entries else empty_pointer_set_digest()
@@ -851,6 +1052,7 @@ def _verify_staged_backup(
                 or finalized.eligibility_epoch != state.eligibility_epoch
                 or finalized.trust_registry_digest != trust_digest
                 or control.read_pending_intent(repository) is not None
+                or (generation_change is not None and generation_change.phase == "prepared")
                 or manifest.control_tip_digest not in (None, control_tip_digest)
                 or manifest.publication_digest not in (None, finalized.payload_digest())
             ):
@@ -876,6 +1078,11 @@ def _verify_staged_backup(
                     connection, finalized=finalized,
                     verify=lambda purpose, digest, signature: service._verify_journal_signature(
                         service._signer_key_id, purpose, digest, signature,
+                    ),
+                    checkpoint_signer_key_id=service._signer_key_id,
+                    checkpoint_signer_fingerprint=(
+                        service._signing.public_key_fingerprint(service._signer_key_id)
+                        if finalized.checkpoint_digest is not None else None
                     ),
                 )
             return _VerifiedBackup(publication=finalized, control_tip_digest=control_tip_digest)

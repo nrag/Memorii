@@ -65,6 +65,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     activate_current.add_argument("--plan-file", type=Path, required=True)
     activate_current.add_argument("--staging-root", type=Path, required=True)
+    activate_older = backup_sub.add_parser(
+        "restore-activate-older", help="Select a reviewed older backup with a durable delivery hold",
+    )
+    activate_older.add_argument("--plan-file", type=Path, required=True)
+    activate_older.add_argument("--staging-root", type=Path, required=True)
+    activate_older.add_argument("--preview-digest", required=True)
+    upgrade = backup_sub.add_parser(
+        "upgrade-runtime", help="Upgrade an exact-current staged runtime and hold prior-generation deliveries",
+    )
+    upgrade.add_argument("--plan-file", type=Path, required=True)
+    upgrade.add_argument("--staging-root", type=Path, required=True)
+    upgrade.add_argument("--preview-digest", required=True)
 
     forget = commands.add_parser("forget", help="Logical forget planning and apply")
     forget_sub = forget.add_subparsers(dest="forget_command", required=True)
@@ -210,7 +222,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(manifest.model_dump_json())
                 return 0
             if arguments.backup_command in {
-                "restore-verify-stage", "restore-preview-stage", "restore-activate-current",
+                "restore-verify-stage", "restore-preview-stage", "restore-activate-current", "restore-activate-older",
+                "upgrade-runtime",
             }:
                 from pydantic import ValidationError
 
@@ -223,7 +236,27 @@ def main(argv: list[str] | None = None) -> int:
                     preview = backups.preview_staged_restore(
                         capability=owner, plan=plan, staging_root=arguments.staging_root,
                     )
-                    print(preview.model_dump_json())
+                    print(json.dumps({**preview.model_dump(mode="json"), "preview_digest": preview.digest()}))
+                    return 0
+                if arguments.backup_command in {"restore-activate-older", "upgrade-runtime"}:
+                    from memorii.core.storage_administration.service import StorageAdministrationError
+                    from memorii.stores.sqlite.control import ControlStateError
+
+                    try:
+                        change = (
+                            backups.activate_older_restore if arguments.backup_command == "restore-activate-older"
+                            else backups.upgrade_current_runtime
+                        )
+                        intent = change(
+                            capability=owner, plan=plan, staging_root=arguments.staging_root,
+                            preview_digest=arguments.preview_digest,
+                        )
+                    except (StorageAdministrationError, ControlStateError) as exc:
+                        raise OperatorError(f"unavailable: generation change could not be published: {exc}") from exc
+                    print(json.dumps({
+                        "status": "selected", "generation_id": intent.candidate_publication.data_generation_id,
+                        "delivery_status": "needs_reconciliation", "reopen_required": True,
+                    }, sort_keys=True))
                     return 0
                 if arguments.backup_command == "restore-activate-current":
                     try:
