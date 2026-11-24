@@ -7,6 +7,7 @@ revision counters without any in-process state from A.
 
 from __future__ import annotations
 
+import hashlib
 import signal
 import subprocess
 import sys
@@ -15,7 +16,34 @@ from pathlib import Path
 
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.sqlite_store import SqliteMemoryPlaneStore
+from memorii.core.storage_administration.service import StorageAdministrationService
 from memorii.domain.enums import CommitStatus, MemoryDomain
+
+
+def test_streaming_materialization_matches_the_existing_ordered_catalog_digest(tmp_path: Path) -> None:
+    with StorageAdministrationService(tmp_path / "installation") as service:
+        service.initialize()
+        service.publish_memory_plane_batch(tuple(
+            CanonicalMemoryRecord(
+                memory_id=source_id, domain=MemoryDomain.TRANSCRIPT, text=body,
+                status=CommitStatus.COMMITTED, source_kind="provider",
+            )
+            for source_id, body in (("source:two", "retained two"), ("source:one", "retained one"))
+        ))
+        partition = service.partition()
+        with partition.transaction(write=False) as connection:
+            expected = hashlib.sha256(b"memorii.materialization-catalog.v1\x00memory_current_records").digest()
+            for identity, content in connection.execute(
+                "SELECT memory_id, record_json FROM memory_current_records ORDER BY memory_id",
+            ).fetchall():
+                member = hashlib.sha256((identity + "\0" + content).encode("utf-8")).digest()
+                expected = hashlib.sha256(expected + b"\0" + member).digest()
+            current = next(
+                entry for entry in partition.compute_materialization_manifest(connection)
+                if entry.catalog == "memory_current_records"
+            )
+            assert (current.row_count, current.digest) == (2, expected.hex())
+
 
 _WRITER_PROGRAM = """
 import sys

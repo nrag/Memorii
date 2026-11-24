@@ -613,8 +613,9 @@ class PartitionDataRepository:
             rows = connection.execute(
                 f"SELECT {key_expression} AS sort_key, {payload_column} AS payload"
                 f" FROM {catalog} ORDER BY {key_expression}"
-            ).fetchall()
+            )
             chain = hashlib.sha256(_CATALOG_SEED_DOMAIN + catalog.encode("ascii")).digest()
+            count = 0
             for row in rows:
                 row_digest = hashlib.sha256(
                     str(row["sort_key"]).encode("utf-8")
@@ -622,10 +623,11 @@ class PartitionDataRepository:
                     + row["payload"].encode("utf-8")
                 ).digest()
                 chain = hashlib.sha256(chain + b"\x00" + row_digest).digest()
+                count += 1
             entries.append(
                 MaterializationCatalogEntry(
                     catalog=catalog,
-                    row_count=len(rows),
+                    row_count=count,
                     digest=chain.hex(),
                 )
             )
