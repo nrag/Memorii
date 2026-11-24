@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
@@ -387,19 +388,33 @@ def test_erasure_waits_for_backup_plaintext_cleanup(
 
 
 def test_whole_partition_erasure_removes_plaintext_from_an_interrupted_backup(
-    installation: Path,
+    installation: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     orphan = installation / "partition" / ".backup-plaintext-interrupted"
     orphan.mkdir(mode=0o700)
     plaintext = orphan / "partition.sqlite3"
     plaintext.write_bytes(b"unfinished plaintext snapshot")
+    wal = orphan / "closing.sqlite3-wal"
+    wal.touch()
+    original_unlink = os.unlink
+    wal_removed_by_close = False
+
+    def unlink(path: str | bytes | os.PathLike[str], *, dir_fd: int | None = None) -> None:
+        nonlocal wal_removed_by_close
+        if Path(os.fsdecode(path)).name == wal.name:
+            original_unlink(path, dir_fd=dir_fd)
+            wal_removed_by_close = True
+        original_unlink(path, dir_fd=dir_fd)
 
     with StorageAdministrationService(installation) as service:
         owner = mint_owner_capability(service, _OWNER)
         governance = GovernanceOperator(StorageAdministrationOperator(service))
         reviewed = governance.plan_erasure(capability=owner).model_copy(update={"acknowledged": True})
-        assert governance.apply_erasure(capability=owner, plan=reviewed, erase=True).incomplete
+        with monkeypatch.context() as race:
+            race.setattr(os, "unlink", unlink)
+            assert governance.apply_erasure(capability=owner, plan=reviewed, erase=True).incomplete
 
+    assert wal_removed_by_close
     assert not plaintext.exists()
     assert not orphan.exists()
     assert not (installation / "partition").exists()

@@ -15,6 +15,8 @@ from __future__ import annotations
 import json
 import os
 import time
+from collections.abc import Callable
+from types import TracebackType
 from typing import Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -915,6 +917,15 @@ class GovernanceOperator:
             from memorii.core.storage_administration.generation_selection import PARTITION_GENERATION_SELECTOR
             from memorii.core.storage_administration.operator_backup import _backup_lifetime_guard
 
+            def remove_error(
+                _operation: Callable[..., object], _path: str,
+                failure: tuple[type[BaseException], BaseException, TracebackType],
+            ) -> None:
+                # A closing SQLite connection can remove a WAL or SHM file
+                # after rmtree enumerates it. The file is already erased.
+                if not isinstance(failure[1], FileNotFoundError):
+                    raise failure[1]
+
             with _backup_lifetime_guard(service, exclusive=True), service._publication_fence():
                 require_owner_capability(service, capability)
                 state = service._control_state()
@@ -930,7 +941,7 @@ class GovernanceOperator:
                 control_root = service.installation_root / "control"
                 for target in (service.installation_root / "partition", control_root / "keys"):
                     if target.exists():
-                        shutil.rmtree(target)
+                        shutil.rmtree(target, onerror=remove_error)
                 (control_root / PARTITION_GENERATION_SELECTOR).unlink(missing_ok=True)
                 service._control.write_control_state(
                     state.model_copy(
