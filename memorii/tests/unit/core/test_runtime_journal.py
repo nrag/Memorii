@@ -15,6 +15,7 @@ from memorii.core.persistence.runtime_repository import RuntimeStateRepository, 
 from memorii.core.storage_administration.service import InstallationIntegrityError, StorageAdministrationService
 from memorii.domain.enums import CommitStatus, ExecutionNodeStatus, ExecutionNodeType, MemoryDomain
 from memorii.domain.execution_graph.nodes import ExecutionNode
+from pydantic import ValidationError
 
 _NOW = datetime(2026, 10, 10, tzinfo=UTC)
 _TASK = TaskRecord(
@@ -96,6 +97,17 @@ def test_divergent_historical_record_version_rolls_back_signed_publication(tmp_p
             publish_runtime_change(service, lambda connection, repo: repo.apply_task(connection, invalid_task))
         assert service.acquire_verified_snapshot() == before
         assert RuntimeStateRepository(service.partition()).get_task(_TASK.task_id) == next_task
+
+
+def test_runtime_journal_validates_the_owner_graph_schema_before_publication(tmp_path: Path) -> None:
+    with StorageAdministrationService(tmp_path / "installation") as service:
+        service.initialize()
+        before = service.acquire_verified_snapshot()
+        with pytest.raises(ValidationError, match="identity differs"):
+            publish_runtime_change(service, lambda connection, repository: repository.apply_execution_node(
+                connection, task_id=_TASK.task_id, node_id="node:other", node_json=_ROOT.model_dump_json(),
+            ))
+        assert service.acquire_verified_snapshot() == before
 
 
 def test_runtime_revision_is_covered_by_the_signed_history(tmp_path: Path) -> None:

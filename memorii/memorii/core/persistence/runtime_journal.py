@@ -16,13 +16,16 @@ from memorii.core.persistence.contracts import (
     PublicationPosition,
     RuntimePublicationState,
 )
-from memorii.core.persistence.runtime_contracts import canonical_runtime_digest
+from memorii.core.persistence.runtime_contracts import SolverNodeContent, canonical_runtime_digest
 from memorii.core.persistence.runtime_events import (
     RuntimeEventBatch,
     RuntimeEventEnvelope,
     create_runtime_batch,
     create_runtime_event,
 )
+from memorii.domain.execution_graph.edges import ExecutionEdge
+from memorii.domain.execution_graph.nodes import ExecutionNode
+from memorii.domain.solver_graph.edges import SolverEdge
 from memorii.stores.sqlite.partition import PartitionDataRepository, RuntimeMaterializedRow, RuntimeRowChange
 
 _HEX = r"^[0-9a-f]{64}$"
@@ -69,6 +72,11 @@ class _Closed(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
+class _StoredSolverNode(_Closed):
+    content: SolverNodeContent
+    metadata: dict[str, object]
+
+
 class _FullCatalogState(_Closed):
     catalog: _Catalog
     key: tuple[_KeyPart, ...] = Field(min_length=1)
@@ -80,6 +88,20 @@ class _FullCatalogState(_Closed):
     def valid_record_object(self) -> Self:
         if not isinstance(json.loads(self.owner_record_json), dict):
             raise ValueError("runtime catalog event requires a full owner record")
+        match self.catalog:
+            case "runtime_execution_nodes":
+                identity = ExecutionNode.model_validate_json(self.owner_record_json).id
+            case "runtime_execution_edges":
+                identity = ExecutionEdge.model_validate_json(self.owner_record_json).id
+            case "runtime_solver_edges":
+                identity = SolverEdge.model_validate_json(self.owner_record_json).id
+            case "runtime_solver_nodes":
+                _StoredSolverNode.model_validate_json(self.owner_record_json)
+                return self
+            case _:
+                return self
+        if len(self.key) != 2 or identity != self.key[1]:
+            raise ValueError("runtime graph event identity differs from its catalog key")
         return self
 
     def row(self) -> RuntimeMaterializedRow:
