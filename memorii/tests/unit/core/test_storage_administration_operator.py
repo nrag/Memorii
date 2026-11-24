@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -31,6 +32,47 @@ def _capability(service: StorageAdministrationService) -> OwnerCapability:
     from memorii.core.storage_administration.operator import mint_owner_capability
 
     return mint_owner_capability(service, "owner:one")
+
+
+def test_cli_stages_a_reviewed_restore_with_an_owner_only_key(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from memorii.core.storage_administration.operator_backup import BackupRestoreOperator
+    from memorii.tools.runtime_operator import main
+
+    operator, service, capability = _fenced_operator(tmp_path)
+    try:
+        backups = BackupRestoreOperator(operator)
+        archive = tmp_path / "archive"
+        recovery_key = b"k" * 32
+        backups.create_backup(
+            capability=capability, archive_root=archive, reason="verify installed restore", recovery_key=recovery_key,
+        )
+        cli = [
+            "--installation-root", str(service.installation_root),
+            "--owner-principal", capability.owner_principal, "--capability-digest", capability.capability_digest,
+            "backup",
+        ]
+        assert main([*cli, "restore-plan", "--archive-root", str(archive)]) == 0
+        plan = tmp_path / "plan.json"
+        plan.write_text(capsys.readouterr().out, encoding="utf-8")
+        key = tmp_path / "recovery.key"
+        key.write_bytes(recovery_key)
+        key.chmod(0o644)
+        staging = tmp_path / "stage"
+        stage = [
+            *cli, "restore-stage", "--plan-file", str(plan), "--staging-root", str(staging),
+            "--recovery-key-file", str(key),
+        ]
+        assert main(stage) == 3
+        assert "owner-only" in capsys.readouterr().err
+        assert not staging.exists()
+        key.chmod(0o600)
+        before = service.acquire_verified_snapshot()
+        assert main(stage) == 0
+        assert json.loads(capsys.readouterr().out) == {"status": "staged", "path": str(staging)}
+        assert (staging / "partition.sqlite3").is_file()
+        assert service.acquire_verified_snapshot() == before
+    finally:
+        service.close()
 
 
 def test_status_reports_content_free_state(tmp_path: Path) -> None:

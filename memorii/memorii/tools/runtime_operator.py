@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import stat
 import sys
 from pathlib import Path
 
@@ -45,7 +47,11 @@ def main(argv: list[str] | None = None) -> int:
     restore = backup_sub.add_parser("restore-plan", help="Plan a restore")
     restore.add_argument("--archive-root", type=Path, required=True)
     restore.add_argument("--data-loss-acknowledged", action="store_true")
-    restore.add_argument("--recovery-key-hex", required=True)
+    restore.add_argument("--recovery-key-hex", help=argparse.SUPPRESS)
+    stage = backup_sub.add_parser("restore-stage", help="Verify and stage a reviewed restore without activating it")
+    stage.add_argument("--plan-file", type=Path, required=True)
+    stage.add_argument("--staging-root", type=Path, required=True)
+    stage.add_argument("--recovery-key-file", type=Path, required=True, help="Owner-only file with the 32-byte raw key")
 
     forget = commands.add_parser("forget", help="Logical forget planning and apply")
     forget_sub = forget.add_subparsers(dest="forget_command", required=True)
@@ -168,6 +174,7 @@ def main(argv: list[str] | None = None) -> int:
         if arguments.command == "backup":
             from memorii.core.storage_administration.operator_backup import (
                 BackupRestoreOperator,
+                RestorePlan,
             )
 
             backups = BackupRestoreOperator(operator)
@@ -184,7 +191,38 @@ def main(argv: list[str] | None = None) -> int:
                 manifest = backups.verify_backup(archive_root=arguments.archive_root)
                 print(manifest.model_dump_json())
                 return 0
-            bytes.fromhex(arguments.recovery_key_hex)  # shape-validated now
+            if arguments.backup_command == "restore-stage":
+                from cryptography.exceptions import InvalidTag
+                from pydantic import ValidationError
+
+                owner = require_capability()
+                try:
+                    plan = RestorePlan.model_validate_json(arguments.plan_file.read_bytes())
+                    with os.fdopen(
+                        os.open(arguments.recovery_key_file, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK),
+                        "rb",
+                    ) as key_file:
+                        file_state = os.fstat(key_file.fileno())
+                        if (
+                            not stat.S_ISREG(file_state.st_mode)
+                            or file_state.st_uid != os.geteuid()
+                            or file_state.st_mode & 0o077
+                        ):
+                            raise OperatorError("denied: recovery key must be a regular owner-only file")
+                        recovery_key = key_file.read(33)
+                except (ValidationError, OSError) as exc:
+                    raise OperatorError("invalid_request: restore plan or recovery key could not be read") from exc
+                try:
+                    staged = backups.apply_restore(
+                        capability=owner, plan=plan, staging_root=arguments.staging_root,
+                        recovery_key=recovery_key,
+                    )
+                except InvalidTag as exc:
+                    raise OperatorError("denied: recovery key did not authenticate the archive") from exc
+                except OSError as exc:
+                    raise OperatorError("unavailable: restore staging could not be published") from exc
+                print(json.dumps({"status": "staged", "path": str(staged)}, sort_keys=True))
+                return 0
             plan = backups.plan_restore(
                 capability=require_capability(),
                 archive_root=arguments.archive_root,
