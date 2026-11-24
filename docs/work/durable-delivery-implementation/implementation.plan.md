@@ -44,4 +44,4 @@ Implementation branch `codex/durable-delivery-implementation` is published to or
 
 ## Next Action
 
-Close the acquisition and backup capacity gaps exposed by the [owner-staged raw SQLite trial](../sqlite-memory-payload-implementation/implementation.plan.md) before considering default activation.
+Design the v8 capacity corrections from the [checkpoint and backup recheck](../sqlite-memory-payload-qualification/testing.plan.md), including verified acquisition and the authority contract for copying paired pinned snapshots outside the publication fence.

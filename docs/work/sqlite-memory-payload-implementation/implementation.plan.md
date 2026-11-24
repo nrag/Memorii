@@ -41,4 +41,4 @@ The v8 backup pause was 5.624 seconds median and 5.652 seconds maximum across th
 
 ## Release Follow-Up
 
-Keep v7 as the default. Evaluate a generation-local checkpoint for the staged v8 publication and profile the backup fence's snapshot copy. The [durable delivery plan](../durable-delivery-implementation/implementation.plan.md) owns capacity qualification and default activation.
+Keep v7 as the default. The [capacity recheck](../sqlite-memory-payload-qualification/testing.plan.md) now measures the same staged v8 generation with a signed checkpoint and 1,000-event tail and attributes the actual backup fence. Both five-second gates remain open. The [durable delivery plan](../durable-delivery-implementation/implementation.plan.md) owns capacity qualification and default activation.
