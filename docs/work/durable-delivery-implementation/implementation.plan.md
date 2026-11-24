@@ -44,4 +44,4 @@ Implementation branch `codex/durable-delivery-implementation` is published to or
 
 ## Next Action
 
-Design the v8 capacity corrections from the [checkpoint and backup recheck](../sqlite-memory-payload-qualification/testing.plan.md), including verified acquisition and the authority contract for copying paired pinned snapshots outside the publication fence.
+Use the [installed v8 capacity remediation results](../sqlite-capacity-remediation/implementation.plan.md) to isolate the remaining acquisition cost on the approved native storage profiles before considering default activation.
