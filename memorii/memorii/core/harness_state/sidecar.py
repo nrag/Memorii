@@ -15,6 +15,7 @@ admission is durable before acknowledgement.
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -48,7 +49,12 @@ from memorii.core.persistence.runtime_repository import RuntimeStateRepository
 from memorii.core.storage_administration.revoked_identity_view import (
     RevokedIdentityServingGate,
 )
-from memorii.core.storage_administration.service import StorageAdministrationError, StorageAdministrationService
+from memorii.core.storage_administration.service import (
+    InstallationIntegrityError,
+    InstallationQuarantinedError,
+    StorageAdministrationError,
+    StorageAdministrationService,
+)
 
 _MAXIMUM_INTAKE_BYTES = 1 << 20
 _MAXIMUM_OPERATION_ORIGIN_BYTES = 8192
@@ -379,6 +385,10 @@ class RuntimeSidecar:
             result = reader_factory(secret).read(request)
         except ConsolidationReadError as exc:
             return _error(_ERROR_STATUS[exc.code], exc.code, None)
+        except (InstallationIntegrityError, InstallationQuarantinedError, sqlite3.DatabaseError):
+            return _error(_ERROR_STATUS["integrity_error"], "integrity_error", None)
+        except (OSError, StorageAdministrationError):
+            return _error(_ERROR_STATUS["unavailable"], "unavailable", None)
         return 200, result.model_dump_json().encode()
 
     def _handle_managed_intake(

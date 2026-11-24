@@ -10,7 +10,6 @@ from memorii.core.harness_state.write_authority import (
     HostCommandGrantRequest,
     ManagedHostCommandAuthority,
 )
-from memorii.core.persistence.contracts import canonical_json_digest
 from memorii.core.persistence.managed_delivery import DeliveredDelivery, DeliveryClaim, RejectedDelivery
 from memorii.core.persistence.runtime_api import (
     RuntimeCommandService,
@@ -74,7 +73,7 @@ def _seed(
             installation_id=state.installation_id, repository_id=finalized.repository_id,
             generation_id=finalized.data_generation_id, principal=task.principal,
             client_namespace=grant.client_namespace, operation_id=command.operation_id,
-            request_digest=canonical_json_digest(command.model_dump(mode="json")),
+            request_digest=command.managed_intent_digest(),
         )
         origin = service.sign_operation_origin(coordinate)
         resolved = authority.resolve_in_verified_context(
@@ -165,7 +164,7 @@ def test_enrolled_work_projection_atomically_publishes_effect_receipt_and_termin
         with reopened.partition().transaction(write=False) as connection:
             loaded = repository.get_managed_work_projection_delivery(connection, delivery_id)
             assert loaded is not None
-            assert loaded.delivery.progress == DeliveredDelivery(receipt=receipt)
+            assert loaded.delivery.progress == DeliveredDelivery(receipt=receipt, completed_claim=claim)
             repository.verify_work_projection_effect(connection, loaded, receipt)
     finally:
         reopened.close()

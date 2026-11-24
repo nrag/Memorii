@@ -310,13 +310,18 @@ def test_credential_store_backed_sidecar_serves_and_denies(tmp_path: Path) -> No
     store.verify_permissions()
 
 
-def test_consume_cli_admits_dispatches_and_refuses_untrusted(tmp_path: Path) -> None:
+def test_consume_cli_admits_dispatches_and_refuses_untrusted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from memorii.stores.sqlite import partition as sqlite_partition
     from memorii.tools.runtime_consume import main as consume_main
 
     root = tmp_path / "installation"
-    administration = StorageAdministrationService(root)
-    administration.initialize()
-    administration.close()
+    with monkeypatch.context() as legacy:
+        legacy.setattr(sqlite_partition, "PARTITION_SCHEMA_VERSION", 1)
+        administration = StorageAdministrationService(root)
+        try:
+            administration.initialize()
+        finally:
+            administration.close()
 
     delivery = {
         "transport_message_id": "msg:one",
@@ -385,6 +390,48 @@ def test_consume_cli_admits_dispatches_and_refuses_untrusted(tmp_path: Path) -> 
         )
         == 3
     )
+
+
+def test_consume_cli_rejects_legacy_intake_and_drain_on_managed_root(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    from memorii.core.harness_state.consumer import HostEventDelivery, LocalDurableSpool
+    from memorii.tools.runtime_consume import main as consume_main
+
+    root = tmp_path / "installation"
+    administration = StorageAdministrationService(root)
+    try:
+        administration.initialize()
+        previous = administration.acquire_verified_snapshot()
+    finally:
+        administration.close()
+    delivery = HostEventDelivery(
+        transport_message_id="unsigned-message", producer_binding="unsigned-producer",
+        command=RuntimeCommandRequest(kind="start_task", operation_id="unsigned", goal="Unsigned intent"),
+    )
+    incoming = tmp_path / "legacy.json"
+    incoming.write_text(delivery.model_dump_json(), encoding="utf-8")
+    shared = ["--installation-root", str(root)]
+    assert consume_main([*shared, "--producer", "unsigned-producer", "--delivery", str(incoming)]) == 3
+    assert "requires --managed" in capsys.readouterr().err
+    assert not (root / "spool").exists()
+
+    # An older pending spool also cannot supply authority by CLI allowlist.
+    pending = LocalDurableSpool(tmp_path / "legacy-spool")
+    before = pending.admit(delivery, allowlisted_producers=("unsigned-producer",))
+    assert consume_main([
+        *shared, "--spool-directory", str(tmp_path / "legacy-spool"),
+        "--drain", "--allowlisted-producers", "unsigned-producer",
+    ]) == 3
+    assert "requires --managed" in capsys.readouterr().err
+    assert pending.pending_deliveries(allowlisted_producers=("unsigned-producer",)) == ((before, delivery),)
+
+    reopened = StorageAdministrationService(root)
+    try:
+        assert reopened.acquire_verified_snapshot() == previous
+        assert not RuntimeStateRepository(reopened.partition()).list_tasks()
+    finally:
+        reopened.close()
 
 
 def _intake_sidecar(tmp_path: Path) -> tuple[RuntimeSidecar, str, Path]:

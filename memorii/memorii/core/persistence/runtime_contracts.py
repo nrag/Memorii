@@ -12,9 +12,10 @@ the only ordering authority.
 from __future__ import annotations
 
 from datetime import datetime
+from hashlib import sha256
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 _HEX_64 = r"^[0-9a-f]{64}$"
 _EPISTEMIC = ("candidate", "committed", "weakened", "suspended", "retired")
@@ -23,6 +24,13 @@ EpistemicStatus = Literal["candidate", "committed", "weakened", "suspended", "re
 TaskLifecycle = Literal["active", "paused", "completed", "aborted"]
 SolverRunLifecycle = Literal["active", "resolved", "archived"]
 JustificationRole = Literal["supporting", "contradicting", "assumption"]
+
+
+def canonical_runtime_digest(value: object) -> str:
+    """Hash a closed runtime record using Memorii's canonical typed encoding."""
+    from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
+
+    return sha256(encode_typed_value(value)).hexdigest()
 
 
 class NodeEvidenceReference(BaseModel):
@@ -281,6 +289,16 @@ class OperationOriginCoordinate(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    @field_validator("installation_id", "repository_id", "generation_id", "principal", "client_namespace", "operation_id")
+    @classmethod
+    def coordinate_has_no_separator(cls, value: str) -> str:
+        if "\0" in value:
+            raise ValueError("operation origin coordinates cannot contain NUL")
+        return value
+
+    def signing_digest(self) -> str:
+        return canonical_runtime_digest(self.model_dump(mode="json"))
+
 
 class OperationOrigin(BaseModel):
     """Purpose-signed operation origin, never permission to execute it."""
@@ -289,6 +307,9 @@ class OperationOrigin(BaseModel):
     signature: str = Field(pattern=r"^[0-9a-f]{128}$")
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    def proof_digest(self) -> str:
+        return canonical_runtime_digest(self.model_dump(mode="json"))
 
 
 class RuntimeCommandReceipt(BaseModel):
@@ -418,6 +439,10 @@ class RuntimeCommandRequest(BaseModel):
     source_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    def managed_intent_digest(self) -> str:
+        """Bind the complete prepared intent, including its expected revision."""
+        return canonical_runtime_digest(self.model_dump(mode="json"))
 
     @model_validator(mode="after")
     def payload_matches_kind(self) -> RuntimeCommandRequest:

@@ -776,12 +776,15 @@ def test_cli_status_doctor_and_capability_refusal(tmp_path: Path) -> None:
     assert "--owner-principal" in refusal.stderr
 
 
-def test_fresh_host_boot_from_verified_restore(tmp_path: Path) -> None:
+def test_fresh_host_boot_from_verified_legacy_restore(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from memorii.core.storage_administration.operator_backup import (
         BackupRestoreOperator,
         boot_restored_installation,
     )
 
+    monkeypatch.setattr("memorii.stores.sqlite.partition.PARTITION_SCHEMA_VERSION", 1)
     operator, service, capability = _fenced_operator(tmp_path)
     try:
         backups = BackupRestoreOperator(operator)

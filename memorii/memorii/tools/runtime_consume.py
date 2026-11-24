@@ -1,17 +1,10 @@
-"""``memorii consume``: drive the durable spool into the command service.
-
-The CLI reads one delivery file (or admits stdin) through the local
-durable spool with its allowlisted producer binding, then dispatches
-the recorded command through the persistent runtime command service of
-the selected installation. Intake is durable before acknowledgement;
-committed effects print a receipt; refused deliveries exit nonzero with
-the closed reason and never execute the command.
-"""
+"""Drive signed managed intents or verified legacy deliveries into runtime."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -24,6 +17,8 @@ from memorii.core.harness_state.consumer import (
 )
 from memorii.core.persistence.runtime_api import RuntimeCommandError, RuntimeCommandService
 from memorii.core.persistence.runtime_contracts import RuntimeCommandRequest
+from memorii.core.storage_administration.service import StorageAdministrationError, StorageAdministrationService
+from memorii.core.storage_administration.writer_enrollment import WriterEnrollmentRegistry
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -34,12 +29,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--installation-root",
         required=True,
-        help="initialized managed installation root",
+        help="initialized installation root",
     )
     parser.add_argument(
         "--producer",
         default=None,
-        help="authenticated producer binding (required without --drain)",
+        help="legacy v1 producer binding (required for legacy intake)",
     )
     parser.add_argument(
         "--delivery",
@@ -61,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--allowlisted-producers",
         default="",
-        help="comma-separated producer bindings allowed to drain (required with --drain)",
+        help="comma-separated producer bindings allowed to drain on legacy v1 only",
     )
     parser.add_argument("--managed", action="store_true", help="Require the installation's managed command authority")
     parser.add_argument("--prepare", action="store_true", help="Prepare one new managed command without executing it")
@@ -79,6 +74,40 @@ def main(argv: list[str] | None = None) -> int:
     if arguments.credential_file is not None:
         parser.error("--credential-file requires managed mode")
 
+    return _run_verified_legacy(arguments)
+
+
+def _run_verified_legacy(arguments: argparse.Namespace) -> int:
+    root = Path(arguments.installation_root)
+    try:
+        administration = StorageAdministrationService(
+            root,
+            writer_enrollment=WriterEnrollmentRegistry(root / "control" / "writers") if arguments.drain else None,
+        )
+    except (OSError, sqlite3.DatabaseError, StorageAdministrationError):
+        print("unavailable: installation could not be verified", file=sys.stderr)
+        return 3
+    try:
+        # Resolve and verify the signed publication before consulting its
+        # format marker. Keep this partition handle for the legacy path.
+        with administration.verified_operation_context() as (state, _finalized):
+            partition = administration.partition()
+            with partition.transaction(write=False) as connection:
+                if partition.supports_managed_runtime(connection):
+                    print("denied: this installation requires --managed", file=sys.stderr)
+                    return 3
+            if state.mode != "active":
+                print("unavailable: installation is not active", file=sys.stderr)
+                return 3
+        return _run_legacy(arguments, administration)
+    except (OSError, sqlite3.DatabaseError, StorageAdministrationError):
+        print("unavailable: installation could not accept the operation", file=sys.stderr)
+        return 3
+    finally:
+        administration.close()
+
+
+def _run_legacy(arguments: argparse.Namespace, administration: StorageAdministrationService) -> int:
     spool_directory = arguments.spool_directory or (
         Path(arguments.installation_root) / "spool"
     )
@@ -92,81 +121,64 @@ def main(argv: list[str] | None = None) -> int:
         if not allowlisted:
             print("invalid_request: --drain requires --allowlisted-producers", file=sys.stderr)
             return 2
-        from memorii.core.storage_administration.service import (
-            StorageAdministrationService,
-        )
-
         spool = LocalDurableSpool(spool_directory)
-        from memorii.core.storage_administration.writer_enrollment import (
-            WriterEnrollmentRegistry,
-        )
-
-        administration = StorageAdministrationService(
-            arguments.installation_root,
-            writer_enrollment=WriterEnrollmentRegistry(
-                Path(arguments.installation_root) / "control" / "writers"
-            ),
-        )
         refused = 0
-        try:
-            pending = spool.pending_deliveries(allowlisted_producers=allowlisted)
-            for record, delivery in pending:
-                # One refused delivery never aborts the queue: it stays
-                # pending for operator handling and its reason is reported.
-                service = RuntimeCommandService(
-                    administration, client_namespace=record.producer_binding
+        pending = spool.pending_deliveries(allowlisted_producers=allowlisted)
+        for record, delivery in pending:
+            # One refused delivery never aborts the queue: it stays
+            # pending for operator handling and its reason is reported.
+            service = RuntimeCommandService(
+                administration, client_namespace=record.producer_binding
+            )
+            try:
+                receipt = service.dispatch(delivery.command)
+            except RuntimeError as exc:
+                refused += 1
+                print(
+                    json.dumps(
+                        {
+                            "operation_id": record.operation_id,
+                            "status": "refused",
+                            "reason": str(exc).split(":", 1)[-1].strip(),
+                            "intake_state": "pending",
+                        },
+                        sort_keys=True,
+                    )
                 )
+                continue
+            committed = receipt.status in ("committed", "duplicate")
+            if committed:
                 try:
-                    receipt = service.dispatch(delivery.command)
-                except RuntimeError as exc:
+                    spool.mark_committed(record.operation_id)
+                except RuntimeError as mark_error:
+                    # State transition races (dead-letter, unknown id)
+                    # report and continue: the queue keeps draining, the
+                    # record stays for operator handling.
                     refused += 1
                     print(
                         json.dumps(
                             {
                                 "operation_id": record.operation_id,
-                                "status": "refused",
-                                "reason": str(exc).split(":", 1)[-1].strip(),
+                                "status": "mark_failed",
+                                "reason": str(mark_error).split(":", 1)[-1].strip(),
                                 "intake_state": "pending",
                             },
                             sort_keys=True,
                         )
                     )
                     continue
-                committed = receipt.status in ("committed", "duplicate")
-                if committed:
-                    try:
-                        spool.mark_committed(record.operation_id)
-                    except RuntimeError as mark_error:
-                        # State transition races (dead-letter, unknown id)
-                        # report and continue: the queue keeps draining, the
-                        # record stays for operator handling.
-                        refused += 1
-                        print(
-                            json.dumps(
-                                {
-                                    "operation_id": record.operation_id,
-                                    "status": "mark_failed",
-                                    "reason": str(mark_error).split(":", 1)[-1].strip(),
-                                    "intake_state": "pending",
-                                },
-                                sort_keys=True,
-                            )
-                        )
-                        continue
-                print(
-                    json.dumps(
-                        {
-                            "operation_id": receipt.operation_id,
-                            "status": receipt.status,
-                            "base_revision": receipt.base_revision,
-                            "current_revision": receipt.current_revision,
-                            "intake_state": "committed" if committed else "pending",
-                        },
-                        sort_keys=True,
-                    )
+            print(
+                json.dumps(
+                    {
+                        "operation_id": receipt.operation_id,
+                        "status": receipt.status,
+                        "base_revision": receipt.base_revision,
+                        "current_revision": receipt.current_revision,
+                        "intake_state": "committed" if committed else "pending",
+                    },
+                    sort_keys=True,
                 )
-        finally:
-            administration.close()
+            )
         return 1 if refused else 0
 
     if not arguments.producer:
@@ -197,18 +209,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"denied: {exc}", file=sys.stderr)
         return 3
 
-    from memorii.core.storage_administration.service import (
-        StorageAdministrationService,
-    )
-
-    administration = StorageAdministrationService(arguments.installation_root)
-    try:
-        service = RuntimeCommandService(
-            administration, client_namespace=arguments.producer
-        )
-        receipt = service.dispatch(command)
-    finally:
-        administration.close()
+    service = RuntimeCommandService(administration, client_namespace=arguments.producer)
+    receipt = service.dispatch(command)
     print(
         json.dumps(
             {
@@ -228,8 +230,6 @@ def _run_managed(arguments: argparse.Namespace) -> int:
     from memorii.core.harness_state.credentials import CredentialError, SidecarCredentialStore
     from memorii.core.harness_state.managed_ingress import authenticated_host_commands, spooled_host_commands
     from memorii.core.persistence.runtime_repository import RuntimeStateError
-    from memorii.core.storage_administration.service import StorageAdministrationError, StorageAdministrationService
-    from memorii.core.storage_administration.writer_enrollment import WriterEnrollmentRegistry
 
     root = Path(arguments.installation_root)
     administration = StorageAdministrationService(

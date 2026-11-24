@@ -558,6 +558,21 @@ class PartitionDataRepository:
         return int(row[0])
 
     @staticmethod
+    def requires_managed_restore(connection: sqlite3.Connection) -> bool:
+        """Check for any generation that can issue managed operation proofs."""
+        version = PartitionDataRepository.read_schema_version(connection)
+        # Even a managed backup with no receipts can predate a signed intent
+        # accepted later in this same generation.
+        return version >= _CONSOLIDATION_SCHEMA_VERSION or connection.execute(
+            "SELECT 1 FROM runtime_command_receipts "
+            "WHERE json_type(record_json, '$.operation_origin') = 'object' LIMIT 1",
+        ).fetchone() is not None
+
+    @staticmethod
+    def supports_managed_runtime(connection: sqlite3.Connection) -> bool:
+        return PartitionDataRepository.read_schema_version(connection) >= _CONSOLIDATION_SCHEMA_VERSION
+
+    @staticmethod
     def _has_consolidation_catalog(connection: sqlite3.Connection) -> bool:
         return PartitionDataRepository._has_catalog(connection, "consolidation_results")
 

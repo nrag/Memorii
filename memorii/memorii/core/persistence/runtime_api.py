@@ -575,13 +575,7 @@ def managed_receipt_namespace(
 
 
 def operation_origin_proof_digest(proof: OperationOrigin) -> str:
-    return canonical_json_digest(proof.model_dump(mode="json"))
-
-
-def _managed_request_digest(request: RuntimeCommandRequest) -> str:
-    # The origin authenticates the complete prepared request, including its
-    # specific expected revision. The legacy command digest remains unchanged.
-    return canonical_json_digest(request.model_dump(mode="json"))
+    return proof.proof_digest()
 
 
 class _ManagedReceiptAppeared(RuntimeError):
@@ -613,6 +607,7 @@ class ManagedRuntimeCommandService:
         with self._administration.verified_operation_context() as (state, finalized):
             authority = self._require_authority(request, "prepare", None, state, finalized)
             self._require_active(state)
+            self._require_managed_schema()
             coordinate = OperationOriginCoordinate(
                 installation_id=finalized.installation_id,
                 repository_id=finalized.repository_id,
@@ -620,7 +615,7 @@ class ManagedRuntimeCommandService:
                 principal=authority.principal,
                 client_namespace=authority.client_namespace,
                 operation_id=request.operation_id,
-                request_digest=_managed_request_digest(request),
+                request_digest=request.managed_intent_digest(),
             )
             return self._administration.sign_operation_origin(coordinate)
 
@@ -643,6 +638,7 @@ class ManagedRuntimeCommandService:
             self._require_active(state)
             authority = self._require_authority(request, "dispatch", coordinate, state, finalized)
             self._validate_proof(request, operation_origin, authority, finalized)
+            self._require_managed_schema()
             if coordinate.generation_id != finalized.data_generation_id:
                 raise RuntimeCommandError("needs_reconciliation: operation generation changed")
             if service.repository.get_command_receipt(
@@ -700,6 +696,7 @@ class ManagedRuntimeCommandService:
             historical = coordinate.generation_id != finalized.data_generation_id
             authority = self._require_authority(request, "release", coordinate, state, finalized)
             self._validate_proof(request, proof, authority, finalized)
+            self._require_managed_schema()
             repository = RuntimeStateRepository(self._administration.partition())
             receipt = repository.get_command_receipt(
                 operation_origin_namespace(coordinate), coordinate.operation_id
@@ -738,6 +735,12 @@ class ManagedRuntimeCommandService:
                     raise RuntimeCommandError("denied: mismatched intake authority")
             return receipt
 
+    def _require_managed_schema(self) -> None:
+        partition = self._administration.partition()
+        with partition.transaction(write=False) as connection:
+            if not partition.supports_managed_runtime(connection):
+                raise RuntimeCommandError("unsupported_configuration: managed runtime catalog upgrade required")
+
     def _require_authority(
         self,
         request: RuntimeCommandRequest,
@@ -770,7 +773,7 @@ class ManagedRuntimeCommandService:
             or coordinate.principal != authority.principal
             or coordinate.client_namespace != authority.client_namespace
             or coordinate.operation_id != request.operation_id
-            or coordinate.request_digest != _managed_request_digest(request)
+            or coordinate.request_digest != request.managed_intent_digest()
             or not self._administration.verify_operation_origin(proof)
         ):
             raise RuntimeCommandError("denied: operation origin does not authenticate this intent")
@@ -782,6 +785,8 @@ class ManagedRuntimeCommandService:
 
     @staticmethod
     def _require_supported(request: RuntimeCommandRequest) -> None:
+        if len(request.operation_id) > 512 or "\0" in request.operation_id:
+            raise RuntimeCommandError("invalid_request: operation identity is invalid")
         if request.kind not in {"start_task", "pause_task", "complete_task"}:
             raise RuntimeCommandError(
                 "unsupported_configuration: managed result and mutation owners are not configured"

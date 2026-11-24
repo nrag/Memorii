@@ -28,6 +28,7 @@ import os
 import shutil
 import sqlite3
 import time
+from contextlib import closing
 from pathlib import Path
 from typing import Literal
 
@@ -40,6 +41,7 @@ from memorii.core.storage_administration.operator import (
     StorageAdministrationOperator,
     require_owner_capability,
 )
+from memorii.stores.sqlite.partition import PartitionDataRepository
 
 _BACKUP_MARKER = "backup-complete.json"
 _RECOVERY_BUNDLE = "control-recovery-bundle.json"
@@ -497,6 +499,12 @@ def boot_restored_installation(
             raise _OpError(
                 f"integrity_error: staged participant missing: {required.name}"
             )
+    try:
+        with closing(sqlite3.connect(staged_partition.resolve().as_uri() + "?mode=ro", uri=True)) as connection:
+            if PartitionDataRepository.requires_managed_restore(connection):
+                raise _OpError("needs_reconciliation: managed runtime state requires a staged generation restore")
+    except sqlite3.DatabaseError as exc:
+        raise _OpError("integrity_error: staged partition runtime inventory cannot be read") from exc
     identity = str(anchor.get("installation_id", ""))
     if not identity:
         raise _OpError("invalid_request: anchor is missing the installation identity")

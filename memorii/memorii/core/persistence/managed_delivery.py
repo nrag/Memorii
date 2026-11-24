@@ -13,7 +13,7 @@ from typing import Annotated, Literal, Self
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 from memorii.core.consolidation.runtime_outputs import SourceReferences
-from memorii.core.persistence.contracts import canonical_json_digest
+from memorii.core.persistence.runtime_contracts import canonical_runtime_digest
 
 _MAX_CLAIMS = 3
 _LEASE_LENGTH = timedelta(seconds=30)
@@ -74,7 +74,7 @@ class DeliveryRequest(_DeliveryRecord):
 
     def request_digest(self) -> str:
         """Bind the target request independently of claim and retry metadata."""
-        return canonical_json_digest(self.model_dump(mode="json"))
+        return canonical_runtime_digest(self.model_dump(mode="json"))
 
 
 class DeliveryContext(_DeliveryRecord):
@@ -82,6 +82,7 @@ class DeliveryContext(_DeliveryRecord):
     partition_id: Identity
     generation_id: Identity
     eligibility_epoch: Positive
+    control_revision: Positive | None = None
     mode: Literal["active", "read_only", "bypass"]
 
 
@@ -96,6 +97,7 @@ class DeliveryClaim(_DeliveryRecord):
     worker_id: Identity
     fence_token: Positive
     eligibility_epoch: Positive
+    control_revision: Positive | None = None
     expires_at: AwareDatetime
 
 
@@ -133,6 +135,7 @@ class RuntimeTargetReceipt(_DeliveryRecord):
 class DeliveredDelivery(_DeliveryRecord):
     status: Literal["delivered"] = "delivered"
     receipt: RuntimeTargetReceipt
+    completed_claim: DeliveryClaim | None = None
 
 
 class RejectedDelivery(_DeliveryRecord):
@@ -223,6 +226,7 @@ def _require_claim(
     if (
         delivery.progress != claim
         or claim.eligibility_epoch != context.eligibility_epoch
+        or claim.control_revision != context.control_revision
         or now >= claim.expires_at
     ):
         raise DeliveryTransitionError("conflict: delivery claim is stale")
@@ -261,6 +265,7 @@ def claim_delivery(
         worker_id=worker_id,
         fence_token=delivery.fence_token + 1,
         eligibility_epoch=context.eligibility_epoch,
+        control_revision=context.control_revision,
         expires_at=now + _LEASE_LENGTH,
     )
     return _advance(delivery, claim, count_claim=True)
@@ -284,7 +289,11 @@ def recover_delivery_claim(
     claim = delivery.progress
     if not isinstance(claim, DeliveryClaim):
         raise DeliveryTransitionError("conflict: delivery has no recoverable claim")
-    if claim.eligibility_epoch == context.eligibility_epoch and now < claim.expires_at:
+    if (
+        claim.eligibility_epoch == context.eligibility_epoch
+        and claim.control_revision == context.control_revision
+        and now < claim.expires_at
+    ):
         raise DeliveryTransitionError("conflict: delivery claim is still current")
     return _schedule_retry(delivery, since=min(now, claim.expires_at))
 
@@ -336,4 +345,4 @@ def complete_delivery(
         or receipt.effect != effect
     ):
         raise DeliveryTransitionError("integrity_error: target receipt does not match request and verified effect")
-    return _advance(delivery, DeliveredDelivery(receipt=receipt))
+    return _advance(delivery, DeliveredDelivery(receipt=receipt, completed_claim=claim))

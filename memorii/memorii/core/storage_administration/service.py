@@ -836,7 +836,7 @@ class StorageAdministrationService:
             signature=self._signing.sign(
                 self._signer_key_id,
                 OPERATION_ORIGIN_SIGNATURE_PURPOSE,
-                canonical_json_digest(coordinate.model_dump(mode="json")),
+                coordinate.signing_digest(),
             ),
         )
 
@@ -846,7 +846,7 @@ class StorageAdministrationService:
             return self._signing.verify(
                 self._signer_key_id,
                 OPERATION_ORIGIN_SIGNATURE_PURPOSE,
-                canonical_json_digest(proof.coordinate.model_dump(mode="json")),
+                proof.coordinate.signing_digest(),
                 proof.signature,
             )
         except (PermissionError, ValueError):

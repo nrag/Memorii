@@ -97,27 +97,25 @@ class StorageAdministrationOperator:
     ) -> InstallationStatus:
         service = self._administration
         require_owner_capability(service, capability)
-        state = service._control_state()
-        if state.quarantined_reason is not None:
-            raise OperatorError(
-                "unsupported_configuration: quarantined installation;"
-                " owner recovery required before mode changes"
-            )
-        if state.control_revision != request.expected_control_revision:
-            raise OperatorError(
-                "conflict: control revision changed;"
-                f" expected {request.expected_control_revision},"
-                f" current {state.control_revision}"
-            )
-        if state.mode == request.target_mode:
-            return self.status()
-        if state.mode == "bypass" and request.target_mode != "active":
-            raise OperatorError(
-                "invalid_request: bypass returns to active only"
-            )
         # The transition takes the publication fence so an in-flight
         # publisher cannot commit across the mode change boundary.
         with service._publication_fence():
+            state = service._control_state()
+            if state.quarantined_reason is not None:
+                raise OperatorError(
+                    "unsupported_configuration: quarantined installation;"
+                    " owner recovery required before mode changes"
+                )
+            if state.control_revision != request.expected_control_revision:
+                raise OperatorError(
+                    "conflict: control revision changed;"
+                    f" expected {request.expected_control_revision},"
+                    f" current {state.control_revision}"
+                )
+            if state.mode == request.target_mode:
+                return self.status()
+            if state.mode == "bypass" and request.target_mode != "active":
+                raise OperatorError("invalid_request: bypass returns to active only")
             service._control.write_control_state(
                 state.model_copy(
                     update={

@@ -180,6 +180,37 @@ test("managed intake transports the original prepared operation proof", async ()
   }
 });
 
+test("readConsolidation sends the origin and paging selectors to the authenticated route", async () => {
+  const selectors = {
+    protocol_version: 1, task_id: "task:one", origin_operation_id: "op:pause", cursor: "cursor:one", page_size: 2,
+  };
+  const page = {
+    protocol_version: 1, result_id: "a".repeat(64), origin_revision: 5, outputs: [], omissions: [],
+    continuation_cursor: null,
+  };
+  const requests = [];
+  const server = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    requests.push({
+      path: request.url, method: request.method, authorization: request.headers.authorization,
+      body: JSON.parse(Buffer.concat(chunks)),
+    });
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify(page));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const client = new RuntimeStateClient({ baseUrl: `http://127.0.0.1:${server.address().port}`, credential: "right" });
+    assert.deepEqual(await client.readConsolidation(selectors), page);
+    assert.deepEqual(requests, [{
+      path: "/v1/consolidation/read", method: "POST", authorization: "Bearer right", body: selectors,
+    }]);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 /** Minimal one-shot HTTP server serving a fixed response; loopback only. */
 async function serve(status, body, contentType = "application/json") {
   const server = createServer((request, response) => {

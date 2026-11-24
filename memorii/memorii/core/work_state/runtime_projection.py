@@ -41,6 +41,7 @@ from memorii.core.persistence.managed_delivery import (
 from memorii.core.persistence.runtime_contracts import OperationOrigin, RuntimeCommandRequest
 from memorii.core.persistence.runtime_repository import RuntimeStateRepository, publish_runtime_change
 from memorii.core.recall.models import WorkStateSummary
+from memorii.core.storage_administration.revoked_identity_view import RefreshingRevokedIdentityView
 from memorii.core.storage_administration.service import StorageAdministrationService
 from memorii.core.storage_administration.writer_enrollment import (
     WriterEnrollmentError,
@@ -109,7 +110,7 @@ class ManagedWorkProjectionDelivery(BaseModel):
             or self.command.operation_id != coordinate.operation_id
             or self.command.kind not in _WORK_PROJECTION_COMMANDS
             or self.command.task_id != self.projection.scope.task_id
-            or canonical_json_digest(self.command.model_dump(mode="json")) != coordinate.request_digest
+            or self.command.managed_intent_digest() != coordinate.request_digest
             or authority.installation_id != coordinate.installation_id
             or authority.principal != coordinate.principal
             or authority.client_namespace != coordinate.client_namespace
@@ -245,6 +246,7 @@ class ManagedWorkProjectionWorker:
         self._worker_id = worker_id
         self._clock = clock or (lambda: datetime.now(UTC))
         self._grants = ManagedHostCommandAuthority(administration)
+        self._revoked = RefreshingRevokedIdentityView(administration.installation_root / "control")
         self._writers = WriterEnrollmentRegistry(administration.installation_root / "control" / "writers")
 
     def claim(self, delivery_id: str) -> DeliveryClaim | None:
@@ -258,6 +260,10 @@ class ManagedWorkProjectionWorker:
             now = self._clock()
             if isinstance(delivery.progress, DeliveryClaim):
                 result = recover_delivery_claim(delivery, context=context, now=now)
+                repository.apply_managed_work_projection_delivery(connection, entry.with_delivery(result))
+                return None
+            if self._revoked.is_revoked_task(entry.projection.scope.task_id):
+                result = reject_pending_delivery(delivery, context=context, reason="forgotten")
                 repository.apply_managed_work_projection_delivery(connection, entry.with_delivery(result))
                 return None
             try:
@@ -291,6 +297,14 @@ class ManagedWorkProjectionWorker:
         ) -> RuntimeTargetReceipt | None:
             delivery = entry.delivery
             now = self._clock()
+            if self._revoked.is_revoked_task(entry.projection.scope.task_id):
+                if not isinstance(delivery.progress, DeliveryClaim):
+                    raise DeliveryTransitionError("denied: projection task is suppressed")
+                rejected = record_delivery_failure(
+                    delivery, claim=claim, context=context, now=now, outcome="forgotten",
+                )
+                repository.apply_managed_work_projection_delivery(connection, entry.with_delivery(rejected))
+                return None
             try:
                 self._require_projection_authority(entry, state, finalized, now)
             except HostCommandAuthorityError as exc:
@@ -305,6 +319,8 @@ class ManagedWorkProjectionWorker:
                 repository.apply_managed_work_projection_delivery(connection, entry.with_delivery(rejected))
                 return None
             if isinstance(delivery.progress, DeliveredDelivery):
+                if delivery.progress.completed_claim != claim:
+                    raise DeliveryTransitionError("conflict: projection receipt requires the completed claim")
                 receipt = delivery.progress.receipt
                 repository.verify_work_projection_effect(connection, entry, receipt)
                 raise _DeliveredProjection(receipt)
@@ -383,6 +399,7 @@ class ManagedWorkProjectionWorker:
                 partition_id=finalized.repository_id,
                 generation_id=finalized.data_generation_id,
                 eligibility_epoch=state.eligibility_epoch + state.pending_epoch_increments,
+                control_revision=state.control_revision,
                 mode=state.mode,
             ), finalized))
 

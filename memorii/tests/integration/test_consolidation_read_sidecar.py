@@ -26,11 +26,18 @@ from memorii.core.harness_state.sidecar import RuntimeSidecar
 from memorii.core.harness_state.write_authority import HostCommandGrantRequest, ManagedHostCommandAuthority
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.store import record_digest
+from memorii.core.persistence.managed_delivery import DeliveryTransitionError, RejectedDelivery
 from memorii.core.persistence.runtime_api import operation_origin_namespace, operation_origin_proof_digest
 from memorii.core.persistence.runtime_contracts import RuntimeCommandReceipt, RuntimeCommandRequest
 from memorii.core.persistence.runtime_repository import RuntimeStateRepository, publish_runtime_change
-from memorii.core.storage_administration.operator import mint_owner_capability
-from memorii.core.storage_administration.service import StorageAdministrationService
+from memorii.core.storage_administration.operator import (
+    ModeChangeRequest,
+    OperatorError,
+    StorageAdministrationOperator,
+    mint_owner_capability,
+)
+from memorii.core.storage_administration.operator_backup import BackupRestoreOperator, boot_restored_installation
+from memorii.core.storage_administration.service import InstallationIntegrityError, StorageAdministrationService
 from memorii.core.storage_administration.suppression_journal import (
     SuppressionCoordinate,
     SuppressionRecord,
@@ -68,6 +75,41 @@ class _Installation:
             ).model_dump_json().encode(),
         )
 
+
+def test_fresh_host_restore_refuses_a_managed_runtime_backup(installed: _Installation, tmp_path: Path) -> None:
+    administration = installed.administration
+    operator = StorageAdministrationOperator(administration)
+    capability = mint_owner_capability(administration, "owner")
+    operator.change_mode(
+        ModeChangeRequest(
+            target_mode="read_only",
+            expected_control_revision=operator.status().control_revision,
+            reason="verify managed backup recovery",
+        ),
+        capability=capability,
+    )
+    backups = BackupRestoreOperator(operator)
+    archive_root = tmp_path / "archive"
+    recovery_key = b"k" * 32
+    backups.create_backup(
+        capability=capability, archive_root=archive_root,
+        reason="verify managed backup recovery", recovery_key=recovery_key,
+    )
+    plan = backups.plan_restore(
+        capability=capability, archive_root=archive_root, data_loss_acknowledged=False,
+    )
+    staged = backups.apply_restore(
+        capability=capability, plan=plan, staging_root=tmp_path / "staged", recovery_key=recovery_key,
+    )
+    fresh = tmp_path / "fresh"
+    with pytest.raises(OperatorError, match="needs_reconciliation"):
+        boot_restored_installation(
+            capability=capability, staging_root=staged,
+            anchor=json.loads((archive_root / "recovery-anchor.json").read_bytes()),
+            installation_root=fresh,
+            signing_keys_directory=administration.installation_root / "control" / "keys",
+        )
+    assert not fresh.exists()
 
 @pytest.fixture
 def installed(tmp_path: Path) -> Iterator[_Installation]:
@@ -129,7 +171,68 @@ def test_managed_pause_queues_a_signed_projection_for_the_enrolled_worker(instal
     assert receipt is not None
     after = administration.acquire_verified_snapshot()
     assert worker.publish(claim) == receipt
+    with pytest.raises(DeliveryTransitionError, match="completed claim"):
+        worker.publish(claim.model_copy(update={"fence_token": claim.fence_token + 1}))
     assert administration.acquire_verified_snapshot() == after
+
+
+@pytest.mark.parametrize("forget_after_claim", [False, True])
+def test_worker_refuses_forgotten_task_projection(installed: _Installation, forget_after_claim: bool) -> None:
+    administration = installed.administration
+    partition = administration.partition()
+    with partition.transaction(write=False) as connection:
+        [row] = partition.read_runtime_rows(connection, table="runtime_outbox_deliveries")
+        entry = ManagedWorkProjectionDelivery.model_validate_json(str(row["record_json"]))
+    delivery_id = entry.delivery.request.delivery_id
+    WriterEnrollmentRegistry(administration.installation_root / "control" / "writers").enroll(
+        "projection", kind="managed_work_projection",
+    )
+    worker = ManagedWorkProjectionWorker(administration, worker_id="projection")
+    claim = worker.claim(delivery_id) if forget_after_claim else None
+    assert (claim is not None) == forget_after_claim
+    write_suppression_record(administration.installation_root / "control", SuppressionRecord(
+        suppression_id="1" * 64, plan_digest="2" * 64, closure_digest="3" * 64,
+        scope_note="test fixture",
+        suppressed=(SuppressionCoordinate(coordinate_kind="task", coordinate_id=installed.task_id),),
+        applied_at_unix=1,
+    ))
+    assert (worker.publish(claim) if claim is not None else worker.claim(delivery_id)) is None
+    with partition.transaction(write=False) as connection:
+        current = RuntimeStateRepository(partition).get_managed_work_projection_delivery(connection, delivery_id)
+        assert current is not None
+        assert current.delivery.progress == RejectedDelivery(reason="forgotten")
+        assert partition.read_delivery_record(connection, catalog="runtime_target_receipts", record_id=delivery_id) is None
+
+
+def test_owner_pause_and_resume_invalidates_the_outstanding_projection_claim(installed: _Installation) -> None:
+    administration = installed.administration
+    partition = administration.partition()
+    with partition.transaction(write=False) as connection:
+        [row] = partition.read_runtime_rows(connection, table="runtime_outbox_deliveries")
+        entry = ManagedWorkProjectionDelivery.model_validate_json(str(row["record_json"]))
+    delivery_id = entry.delivery.request.delivery_id
+    WriterEnrollmentRegistry(administration.installation_root / "control" / "writers").enroll(
+        "projection", kind="managed_work_projection",
+    )
+    moment = datetime.now(UTC)
+    worker = ManagedWorkProjectionWorker(administration, worker_id="projection", clock=lambda: moment)
+    claim = worker.claim(delivery_id)
+    assert claim is not None
+    operator = StorageAdministrationOperator(administration)
+    capability = mint_owner_capability(administration, "owner")
+    paused = operator.change_mode(ModeChangeRequest(
+        target_mode="read_only", expected_control_revision=operator.status().control_revision, reason="pause",
+    ), capability=capability)
+    operator.change_mode(ModeChangeRequest(
+        target_mode="active", expected_control_revision=paused.control_revision, reason="resume",
+    ), capability=capability)
+    with pytest.raises(DeliveryTransitionError, match="stale"):
+        worker.publish(claim)
+    assert worker.claim(delivery_id) is None
+    moment += timedelta(seconds=2)
+    recovered = worker.claim(delivery_id)
+    assert recovered is not None and recovered.fence_token > claim.fence_token
+    assert worker.publish(recovered) is not None
 
 
 def test_sidecar_pages_the_saved_result_and_rejects_stale_or_wrong_scope(installed: _Installation) -> None:
@@ -162,6 +265,18 @@ def test_sidecar_pages_the_saved_result_and_rejects_stale_or_wrong_scope(install
     status, raw = installed.read()
     assert status == 403
     assert first.result_id.encode() not in raw
+
+
+def test_result_route_maps_snapshot_failure_to_closed_integrity_error(
+    installed: _Installation, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_snapshot(*_args: object) -> None:
+        raise InstallationIntegrityError("private storage details")
+
+    monkeypatch.setattr(installed.administration, "_verified_snapshot_locked", fail_snapshot)
+    status, body = installed.read()
+    assert status == 500
+    assert json.loads(body) == {"code": "integrity_error", "retryable": False, "detail": None}
 
 
 def test_suppressed_output_is_omitted_and_existing_offer_cursor_is_stale(installed: _Installation) -> None:

@@ -146,7 +146,7 @@ def test_target_receipt_binds_exact_effect_and_scope() -> None:
         claimed, claim=claim, context=_CONTEXT, current_authority=_AUTHORITY,
         now=_NOW, receipt=_RECEIPT, effect=_EFFECT,
     )
-    assert delivered.progress == DeliveredDelivery(receipt=_RECEIPT)
+    assert delivered.progress == DeliveredDelivery(receipt=_RECEIPT, completed_claim=claim)
     assert ManagedDelivery.model_validate_json(delivered.model_dump_json()) == delivered
     with pytest.raises(DeliveryTransitionError, match="stale"):
         record_delivery_failure(
