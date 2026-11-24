@@ -78,3 +78,18 @@ The test reviewer approved the corrected planning delta. This closes the plan-on
 - At committed 91fd5720, 144 Python tests passed on macOS, covering the complete durable-runtime job's test selection, the existing smaller capacity integration regression, the operator suite and focused managed unit tests. This local run used Python 3.12. The CI durable-runtime job uses Python 3.11 on Linux.
 - On the subsequent codec and historical-reservation patch, all 13 focused replay tests passed on macOS, including tampered solver scope, a divergent version behind the current head and mixed repository batches.
 - At a1493f12, the same combined Python selection passed 147 tests. The OpenAPI byte comparison and identity audit passed on that revision. This is local regression evidence. Host container certification and release qualification remain open.
+
+## SQLite Journal And Delivery Continuation
+
+| Increment | Revision | Local evidence and limits |
+| --- | --- | --- |
+| Signed SQLite journal and replay indexes | 52eeaa56, cc000844, c90b9210 | Actual root/solver projection replay after reopen, memory interleave, conflict rollback and pending-intent verification before finalization. Reproduced cache and signed-revision discrepancies and added regressions. V1-v3 catalog bytes remain readable without synthetic history. Full business-event coverage and signed migration ancestry remain open. |
+| Bounded managed resume | c004994f, 98099c48, ee3d92ee | Source-free root resume verifies an exact pause archive and receipt. General checkpoint counters and current member bytes are authenticated. General checkpoint-plus-tail serving remains open. |
+| Host accept and decline | 890fd5c0 | Signed loopback requests, exact retry, opposing requests, rollback and suppression. Tool-facing decision path remains separate from model tools. SDK typecheck, ten tests, package dry run and installed tarball passed. Generated OpenAPI byte parity passed. Fixture result used for the source-bearing test. |
+| Local target effects | 65d6a139 | Four candidate kinds through the explicit enrolled target worker. Independent tests covered atomic rollback, exact receipt retry, forbidden generic writes and promotion, suppression and stale claim refusal. Signed digest-only legacy rows cannot call the old callback. |
+| Restore staging | c9499043, e97e5d60 | Verified signed watermark, signed capture and staging refusal for stale, swapped or corrupted input, and owner CLI staging. Managed backup activation and delivery hold reconciliation remain open. |
+| Capacity diagnostics | be72d24f | Installed wheel match and small signed fixture smoke. Exact reference qualification unavailable until native source receipts and signed checkpoint-tail replay exist. No platform timing evidence. |
+
+The continuation runs used macOS arm64 and Python 3.12, with warning promotion and the pytest cache provider disabled. The workflow selections remain responsible for Linux Python 3.11 CI evidence. The existing durable-runtime integration job now names both new journal and candidate suites. Scoped reads, CLI staging, signed delivery and diagnostic fixture runs do not satisfy host container, release-branch or capacity certification on their own.
+
+At clean product revision ee3d92ee, the final focused Python selection passed 211 tests in 15.21 seconds. It included the durable-runtime integration selection, runtime and partition recovery, migration recovery, operator and writeback suites, and the smaller capacity regression plus reference fixture tests. The repository identity audit and pinned artifact byte check also passed.
