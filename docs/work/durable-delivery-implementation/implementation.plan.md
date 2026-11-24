@@ -44,4 +44,4 @@ Implementation branch `codex/durable-delivery-implementation` is published to or
 
 ## Next Action
 
-Bind provider-owned native source admission receipts to managed observation publication, then exercise a real source-backed pause result through signed replay and host acceptance.
+Resolve the authorization lifetime for provider-protected evidence after a provider session disconnects, then use the selected provider-owned authority for source-backed pause, archive and offer release, host decisions, and worker publication.

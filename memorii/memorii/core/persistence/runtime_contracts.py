@@ -17,6 +17,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from memorii.domain.enums import SourceModality
+
 _HEX_64 = r"^[0-9a-f]{64}$"
 _EPISTEMIC = ("candidate", "committed", "weakened", "suspended", "retired")
 
@@ -312,6 +314,32 @@ class OperationOrigin(BaseModel):
         return canonical_runtime_digest(self.model_dump(mode="json"))
 
 
+class RuntimeSourceAdmissionReceipt(BaseModel):
+    """Metadata-only runtime binding to an exact provider-owned admission."""
+
+    task_id: str = Field(min_length=1, max_length=512)
+    source_id: str = Field(min_length=1, max_length=512)
+    source_record_digest: str = Field(pattern=_HEX_64)
+    provider_source_digest: str = Field(pattern=_HEX_64)
+    admission_index_digest: str = Field(pattern=_HEX_64)
+    delivery_key_digest: str = Field(pattern=_HEX_64)
+    source_write_revision: int = Field(ge=1, strict=True)
+    source_type: Literal["user"]
+    modalities: tuple[SourceModality, ...] = Field(min_length=1)
+    retained_at: datetime
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def valid_provenance(self) -> RuntimeSourceAdmissionReceipt:
+        if self.retained_at.utcoffset() is None or len(set(self.modalities)) != len(self.modalities):
+            raise ValueError("runtime source provenance has invalid time or modality")
+        return self
+
+    def digest(self) -> str:
+        return canonical_runtime_digest(("memorii.runtime-source-admission.v1", self.model_dump(mode="json")))
+
+
 class RuntimeCommandReceipt(BaseModel):
     operation_id: str = Field(min_length=1)
     client_namespace: str = Field(min_length=1)
@@ -323,11 +351,17 @@ class RuntimeCommandReceipt(BaseModel):
     consolidation_result_id: str | None = Field(default=None, pattern=_HEX_64)
     operation_origin: OperationOriginCoordinate | None = None
     origin_proof_digest: str | None = Field(default=None, pattern=_HEX_64)
+    source_admission: RuntimeSourceAdmissionReceipt | None = None
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     @model_validator(mode="after")
     def origin_matches_receipt(self) -> RuntimeCommandReceipt:
+        if self.source_admission is not None and (
+            self.status != "committed" or self.operation_origin is None
+            or self.consolidation_result_id is not None or self.result_digest != self.source_admission.digest()
+        ):
+            raise ValueError("runtime source admission requires an exact managed operation receipt")
         if self.consolidation_result_id is not None and (
             self.result_digest is None or self.operation_origin is None or self.status != "committed"
         ):
@@ -494,6 +528,7 @@ __all__ = [
     "OverlayJustificationBinding",
     "QuestionContent",
     "RuntimeCommandReceipt",
+    "RuntimeSourceAdmissionReceipt",
     "RuntimeCommandRequest",
     "RuntimeOverlayVersion",
     "ScenarioContent",

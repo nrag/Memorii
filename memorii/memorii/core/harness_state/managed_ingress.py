@@ -2,6 +2,15 @@
 
 from __future__ import annotations
 
+import sqlite3
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedIngressContext, OperationFenceBinding
+    from memorii.core.provider.runtime_source_authority import RuntimeSourceTaskBinding
+
 from memorii.core.harness_state.credentials import SidecarCredentialStore
 from memorii.core.harness_state.write_authority import (
     HostCommandAuthorityError,
@@ -12,12 +21,16 @@ from memorii.core.persistence.runtime_api import (
     ManagedRuntimeCommandService,
     ResolvedRuntimeCommandAuthority,
     RuntimeCommandError,
+    RuntimeObservationSource,
 )
 from memorii.core.persistence.runtime_contracts import (
     OperationOrigin,
     OperationOriginCoordinate,
     RuntimeCommandRequest,
+    RuntimeSourceAdmissionReceipt,
 )
+from memorii.core.persistence.runtime_repository import RuntimeStateRepository
+from memorii.core.storage_administration.revoked_identity_view import RefreshingRevokedIdentityView
 from memorii.core.storage_administration.service import (
     InstallationControlState,
     RuntimePublicationState,
@@ -29,6 +42,8 @@ def authenticated_host_commands(
     administration: StorageAdministrationService,
     credentials: SidecarCredentialStore,
     secret: str,
+    *,
+    observation_source: RuntimeObservationSource | None = None,
 ) -> ManagedRuntimeCommandService:
     """Resolve authority afresh under the runtime owner's publication fence."""
     grants = ManagedHostCommandAuthority(administration)
@@ -61,7 +76,49 @@ def authenticated_host_commands(
             return None
         return ResolvedRuntimeCommandAuthority(resolved.principal, resolved.client_namespace, resolved)
 
-    return ManagedRuntimeCommandService(administration, authorize=authorize)
+    return ManagedRuntimeCommandService(
+        administration, authorize=authorize, observation_source=observation_source,
+    )
+
+
+def authenticated_provider_observations(
+    administration: StorageAdministrationService,
+    credentials: SidecarCredentialStore,
+    secret: str,
+    *,
+    binding: RuntimeSourceTaskBinding,
+    operation_fence: OperationFenceBinding,
+    resolve_ingress: Callable[[], AuthenticatedIngressContext | None],
+) -> ManagedRuntimeCommandService:
+    """Compose an embedded owner path with both live provider and runtime authority."""
+    from memorii.core.provider.runtime_source_authority import RuntimeSourceAuthorityError, resolve_runtime_source
+
+    revoked = RefreshingRevokedIdentityView(administration.installation_root / "control")
+
+    def observation_source(
+        connection: sqlite3.Connection, repository: RuntimeStateRepository, request: RuntimeCommandRequest,
+        origin: OperationOriginCoordinate, finalized: RuntimePublicationState,
+    ) -> RuntimeSourceAdmissionReceipt:
+        if request.task_id is None or request.source_digest is None:
+            raise RuntimeCommandError("invalid_request: observation requires a task and provider source digest")
+        try:
+            evidence = resolve_runtime_source(
+                connection, repository.partition, finalized=finalized, origin=origin,
+                runtime_task_id=request.task_id, source_digest=request.source_digest,
+                operation_fence=operation_fence, resolve_ingress=resolve_ingress, binding=binding,
+                revoked=revoked, now=datetime.now(UTC),
+            )
+        except RuntimeSourceAuthorityError as exc:
+            raise RuntimeCommandError("denied: verified provider admission is unavailable") from exc
+        return RuntimeSourceAdmissionReceipt(
+            task_id=request.task_id, source_id=evidence.source_ref.source_id,
+            source_record_digest=evidence.source_ref.source_digest, provider_source_digest=evidence.source_digest,
+            admission_index_digest=evidence.admission_index_digest, delivery_key_digest=evidence.delivery_key_digest,
+            source_write_revision=evidence.source_write_revision, source_type=evidence.source_type,
+            modalities=evidence.modalities, retained_at=evidence.retained_at,
+        )
+
+    return authenticated_host_commands(administration, credentials, secret, observation_source=observation_source)
 
 
 def spooled_host_commands(

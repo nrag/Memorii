@@ -629,6 +629,7 @@ jobs:
           tests/integration/test_runtime_sidecar.py
           tests/integration/test_consolidation_read_sidecar.py
           tests/integration/test_managed_candidate_delivery.py
+          tests/integration/test_runtime_source_authority.py
           tests/unit/core/test_runtime_journal.py
           tests/integration/test_forget_enforcement_publication.py
           tests/integration/test_forget_serving_parity.py

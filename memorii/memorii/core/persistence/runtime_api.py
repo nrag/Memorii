@@ -55,6 +55,7 @@ from memorii.core.persistence.runtime_contracts import (
     OperationOriginCoordinate,
     RuntimeCommandReceipt,
     RuntimeCommandRequest,
+    RuntimeSourceAdmissionReceipt,
     SolverRunRecord,
     StatusUpdateProposal,
     TaskRecord,
@@ -205,6 +206,7 @@ class RuntimeCommandService:
         digest: str,
         *,
         operation_origin: OperationOrigin | None = None,
+        source_admission: RuntimeSourceAdmissionReceipt | None = None,
     ) -> None:
         assert isinstance(connection, sqlite3.Connection)
         lookup_namespace = (
@@ -229,6 +231,17 @@ class RuntimeCommandService:
             result = self._apply_managed_lifecycle(connection, repository, request, operation_origin.coordinate)
         elif operation_origin is not None and request.kind == "resume_task":
             self._apply_managed_resume(connection, repository, request, operation_origin.coordinate)
+        elif operation_origin is not None and request.kind == "record_observation":
+            task = repository.get_task_in(connection, request.task_id or "")
+            if (
+                source_admission is None or task is None or source_admission.task_id != task.task_id
+                or task.principal != operation_origin.coordinate.principal
+                or source_admission.provider_source_digest != request.source_digest
+            ):
+                raise RuntimeCommandError("denied: verified provider admission is unavailable")
+            if task.lifecycle != "active" or task.version != request.expected_revision:
+                raise RuntimeCommandError("conflict: observation task or revision is no longer active")
+            repository.apply_task(connection, task.model_copy(update={"version": task.version + 1}))
         else:
             self._apply_command_effect(connection, repository, request, operation_origin=operation_origin)
         receipt = RuntimeCommandReceipt(
@@ -239,13 +252,17 @@ class RuntimeCommandService:
             base_revision=revision - 1,
             current_revision=revision,
             consolidation_result_id=None if result is None else result.result_id,
-            result_digest=None if result is None else hashlib.sha256(result.canonical_bytes()).hexdigest(),
+            result_digest=(
+                source_admission.digest() if source_admission is not None
+                else None if result is None else hashlib.sha256(result.canonical_bytes()).hexdigest()
+            ),
             operation_origin=(
                 None if operation_origin is None else operation_origin.coordinate
             ),
             origin_proof_digest=(
                 None if operation_origin is None else operation_origin_proof_digest(operation_origin)
             ),
+            source_admission=source_admission,
         )
         repository.apply_command_receipt(connection, receipt, lookup_namespace=lookup_namespace)
         attempt = RuntimeOperationAttempt(
@@ -640,6 +657,10 @@ RuntimeCommandAuthorizer = Callable[
     ],
     ResolvedRuntimeCommandAuthority | None,
 ]
+RuntimeObservationSource = Callable[
+    [sqlite3.Connection, RuntimeStateRepository, RuntimeCommandRequest, OperationOriginCoordinate, RuntimePublicationState],
+    RuntimeSourceAdmissionReceipt,
+]
 
 
 def operation_origin_namespace(coordinate: OperationOriginCoordinate) -> str:
@@ -691,9 +712,11 @@ class ManagedRuntimeCommandService:
         administration: StorageAdministrationService,
         *,
         authorize: RuntimeCommandAuthorizer,
+        observation_source: RuntimeObservationSource | None = None,
     ) -> None:
         self._administration = administration
         self._authorize = authorize
+        self._observation_source = observation_source
 
     def prepare(self, request: RuntimeCommandRequest) -> OperationOrigin:
         """Authenticate new intent explicitly, without publishing any effect."""
@@ -711,6 +734,10 @@ class ManagedRuntimeCommandService:
                 operation_id=request.operation_id,
                 request_digest=request.managed_intent_digest(),
             )
+            if request.kind == "record_observation":
+                repository = RuntimeStateRepository(self._administration.partition())
+                with repository.partition.transaction(write=False) as connection:
+                    self._resolve_observation(connection, repository, request, coordinate, finalized)
             return self._administration.sign_operation_origin(coordinate)
 
     def dispatch(
@@ -726,9 +753,10 @@ class ManagedRuntimeCommandService:
             self._administration, client_namespace=coordinate.client_namespace
         )
         projection_grant: ResolvedHostCommandAuthority | None = None
+        authorized_publication: RuntimePublicationState | None = None
 
         def validate(state: InstallationControlState, finalized: RuntimePublicationState) -> None:
-            nonlocal projection_grant
+            nonlocal projection_grant, authorized_publication
             self._require_active(state)
             authority = self._require_authority(request, "dispatch", coordinate, state, finalized)
             self._validate_proof(request, operation_origin, authority, finalized)
@@ -740,11 +768,16 @@ class ManagedRuntimeCommandService:
             ) is not None:
                 raise _ManagedReceiptAppeared
             projection_grant = authority.projection_grant
+            authorized_publication = finalized
 
         def apply(connection: sqlite3.Connection, repository: RuntimeStateRepository) -> None:
+            source = None
+            if request.kind == "record_observation":
+                assert authorized_publication is not None
+                source = self._resolve_observation(connection, repository, request, coordinate, authorized_publication)
             service._apply_command(
                 connection, repository, request, coordinate.request_digest,
-                operation_origin=operation_origin,
+                operation_origin=operation_origin, source_admission=source,
             )
             if projection_grant is not None:
                 from memorii.core.work_state.runtime_projection import stage_work_projection
@@ -806,6 +839,11 @@ class ManagedRuntimeCommandService:
                 released = self._authorize(request, "historical_release", coordinate, state, finalized)
                 if released != authority:
                     raise RuntimeCommandError("needs_reconciliation: historical receipt is held")
+            if request.kind == "record_observation":
+                with repository.partition.transaction(write=False) as connection:
+                    source = self._resolve_observation(connection, repository, request, coordinate, finalized)
+                if receipt is not None and source != receipt.source_admission:
+                    raise RuntimeCommandError("integrity_error: observation receipt does not match its provider admission")
             if receipt is not None and request.task_id is not None:
                 revoked = RefreshingRevokedIdentityView(self._administration.installation_root / "control")
                 task = repository.get_task(request.task_id)
@@ -829,6 +867,28 @@ class ManagedRuntimeCommandService:
                 if self._require_authority(request, "dispatch", coordinate, state, finalized) != authority:
                     raise RuntimeCommandError("denied: mismatched intake authority")
             return receipt
+
+    def _resolve_observation(
+        self, connection: sqlite3.Connection, repository: RuntimeStateRepository,
+        request: RuntimeCommandRequest, coordinate: OperationOriginCoordinate, finalized: RuntimePublicationState,
+    ) -> RuntimeSourceAdmissionReceipt:
+        resolver = self._observation_source
+        if resolver is None:
+            raise RuntimeCommandError("unsupported_configuration: managed provider source owner is unavailable")
+        if not repository.partition.supports_runtime_history(connection):
+            raise RuntimeCommandError("unsupported_configuration: source-backed observations require signed runtime history")
+        task = repository.get_task_in(connection, request.task_id or "")
+        revoked = RefreshingRevokedIdentityView(self._administration.installation_root / "control")
+        if task is None or task.principal != coordinate.principal or revoked.is_revoked_task(task.task_id):
+            raise RuntimeCommandError("denied: observation task authority is unavailable")
+        source = resolver(connection, repository, request, coordinate, finalized)
+        if (
+            source.task_id != task.task_id or source.provider_source_digest != request.source_digest
+            or source.source_write_revision > finalized.vector.memory_write_revision
+            or revoked.is_revoked_source(source.source_id) or revoked.is_revoked_record(source.source_id)
+        ):
+            raise RuntimeCommandError("denied: verified provider admission is unavailable")
+        return source
 
     def _require_managed_schema(self) -> None:
         partition = self._administration.partition()
@@ -878,10 +938,11 @@ class ManagedRuntimeCommandService:
         if state.mode != "active":
             raise RuntimeCommandError("unavailable: installation is not active")
 
-    @staticmethod
-    def _require_supported(request: RuntimeCommandRequest) -> None:
+    def _require_supported(self, request: RuntimeCommandRequest) -> None:
         if len(request.operation_id) > 512 or "\0" in request.operation_id:
             raise RuntimeCommandError("invalid_request: operation identity is invalid")
+        if request.kind == "record_observation" and self._observation_source is not None:
+            return
         if request.kind not in {"start_task", "resume_task", "pause_task", "complete_task"}:
             raise RuntimeCommandError(
                 "unsupported_configuration: managed result and mutation owners are not configured"
