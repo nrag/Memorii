@@ -84,7 +84,7 @@ class SqliteMemoryPlaneStore:
     def _load_or_create_protected_secret(self, *, purpose: str, length: int) -> bytes:
         if not purpose or length < 32:
             raise ValueError("protected secret purpose or length is invalid")
-        base_path = self._partition.database_path.parent
+        base_path = self._partition.protected_storage_root
         protected = base_path / ".protected"
         secret_path = protected / f"{hashlib.sha256(purpose.encode('utf-8')).hexdigest()}.key"
         with locked_file(base_path / ".protected.lock", exclusive=True):

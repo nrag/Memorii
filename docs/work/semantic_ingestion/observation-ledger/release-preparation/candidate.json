@@ -1922,10 +1922,10 @@
     "memorii/memorii/core/storage_administration/operator.py": "a59aed0a41853f8ded1102d75e27ecfa382b97743c91c2bb768d64cd021c99d0",
     "memorii/memorii/core/storage_administration/operator_governance.py": "5e8e952899d5b48843de7795632ec6ed3c8aa2685b143cca1e5b7d65e92cf2f4",
     "memorii/memorii/core/storage_administration/revoked_identity_view.py": "697672a2a59afdd9967040c138403298338a3e77955f4a06c12f482ab8fe52c4",
-    "memorii/memorii/core/storage_administration/service.py": "6b350b20e877fe67b18ceecb67f880942dffad29cef879474c75f46c94b3b064",
+    "memorii/memorii/core/storage_administration/service.py": "19f7457c6d13fe24b647541ce2515dc35d80bab4ce848b205127a436d7595470",
     "memorii/memorii/core/storage_administration/suppression_journal.py": "0c2cb33f207a0029150126ccf0e67e17bf4260fbfa8b475e2434081cf4d8267f",
     "memorii/memorii/stores/sqlite/control.py": "6655dabee6d561d3abed72a9604c6c73158fffc13801041c9d2fc82c91cd1cef",
-    "memorii/memorii/tools/runtime_operator.py": "d6930eedfba6feb04f6d969b5f65332394d13eea2b0360df36e134225468db64",
+    "memorii/memorii/tools/runtime_operator.py": "f5bbc25fae7c710b6d2802718eb4346f5879c11c2faa3953aa48e00cd8e902ad",
     "memorii/tests/integration/test_forget_enforcement_publication.py": "47e3f2dfca9c3f50b96ce169c530d78a3a53aa043ceae9768da694eab27c357c",
     "memorii/tests/integration/test_forget_serving_parity.py": "aeedf9d153179bfbc395614c622fb2b37eef1dc7e8884be5b6c683e793d5e867",
     "memorii/tests/unit/core/memory_evolution/test_revocation_directive_record.py": "34a6cea5d56a615bdd879a9e60eccab33c29b660f34a8712c73c54a334364d94",
@@ -1933,7 +1933,7 @@
     "memorii/tests/unit/core/semantic_ingestion/graph_record_test_support.py": "9ce9948f80f2a2ee2438f720566fc87b51c17576251c787289b942f8e97159cb",
     "memorii/tests/unit/core/semantic_ingestion/test_event_replay.py": "78aed7ae589a9aebee257a7c49b5bbe93af636f122699160bc3cd05e64cbdf1d",
     "memorii/tests/unit/core/test_revoked_identity_view.py": "d507522e4ba140e86f6c30c4bbaef1c6ab4917650c2081a0d67d39a84cd77292",
-    "memorii/tests/unit/core/test_storage_administration_operator.py": "bcf23a9b8994f1a6a81ed939b2ef21c3a03065c14491e8c3f95f9615642ed036"
+    "memorii/tests/unit/core/test_storage_administration_operator.py": "795e320f0660afe2489898450e0809b45593cd547808ce85a9ef05ef0ec952ff"
   },
   "head": "c62def7f9cf9a0c965bba856002dc8c1dec9ff9f",
   "scope": "offline deployment and target preparation only; no CAS, M5 or whole branch approval"

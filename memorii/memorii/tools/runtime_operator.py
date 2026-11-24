@@ -55,6 +55,11 @@ def main(argv: list[str] | None = None) -> int:
     verify_stage = backup_sub.add_parser("restore-verify-stage", help="Reverify an inert restore stage against the reviewed plan")
     verify_stage.add_argument("--plan-file", type=Path, required=True)
     verify_stage.add_argument("--staging-root", type=Path, required=True)
+    activate_current = backup_sub.add_parser(
+        "restore-activate-current", help="Select a verified staged backup at the exact live watermark",
+    )
+    activate_current.add_argument("--plan-file", type=Path, required=True)
+    activate_current.add_argument("--staging-root", type=Path, required=True)
 
     forget = commands.add_parser("forget", help="Logical forget planning and apply")
     forget_sub = forget.add_subparsers(dest="forget_command", required=True)
@@ -199,7 +204,7 @@ def main(argv: list[str] | None = None) -> int:
                 manifest = backups.verify_backup(archive_root=arguments.archive_root)
                 print(manifest.model_dump_json())
                 return 0
-            if arguments.backup_command == "restore-verify-stage":
+            if arguments.backup_command in {"restore-verify-stage", "restore-activate-current"}:
                 from pydantic import ValidationError
 
                 owner = require_capability()
@@ -207,6 +212,17 @@ def main(argv: list[str] | None = None) -> int:
                     plan = RestorePlan.model_validate_json(arguments.plan_file.read_bytes())
                 except (ValidationError, OSError) as exc:
                     raise OperatorError("invalid_request: restore plan could not be read") from exc
+                if arguments.backup_command == "restore-activate-current":
+                    try:
+                        selector = backups.activate_exact_current_restore(
+                            capability=owner, plan=plan, staging_root=arguments.staging_root,
+                        )
+                    except OSError as exc:
+                        raise OperatorError("unavailable: exact-current restore selection could not be published") from exc
+                    print(json.dumps({
+                        "status": "selected", "generation_id": selector.generation_id, "reopen_required": True,
+                    }, sort_keys=True))
+                    return 0
                 attestation = backups.verify_staged_restore(
                     capability=owner, plan=plan, staging_root=arguments.staging_root,
                 )

@@ -14,7 +14,7 @@ import hashlib
 import json
 import sqlite3
 import threading
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -492,24 +492,40 @@ class PartitionDataRepository:
         database_path: str | Path,
         *,
         busy_timeout_ms: int = _DEFAULT_BUSY_TIMEOUT_MS,
+        require_existing: bool = False,
+        transaction_guard: Callable[[sqlite3.Connection], None] | None = None,
+        protected_storage_root: Path | None = None,
     ) -> None:
         self._database_path = Path(database_path)
-        self._database_path.parent.mkdir(parents=True, exist_ok=True)
+        if not require_existing:
+            self._database_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock_path = self._database_path.parent / (self._database_path.name + ".lock")
+        self._protected_storage_root = protected_storage_root or self._database_path.parent
         self._thread_lock = threading.RLock()
+        self._transaction_guard: Callable[[sqlite3.Connection], None] | None = None
         self._connection = sqlite3.connect(
-            self._database_path,
+            self._database_path.absolute().as_uri() + "?mode=rw" if require_existing else self._database_path,
             timeout=busy_timeout_ms / 1000.0,
             isolation_level=None,
             check_same_thread=False,
+            uri=require_existing,
         )
         self._connection.row_factory = sqlite3.Row
+        if require_existing:
+            self.read_schema_version(self._connection)
         self._configure(busy_timeout_ms)
-        self._initialize_schema()
+        if not require_existing:
+            self._initialize_schema()
+        self._transaction_guard = transaction_guard
 
     @property
     def database_path(self) -> Path:
         return self._database_path
+
+    @property
+    def protected_storage_root(self) -> Path:
+        """The owner-private key root can outlive replaceable data generations."""
+        return self._protected_storage_root
 
     def close(self) -> None:
         with self._thread_lock, contextlib.suppress(sqlite3.ProgrammingError):
@@ -536,6 +552,8 @@ class PartitionDataRepository:
         from memorii.core.memory_plane.file_lock import locked_file
 
         with self._thread_lock, locked_file(self._lock_path, exclusive=write):
+            if self._transaction_guard is not None:
+                self._transaction_guard(self._connection)
             self._connection.execute("BEGIN IMMEDIATE" if write else "BEGIN DEFERRED")
             try:
                 yield self._connection
@@ -557,6 +575,8 @@ class PartitionDataRepository:
         from memorii.core.memory_plane.file_lock import locked_file
 
         with self._thread_lock, locked_file(self._lock_path, exclusive=True):
+            if self._transaction_guard is not None:
+                self._transaction_guard(self._connection)
             self._connection.execute("BEGIN IMMEDIATE")
             handle = PartitionWriteTransaction(self._connection)
             try:

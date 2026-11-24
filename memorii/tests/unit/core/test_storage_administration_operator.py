@@ -17,7 +17,7 @@ from memorii.core.storage_administration.operator import (
     OwnerCapability,
     StorageAdministrationOperator,
 )
-from memorii.core.storage_administration.service import StorageAdministrationService
+from memorii.core.storage_administration.service import StorageAdministrationError, StorageAdministrationService
 
 _NOW = datetime(2026, 1, 1, tzinfo=UTC)
 
@@ -34,7 +34,11 @@ def _capability(service: StorageAdministrationService) -> OwnerCapability:
     return mint_owner_capability(service, "owner:one")
 
 
-def test_cli_stages_a_reviewed_restore_with_an_owner_only_key(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_stages_a_reviewed_restore_with_an_owner_only_key(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from memorii.core.storage_administration import operator_backup
+    from memorii.core.storage_administration.generation_selection import PARTITION_GENERATION_SELECTOR
     from memorii.core.storage_administration.operator_backup import BackupRestoreOperator
     from memorii.tools.runtime_operator import main
 
@@ -74,6 +78,34 @@ def test_cli_stages_a_reviewed_restore_with_an_owner_only_key(tmp_path: Path, ca
         attestation = json.loads(capsys.readouterr().out)
         assert attestation["plan_digest"] == json.loads(plan.read_bytes())["plan_digest"]
         assert service.acquire_verified_snapshot() == before
+        retained = service.partition()
+        activate = [*cli, "restore-activate-current", "--plan-file", str(plan), "--staging-root", str(staging)]
+        original_write = operator_backup._atomic_write
+
+        def fail_before_selector(path: Path, contents: bytes) -> None:
+            if path.name == PARTITION_GENERATION_SELECTOR:
+                raise OSError("selector publication interrupted")
+            original_write(path, contents)
+
+        with monkeypatch.context() as cut:
+            cut.setattr(operator_backup, "_atomic_write", fail_before_selector)
+            assert main(activate) == 3
+        assert "selection could not be published" in capsys.readouterr().err
+        assert service.acquire_verified_snapshot() == before
+        assert main(activate) == 0
+        activation = json.loads(capsys.readouterr().out)
+        assert activation == {
+            "status": "selected",
+            "generation_id": attestation["source_publication"]["data_generation_id"],
+            "reopen_required": True,
+        }
+        with pytest.raises(StorageAdministrationError, match="partition selection changed"), retained.transaction(
+            write=False,
+        ):
+            pytest.fail("retained physical handles must be fenced after selection")
+        with StorageAdministrationService(service.installation_root) as reopened:
+            assert reopened.acquire_verified_snapshot() == before
+            assert reopened.partition_path().parent.name == activation["generation_id"]
     finally:
         service.close()
 
@@ -433,6 +465,10 @@ def test_restore_planning_detects_data_only_watermark_change(tmp_path: Path) -> 
         assert backups.apply_restore(
             capability=capability, plan=renewed, staging_root=staging, recovery_key=recovery_key,
         ) == staging
+        with pytest.raises(OperatorError, match="older restore requires a new generation"):
+            backups.activate_exact_current_restore(
+                capability=capability, plan=renewed, staging_root=staging,
+            )
         assert service.acquire_verified_snapshot() == live
     finally:
         service.close()

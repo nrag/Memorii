@@ -15,6 +15,7 @@ import base64
 import hashlib
 import json
 import os
+import shutil
 import sqlite3
 import tempfile
 import time
@@ -33,8 +34,13 @@ from memorii.core.persistence.contracts import (
     canonical_json_digest,
     empty_pointer_set_digest,
 )
-from memorii.core.persistence.key_owner import RESTORE_STAGING_SIGNATURE_PURPOSE
+from memorii.core.persistence.key_owner import PARTITION_GENERATION_SIGNATURE_PURPOSE, RESTORE_STAGING_SIGNATURE_PURPOSE
 from memorii.core.persistence.runtime_journal import RuntimeJournalError, verify_runtime_history
+from memorii.core.storage_administration.generation_selection import (
+    PARTITION_GENERATION_SELECTOR,
+    PartitionGenerationSelector,
+    selected_partition_path,
+)
 from memorii.core.storage_administration.operator import (
     OperatorError,
     OwnerCapability,
@@ -628,6 +634,66 @@ class BackupRestoreOperator:
         except (OSError, ValidationError) as exc:
             raise OperatorError("integrity_error: restore staging evidence could not be verified") from exc
         return attestation
+
+    def activate_exact_current_restore(
+        self, *, capability: OwnerCapability, plan: RestorePlan, staging_root: Path,
+    ) -> PartitionGenerationSelector:
+        """Relocate an attested exact-current snapshot under the owner barrier."""
+        service = self._operator._administration
+        attestation = self.verify_staged_restore(capability=capability, plan=plan, staging_root=staging_root)
+        source = attestation.source_publication
+        if source.payload_digest() != plan.expected_publication_digest:
+            raise OperatorError("needs_reconciliation: older restore requires a new generation and delivery hold")
+        partition_root = service.installation_root / "partition"
+        generations = partition_root / "generations"
+        if partition_root.is_symlink() or generations.is_symlink():
+            raise OperatorError("integrity_error: generation storage must not use symlinks")
+        generations.mkdir(mode=0o700, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix=".exact-current-restore-", dir=generations) as scratch:
+            staged_copy = Path(scratch) / "partition.sqlite3"
+            with (staging_root / "partition.sqlite3").open("rb") as original, staged_copy.open("xb") as clone:
+                os.fchmod(clone.fileno(), 0o600)
+                shutil.copyfileobj(original, clone, length=_CHUNK)
+                clone.flush()
+                os.fsync(clone.fileno())
+            if _snapshot_digest(staged_copy) != attestation.partition_snapshot_digest:
+                raise OperatorError("integrity_error: restore partition changed during selection preparation")
+
+            with service.verified_operation_context() as (state, finalized):
+                require_owner_capability(service, capability)
+                self._require_restore_watermark(service, plan, state, finalized)
+                if source != finalized or _suppression_snapshot_digest(
+                    service.installation_root / "control" / "suppressions",
+                ) != attestation.suppression_snapshot_digest:
+                    raise OperatorError("conflict: restore selection no longer matches the live watermark")
+                target = generations / finalized.data_generation_id
+                unsigned = PartitionGenerationSelector(
+                    installation_id=finalized.installation_id, repository_id=finalized.repository_id,
+                    generation_id=finalized.data_generation_id, signature="0" * 128,
+                )
+                selector = unsigned.model_copy(update={"signature": service._signing.sign(
+                    service._signer_key_id, PARTITION_GENERATION_SIGNATURE_PURPOSE, unsigned.unsigned_digest(),
+                )})
+                # A repeat request for an already selected exact snapshot has
+                # no physical cutover to perform.
+                active_path = service.partition_path()
+                if active_path == target / "partition.sqlite3":
+                    return selector
+                with service.partition().manual_write_transaction():
+                    if target.exists() or target.is_symlink():
+                        existing = selected_partition_path(partition_root, finalized.data_generation_id)
+                        if _snapshot_digest(existing) != attestation.partition_snapshot_digest:
+                            raise OperatorError("conflict: occupied generation does not match reviewed staging")
+                    else:
+                        _sync_directory(Path(scratch))
+                        os.rename(scratch, target)
+                        _sync_directory(generations)
+                    _atomic_write(
+                        service.installation_root / "control" / PARTITION_GENERATION_SELECTOR,
+                        (selector.model_dump_json() + "\n").encode(),
+                    )
+                    _sync_directory(service.installation_root / "control")
+                    return selector
 
     @staticmethod
     def _require_restore_watermark(
