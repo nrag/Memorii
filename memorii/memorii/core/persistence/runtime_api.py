@@ -17,16 +17,25 @@ import hashlib
 import sqlite3
 import uuid
 from collections.abc import Callable
+from contextlib import suppress
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from memorii.core.persistence.contracts import (
+    InstallationControlState,
+    RuntimePublicationState,
+    canonical_json_digest,
+)
 from memorii.core.persistence.runtime_contracts import (
     ActionAttemptRecord,
     BeliefUpdateProposal,
     NodeMergeProposal,
     NodeReopenProposal,
+    OperationOrigin,
+    OperationOriginCoordinate,
     RuntimeCommandReceipt,
     RuntimeCommandRequest,
     SolverRunRecord,
@@ -42,6 +51,7 @@ from memorii.core.storage_administration.service import (
 )
 
 _HEX_64 = r"^[0-9a-f]{64}$"
+_MANAGED_NAMESPACE_PREFIX = "origin:"
 AttemptStage = Literal[
     "prepared",
     "awaiting_model",
@@ -131,6 +141,8 @@ class RuntimeCommandService:
         client_namespace: str = "default-client",
         max_model_invocations: int = 3,
     ) -> None:
+        if client_namespace.startswith(_MANAGED_NAMESPACE_PREFIX):
+            raise RuntimeCommandError("denied: client namespace is reserved for managed receipts")
         self._administration = administration
         self._client_namespace = client_namespace
         self._max_model_invocations = max_model_invocations
@@ -171,12 +183,19 @@ class RuntimeCommandService:
         repository: RuntimeStateRepository,
         request: RuntimeCommandRequest,
         digest: str,
+        *,
+        operation_origin: OperationOrigin | None = None,
     ) -> None:
         assert isinstance(connection, sqlite3.Connection)
+        lookup_namespace = (
+            self._client_namespace
+            if operation_origin is None
+            else operation_origin_namespace(operation_origin.coordinate)
+        )
         # Idempotency re-check under the publication fence: a racing duplicate
         # dispatch must not re-apply the effect.
         existing = repository.get_command_receipt_in(
-            connection, self._client_namespace, request.operation_id
+            connection, lookup_namespace, request.operation_id
         )
         if existing is not None:
             if existing.request_digest != digest:
@@ -192,10 +211,22 @@ class RuntimeCommandService:
             status="committed",
             base_revision=revision - 1,
             current_revision=revision,
+            operation_origin=(
+                None if operation_origin is None else operation_origin.coordinate
+            ),
+            origin_proof_digest=(
+                None if operation_origin is None else operation_origin_proof_digest(operation_origin)
+            ),
         )
-        repository.apply_command_receipt(connection, receipt)
+        repository.apply_command_receipt(connection, receipt, lookup_namespace=lookup_namespace)
         attempt = RuntimeOperationAttempt(
-            receipt_id=request.operation_id,
+            receipt_id=(
+                request.operation_id
+                if operation_origin is None
+                else canonical_json_digest(
+                    {"namespace": lookup_namespace, "operation_id": request.operation_id}
+                )
+            ),
             attempt_ordinal=1,
             request_digest=digest,
             base_task_revision=revision,
@@ -213,13 +244,15 @@ class RuntimeCommandService:
             values=(attempt.receipt_id, attempt.attempt_ordinal),
             record_json=attempt.model_dump_json(),
         )
-        self._apply_command_effect(connection, repository, request)
+        self._apply_command_effect(connection, repository, request, operation_origin=operation_origin)
 
     def _apply_command_effect(
         self,
         connection: object,
         repository: RuntimeStateRepository,
         request: RuntimeCommandRequest,
+        *,
+        operation_origin: OperationOrigin | None = None,
     ) -> None:
         import sqlite3 as _sqlite3
 
@@ -228,13 +261,21 @@ class RuntimeCommandService:
             assert request.goal is not None
             task_id = "task:" + uuid.uuid5(
                 uuid.NAMESPACE_URL,
-                f"{self._client_namespace}:{request.operation_id}",
+                (
+                    f"{self._client_namespace}:{request.operation_id}"
+                    if operation_origin is None
+                    else canonical_json_digest(operation_origin.coordinate.model_dump(mode="json"))
+                ),
             ).hex[:12]
             repository.apply_task(
                 connection,
                 TaskRecord(
                     task_id=task_id,
-                    principal=self._client_namespace,
+                    principal=(
+                        self._client_namespace
+                        if operation_origin is None
+                        else operation_origin.coordinate.principal
+                    ),
                     goal=request.goal,
                     created_at=datetime.now(UTC),
                     root_execution_node_id="exec:" + task_id,
@@ -373,6 +414,219 @@ class RuntimeCommandService:
                 " implemented durable effect at this slice"
             )
 
+
+
+@dataclass(frozen=True)
+class ResolvedRuntimeCommandAuthority:
+    """Identity of a current, request-scoped authorization from the host owner."""
+
+    principal: str
+    client_namespace: str
+
+
+CommandAuthorityPurpose = Literal["prepare", "dispatch", "release", "historical_release"]
+RuntimeCommandAuthorizer = Callable[
+    [
+        RuntimeCommandRequest,
+        CommandAuthorityPurpose,
+        OperationOriginCoordinate | None,
+        InstallationControlState,
+        RuntimePublicationState,
+    ],
+    ResolvedRuntimeCommandAuthority | None,
+]
+
+
+def operation_origin_namespace(coordinate: OperationOriginCoordinate) -> str:
+    """Generation-scope the existing receipt index without rewriting legacy receipts."""
+    return _MANAGED_NAMESPACE_PREFIX + canonical_json_digest(
+        coordinate.model_dump(exclude={"operation_id", "request_digest"}, mode="json")
+    )
+
+
+def operation_origin_proof_digest(proof: OperationOrigin) -> str:
+    return canonical_json_digest(proof.model_dump(mode="json"))
+
+
+def _managed_request_digest(request: RuntimeCommandRequest) -> str:
+    # The origin authenticates the complete prepared request, including its
+    # specific expected revision. The legacy command digest remains unchanged.
+    return canonical_json_digest(request.model_dump(mode="json"))
+
+
+class _ManagedReceiptAppeared(RuntimeError):
+    """A duplicate arrived between the preliminary read and publication."""
+
+
+class ManagedRuntimeCommandService:
+    """Embedded command boundary for a host-owned current-authority resolver.
+
+    The installed owner injects a local resolver bound to the authenticated
+    caller. The verified state and finalized tuple are supplied under the
+    installation barrier. Resolve the credential and grant in that context
+    without reacquiring the fence. Historical release also requires restore
+    reconciliation. The origin proof does not replace that check.
+    """
+
+    def __init__(
+        self,
+        administration: StorageAdministrationService,
+        *,
+        authorize: RuntimeCommandAuthorizer,
+    ) -> None:
+        self._administration = administration
+        self._authorize = authorize
+
+    def prepare(self, request: RuntimeCommandRequest) -> OperationOrigin:
+        """Authenticate new intent explicitly, without publishing any effect."""
+        self._require_supported(request)
+        with self._administration.verified_operation_context() as (state, finalized):
+            authority = self._require_authority(request, "prepare", None, state, finalized)
+            self._require_active(state)
+            coordinate = OperationOriginCoordinate(
+                installation_id=finalized.installation_id,
+                repository_id=finalized.repository_id,
+                generation_id=finalized.data_generation_id,
+                principal=authority.principal,
+                client_namespace=authority.client_namespace,
+                operation_id=request.operation_id,
+                request_digest=_managed_request_digest(request),
+            )
+            return self._administration.sign_operation_origin(coordinate)
+
+    def dispatch(
+        self, request: RuntimeCommandRequest, *, operation_origin: OperationOrigin
+    ) -> RuntimeCommandReceipt:
+        """Apply an authenticated prepared intent or release its verified receipt."""
+        existing = self._read_receipt(request, operation_origin)
+        if existing is not None:
+            return existing
+        self._require_supported(request)
+        coordinate = operation_origin.coordinate
+        service = RuntimeCommandService(
+            self._administration, client_namespace=coordinate.client_namespace
+        )
+
+        def validate(state: InstallationControlState, finalized: RuntimePublicationState) -> None:
+            self._require_active(state)
+            authority = self._require_authority(request, "dispatch", coordinate, state, finalized)
+            self._validate_proof(request, operation_origin, authority, finalized)
+            if coordinate.generation_id != finalized.data_generation_id:
+                raise RuntimeCommandError("needs_reconciliation: operation generation changed")
+            if service.repository.get_command_receipt(
+                operation_origin_namespace(coordinate), coordinate.operation_id
+            ) is not None:
+                raise _ManagedReceiptAppeared
+
+        # If a duplicate raced with publication, release its receipt through
+        # the same checks as an ordinary retry.
+        with suppress(_ManagedReceiptAppeared):
+            publish_runtime_change(
+                self._administration,
+                lambda connection, repository: service._apply_command(
+                    connection, repository, request, coordinate.request_digest,
+                    operation_origin=operation_origin,
+                ),
+                operation_binding=f"runtime_command:{request.kind}",
+                validate_authority=validate,
+            )
+        receipt = self._read_receipt(request, operation_origin)
+        if receipt is None:
+            raise RuntimeCommandError("integrity_error: committed operation receipt is missing")
+        return receipt
+
+    def validate_intake(
+        self, request: RuntimeCommandRequest, *, operation_origin: OperationOrigin
+    ) -> RuntimeCommandReceipt | None:
+        """Check a prepared intent for intake without executing a runtime command."""
+        return self._read_receipt(request, operation_origin, for_intake=True)
+
+    def _read_receipt(
+        self,
+        request: RuntimeCommandRequest,
+        proof: OperationOrigin,
+        *,
+        for_intake: bool = False,
+    ) -> RuntimeCommandReceipt | None:
+        if not isinstance(proof, OperationOrigin):
+            raise RuntimeCommandError("denied: authenticated operation origin is required")
+        coordinate = proof.coordinate
+        with self._administration.verified_operation_context() as (state, finalized):
+            if state.mode == "bypass":
+                raise RuntimeCommandError("unavailable: installation is in bypass mode")
+            historical = coordinate.generation_id != finalized.data_generation_id
+            authority = self._require_authority(request, "release", coordinate, state, finalized)
+            self._validate_proof(request, proof, authority, finalized)
+            repository = RuntimeStateRepository(self._administration.partition())
+            receipt = repository.get_command_receipt(
+                operation_origin_namespace(coordinate), coordinate.operation_id
+            )
+            if receipt is not None and (
+                receipt.operation_origin != coordinate
+                or receipt.origin_proof_digest != operation_origin_proof_digest(proof)
+            ):
+                raise RuntimeCommandError("conflict: operation id reused with divergent intent")
+            if historical:
+                if receipt is None:
+                    raise RuntimeCommandError("needs_reconciliation: historical receipt is absent")
+                released = self._authorize(request, "historical_release", coordinate, state, finalized)
+                if released != authority:
+                    raise RuntimeCommandError("needs_reconciliation: historical receipt is held")
+            if for_intake and receipt is None:
+                self._require_supported(request)
+                self._require_active(state)
+                if self._require_authority(request, "dispatch", coordinate, state, finalized) != authority:
+                    raise RuntimeCommandError("denied: mismatched intake authority")
+            return receipt
+
+    def _require_authority(
+        self,
+        request: RuntimeCommandRequest,
+        purpose: CommandAuthorityPurpose,
+        coordinate: OperationOriginCoordinate | None,
+        state: InstallationControlState,
+        finalized: RuntimePublicationState,
+    ) -> ResolvedRuntimeCommandAuthority:
+        authority = self._authorize(request, purpose, coordinate, state, finalized)
+        if (
+            not isinstance(authority, ResolvedRuntimeCommandAuthority)
+            or not 1 <= len(authority.principal) <= 512
+            or not 1 <= len(authority.client_namespace) <= 512
+            or authority.client_namespace.startswith(_MANAGED_NAMESPACE_PREFIX)
+        ):
+            raise RuntimeCommandError("denied: current command authority is required")
+        return authority
+
+    def _validate_proof(
+        self,
+        request: RuntimeCommandRequest,
+        proof: OperationOrigin,
+        authority: ResolvedRuntimeCommandAuthority,
+        finalized: RuntimePublicationState,
+    ) -> None:
+        coordinate = proof.coordinate
+        if (
+            coordinate.installation_id != finalized.installation_id
+            or coordinate.repository_id != finalized.repository_id
+            or coordinate.principal != authority.principal
+            or coordinate.client_namespace != authority.client_namespace
+            or coordinate.operation_id != request.operation_id
+            or coordinate.request_digest != _managed_request_digest(request)
+            or not self._administration.verify_operation_origin(proof)
+        ):
+            raise RuntimeCommandError("denied: operation origin does not authenticate this intent")
+
+    @staticmethod
+    def _require_active(state: InstallationControlState) -> None:
+        if state.mode != "active":
+            raise RuntimeCommandError("unavailable: installation is not active")
+
+    @staticmethod
+    def _require_supported(request: RuntimeCommandRequest) -> None:
+        if request.kind != "start_task":
+            raise RuntimeCommandError(
+                "unsupported_configuration: managed result and mutation owners are not configured"
+            )
 
 
 def _apply_proposal(
@@ -591,6 +845,9 @@ def reserve_dispatch(
 
 
 __all__ = [
+    "ManagedRuntimeCommandService",
+    "ResolvedRuntimeCommandAuthority",
+    "RuntimeCommandAuthorizer",
     "RuntimeCommandError",
     "RuntimeCommandService",
     "RuntimeOperationAttempt",

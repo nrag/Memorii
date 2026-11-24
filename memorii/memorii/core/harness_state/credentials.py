@@ -80,13 +80,24 @@ class SidecarCredentialStore:
 
     def principal_for(self, secret: str) -> str | None:
         """Map a presented bearer secret to its principal, or None."""
+        record = self.credential_for(secret)
+        return None if record is None else record.principal
+
+    def credential_for(self, secret: str) -> IssuedCredential | None:
+        """Resolve a bearer to its opaque credential and principal.
+
+        Write grants bind to ``credential_id`` rather than principal so two
+        credentials for one user cannot silently share command authority.
+        """
         import hashlib
         import hmac as _hmac
 
         digest = hashlib.sha256(secret.encode()).hexdigest()
         for entry in self._read_entries():
             if _hmac.compare_digest(entry["secret_digest"], digest):
-                return entry["principal"]
+                return IssuedCredential(
+                    principal=entry["principal"], credential_id=entry["credential_id"]
+                )
         return None
 
     def verify_permissions(self) -> None:

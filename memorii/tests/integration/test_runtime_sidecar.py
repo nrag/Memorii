@@ -8,13 +8,17 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from memorii.core.harness_state.consumer import ManagedRuntimeSpool
 from memorii.core.harness_state.service import RuntimeReadGrant
 from memorii.core.harness_state.sidecar import (
+    ManagedHostIntakeBinding,
     RuntimeSidecar,
+    SidecarIntakeRequest,
     SidecarRequest,
     serve_loopback,
 )
-from memorii.core.persistence.runtime_contracts import TaskRecord
+from memorii.core.persistence.runtime_api import ManagedRuntimeCommandService, ResolvedRuntimeCommandAuthority
+from memorii.core.persistence.runtime_contracts import OperationOrigin, RuntimeCommandRequest, TaskRecord
 from memorii.core.persistence.runtime_repository import (
     RuntimeStateRepository,
     publish_runtime_change,
@@ -22,6 +26,59 @@ from memorii.core.persistence.runtime_repository import (
 from memorii.core.storage_administration.service import StorageAdministrationService
 
 _NOW = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+def test_managed_http_origin_is_retained_and_dispatches_after_spool_reopen(tmp_path: Path) -> None:
+    administration = StorageAdministrationService(tmp_path / "installation")
+    administration.initialize()
+    spool_directory = tmp_path / "managed-intake"
+    spool = ManagedRuntimeSpool(spool_directory)
+    command = RuntimeCommandRequest(kind="start_task", operation_id="create-task", goal="managed intake")
+    authority = ResolvedRuntimeCommandAuthority("principal:a", "host:a")
+    service = ManagedRuntimeCommandService(
+        administration,
+        authorize=lambda request, purpose, _origin, _state, _finalized: (
+            authority if request.kind == "start_task" and purpose != "historical_release" else None
+        ),
+    )
+    sidecar = RuntimeSidecar(
+        RuntimeStateRepository(administration.partition()),
+        credentials={"credential:one": "principal:a"},
+        grant_factory=lambda principal: RuntimeReadGrant(
+            grant_id="read", principal=principal, epoch=1, expires_at=_NOW,
+        ),
+        managed_intake_factory=lambda secret: (
+            ManagedHostIntakeBinding(spool, service) if secret == "credential:one" else None
+        ),
+    )
+    origin_header = {"Authorization": "Bearer credential:one"}
+    url, server = serve_loopback(sidecar)
+    try:
+        with urllib.request.urlopen(urllib.request.Request(
+            url + "/v1/operations/prepare", data=command.model_dump_json().encode(), headers=origin_header,
+        ), timeout=3) as response:
+            proof = OperationOrigin.model_validate_json(response.read())
+        body = SidecarIntakeRequest(command=command).model_dump_json().encode()
+        denied, _ = sidecar.handle_intake_request(bearer_token="credential:one", origin=None, body=body)
+        assert denied == 403
+        assert spool.pending() == ()
+        with urllib.request.urlopen(urllib.request.Request(
+            url + "/v1/runtime/intake", data=body,
+            headers={**origin_header, "Memorii-Operation-Origin": proof.model_dump_json()},
+        ), timeout=3) as response:
+            assert response.status == 200
+        reopened = ManagedRuntimeSpool(spool_directory)
+        [entry] = reopened.pending()
+        assert entry.operation_origin == proof
+        first = service.dispatch(entry.delivery.command, operation_origin=entry.operation_origin)
+        assert first.status == "committed" and first.operation_origin == proof.coordinate
+        assert service.dispatch(entry.delivery.command, operation_origin=entry.operation_origin) == first
+        reopened.mark_committed(entry)
+        assert ManagedRuntimeSpool(spool_directory).pending() == ()
+    finally:
+        server.shutdown()
+        server.server_close()
+        administration.close()
 
 
 def _sidecar(tmp_path: Path) -> tuple[RuntimeSidecar, str]:

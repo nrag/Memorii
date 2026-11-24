@@ -13,13 +13,17 @@ executed.
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from memorii.core.persistence.runtime_contracts import RuntimeCommandRequest
+from memorii.core.persistence.runtime_contracts import OperationOrigin, RuntimeCommandRequest
 
 
 class ConsumerDeliveryError(RuntimeError):
@@ -47,10 +51,113 @@ class SpoolRecord(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-def command_digest(request: RuntimeCommandRequest) -> str:
-    import hashlib
-    import json
+class ManagedSpoolEntry(BaseModel):
+    """A durable managed intent and its original installation-issued proof."""
 
+    delivery: HostEventDelivery
+    operation_origin: OperationOrigin
+    state: Literal["pending", "committed"] = "pending"
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class ManagedRuntimeSpool:
+    """Keep proof and command in one atomic file per original operation."""
+
+    def __init__(self, directory: str | Path) -> None:
+        self._directory = Path(directory)
+        self._directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+
+    def _path(self, origin: OperationOrigin) -> Path:
+        coordinate = origin.coordinate
+        identity = (
+            coordinate.installation_id,
+            coordinate.repository_id,
+            coordinate.generation_id,
+            coordinate.principal,
+            coordinate.client_namespace,
+            coordinate.operation_id,
+        )
+        digest = hashlib.sha256(json.dumps(identity, separators=(",", ":")).encode()).hexdigest()
+        return self._directory / f"{digest}.json"
+
+    def _read(self, path: Path) -> ManagedSpoolEntry:
+        try:
+            entry = ManagedSpoolEntry.model_validate_json(path.read_bytes())
+        except (OSError, ValueError) as exc:
+            raise ConsumerDeliveryError("integrity_error: unreadable managed intake") from exc
+        if self._path(entry.operation_origin) != path:
+            raise ConsumerDeliveryError("integrity_error: intake identity mismatch")
+        return entry
+
+    def _write(self, path: Path, entry: ManagedSpoolEntry) -> None:
+        descriptor, name = tempfile.mkstemp(dir=self._directory, prefix=".managed-intake-")
+        temporary = Path(name)
+        try:
+            with os.fdopen(descriptor, "wb") as writer:
+                writer.write(entry.model_dump_json().encode())
+                writer.flush()
+                os.fsync(writer.fileno())
+            os.replace(temporary, path)
+            directory = os.open(self._directory, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def admit(
+        self,
+        delivery: HostEventDelivery,
+        *,
+        operation_origin: OperationOrigin,
+        validate: Callable[[RuntimeCommandRequest, OperationOrigin], object],
+    ) -> ManagedSpoolEntry:
+        """Validate with the trusted managed command owner before retaining."""
+        from memorii.core.memory_plane.file_lock import locked_file
+
+        coordinate = operation_origin.coordinate
+        if (
+            delivery.producer_binding != coordinate.client_namespace
+            or delivery.command.operation_id != coordinate.operation_id
+        ):
+            raise ConsumerDeliveryError("denied: managed intake binding mismatch")
+        validate(delivery.command, operation_origin)
+        path = self._path(operation_origin)
+        with locked_file(self._directory / "intake.lock", exclusive=True):
+            if path.exists():
+                existing = self._read(path)
+                if existing.operation_origin != operation_origin or existing.delivery.command != delivery.command:
+                    raise ConsumerDeliveryError("conflict: divergent managed intake")
+                return existing
+            entry = ManagedSpoolEntry(delivery=delivery, operation_origin=operation_origin)
+            self._write(path, entry)
+            return entry
+
+    def pending(self) -> tuple[ManagedSpoolEntry, ...]:
+        """Return intact intents; the dispatcher must revalidate authority."""
+        from memorii.core.memory_plane.file_lock import locked_file
+
+        with locked_file(self._directory / "intake.lock", exclusive=False):
+            entries = (self._read(path) for path in sorted(self._directory.glob("*.json")))
+            return tuple(entry for entry in entries if entry.state == "pending")
+
+    def mark_committed(self, entry: ManagedSpoolEntry) -> None:
+        """Acknowledge only the exact intent whose command was dispatched."""
+        from memorii.core.memory_plane.file_lock import locked_file
+
+        path = self._path(entry.operation_origin)
+        with locked_file(self._directory / "intake.lock", exclusive=True):
+            existing = self._read(path)
+            if existing == entry.model_copy(update={"state": "committed"}):
+                return
+            if existing != entry or entry.state != "pending":
+                raise ConsumerDeliveryError("conflict: managed intake changed before acknowledgement")
+            self._write(path, entry.model_copy(update={"state": "committed"}))
+
+
+def command_digest(request: RuntimeCommandRequest) -> str:
     payload = json.dumps(
         request.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
     )
@@ -264,6 +371,8 @@ __all__ = [
     "ConsumerDeliveryError",
     "HostEventDelivery",
     "LocalDurableSpool",
+    "ManagedRuntimeSpool",
+    "ManagedSpoolEntry",
     "SpoolRecord",
     "command_digest",
 ]

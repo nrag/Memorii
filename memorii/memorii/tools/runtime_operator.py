@@ -80,6 +80,20 @@ def main(argv: list[str] | None = None) -> int:
     retention = commands.add_parser("retention", help="Retention planning")
     retention.add_argument("--older-than-days", type=int, required=True)
 
+    grant = commands.add_parser("runtime-grant", help="Provision finite host runtime-command authority")
+    grant_sub = grant.add_subparsers(dest="grant_command", required=True)
+    grant_issue = grant_sub.add_parser("issue", help="Issue one finite host command grant")
+    grant_issue.add_argument("--grant-id", required=True)
+    grant_issue.add_argument("--credential-id", required=True)
+    grant_issue.add_argument("--principal", required=True)
+    grant_issue.add_argument("--client-namespace", required=True)
+    grant_issue.add_argument("--kind", action="append", required=True)
+    grant_issue.add_argument("--task-id", action="append", default=[])
+    grant_issue.add_argument("--operation-id", action="append", default=[])
+    grant_issue.add_argument("--expires-at", required=True, help="ISO-8601 timestamp with offset")
+    grant_revoke = grant_sub.add_parser("revoke", help="Revoke one host command grant")
+    grant_revoke.add_argument("--grant-id", required=True)
+
     common = parser.add_argument_group("owner capability")
     common.add_argument("--owner-principal", default="")
     common.add_argument("--capability-digest", default="")
@@ -173,6 +187,47 @@ def main(argv: list[str] | None = None) -> int:
                 data_loss_acknowledged=arguments.data_loss_acknowledged,
             )
             print(plan.model_dump_json())
+            return 0
+        if arguments.command == "runtime-grant":
+            from datetime import datetime
+
+            from memorii.core.harness_state.write_authority import (
+                HostCommandGrantRequest,
+                ManagedHostCommandAuthority,
+            )
+
+            authority = ManagedHostCommandAuthority(administration)
+            if arguments.grant_command == "revoke":
+                epoch = authority.revoke(
+                    arguments.grant_id, capability=require_capability()
+                )
+                print(
+                    json.dumps(
+                        {"grant_id": arguments.grant_id, "epoch": epoch},
+                        sort_keys=True,
+                    )
+                )
+                return 0
+            try:
+                expires_at = datetime.fromisoformat(arguments.expires_at)
+            except ValueError as exc:
+                raise OperatorError(
+                    "invalid_request: --expires-at must be ISO-8601"
+                ) from exc
+            issued = authority.issue(
+                HostCommandGrantRequest(
+                    grant_id=arguments.grant_id,
+                    credential_id=arguments.credential_id,
+                    principal=arguments.principal,
+                    client_namespace=arguments.client_namespace,
+                    allowed_kinds=tuple(arguments.kind),
+                    allowed_task_ids=tuple(arguments.task_id),
+                    allowed_operation_ids=tuple(arguments.operation_id),
+                    expires_at=expires_at,
+                ),
+                capability=require_capability(),
+            )
+            print(issued.model_dump_json())
             return 0
         if arguments.command == "forget":
             from memorii.core.storage_administration.operator_governance import (

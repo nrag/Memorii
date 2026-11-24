@@ -268,6 +268,29 @@ class ActionAttemptRecord(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class OperationOriginCoordinate(BaseModel):
+    """Immutable identity of an intent prepared under a managed host binding."""
+
+    installation_id: str = Field(min_length=1, max_length=512)
+    repository_id: str = Field(min_length=1, max_length=1024)
+    generation_id: str = Field(min_length=1, max_length=512)
+    principal: str = Field(min_length=1, max_length=512)
+    client_namespace: str = Field(min_length=1, max_length=512)
+    operation_id: str = Field(min_length=1, max_length=512)
+    request_digest: str = Field(pattern=_HEX_64)
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class OperationOrigin(BaseModel):
+    """Purpose-signed operation origin, never permission to execute it."""
+
+    coordinate: OperationOriginCoordinate
+    signature: str = Field(pattern=r"^[0-9a-f]{128}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
 class RuntimeCommandReceipt(BaseModel):
     operation_id: str = Field(min_length=1)
     client_namespace: str = Field(min_length=1)
@@ -276,8 +299,25 @@ class RuntimeCommandReceipt(BaseModel):
     base_revision: int = Field(ge=0)
     current_revision: int = Field(ge=0)
     result_digest: str | None = Field(default=None, pattern=_HEX_64)
+    operation_origin: OperationOriginCoordinate | None = None
+    origin_proof_digest: str | None = Field(default=None, pattern=_HEX_64)
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def origin_matches_receipt(self) -> RuntimeCommandReceipt:
+        coordinate = self.operation_origin
+        if coordinate is None:
+            if self.origin_proof_digest is not None:
+                raise ValueError("an origin proof digest requires an origin coordinate")
+        elif (
+            self.origin_proof_digest is None
+            or self.operation_id != coordinate.operation_id
+            or self.client_namespace != coordinate.client_namespace
+            or self.request_digest != coordinate.request_digest
+        ):
+            raise ValueError("managed receipt does not match its origin")
+        return self
 
 
 class BeliefUpdateProposal(BaseModel):
@@ -419,6 +459,8 @@ __all__ = [
     "NodeMergeProposal",
     "NodeReopenProposal",
     "ObservationContent",
+    "OperationOrigin",
+    "OperationOriginCoordinate",
     "OverlayJustificationBinding",
     "QuestionContent",
     "RuntimeCommandReceipt",

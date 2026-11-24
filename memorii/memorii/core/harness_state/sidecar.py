@@ -26,6 +26,8 @@ from memorii.core.harness_state.consumer import (
     ConsumerDeliveryError,
     HostEventDelivery,
     LocalDurableSpool,
+    ManagedRuntimeSpool,
+    SpoolRecord,
 )
 from memorii.core.harness_state.credentials import SidecarCredentialStore
 from memorii.core.harness_state.grant_registry import GrantEpochRegistry
@@ -34,13 +36,16 @@ from memorii.core.harness_state.service import (
     HarnessStateService,
     RuntimeReadGrant,
 )
-from memorii.core.persistence.runtime_contracts import RuntimeCommandRequest
+from memorii.core.persistence.runtime_api import ManagedRuntimeCommandService, RuntimeCommandError
+from memorii.core.persistence.runtime_contracts import OperationOrigin, RuntimeCommandRequest
 from memorii.core.persistence.runtime_repository import RuntimeStateRepository
 from memorii.core.storage_administration.revoked_identity_view import (
     RevokedIdentityServingGate,
 )
+from memorii.core.storage_administration.service import StorageAdministrationError
 
 _MAXIMUM_INTAKE_BYTES = 1 << 20
+_MAXIMUM_OPERATION_ORIGIN_BYTES = 8192
 
 
 class SidecarRequest(BaseModel):
@@ -73,10 +78,15 @@ class HostIntakeBinding:
     allowlisted_producers: tuple[str, ...]
 
 
-class SidecarError(BaseModel):
-    """Closed error envelope; no task-derived data."""
+@dataclass(frozen=True)
+class ManagedHostIntakeBinding:
+    """Server-resolved binding for one authenticated credential."""
 
-    code: Literal[
+    spool: ManagedRuntimeSpool
+    commands: ManagedRuntimeCommandService
+
+
+SidecarErrorCode = Literal[
         "unauthenticated",
         "denied",
         "not_found",
@@ -90,18 +100,25 @@ class SidecarError(BaseModel):
         "integrity_error",
         "needs_reconciliation",
     ]
+
+
+class SidecarError(BaseModel):
+    """Closed error envelope; no task-derived data."""
+
+    code: SidecarErrorCode
     retryable: bool
     detail: str | None = None
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-_ERROR_STATUS = {
+_ERROR_STATUS: dict[SidecarErrorCode, int] = {
     "unauthenticated": 401,
     "denied": 403,
     "not_found": 404,
     "invalid_request": 400,
     "unsupported_version": 400,
+    "unsupported_configuration": 503,
     "conflict": 409,
     "stale_cursor": 409,
     "resource_exhausted": 429,
@@ -121,6 +138,7 @@ class RuntimeSidecar:
         credentials: dict[str, str] | SidecarCredentialStore,
         grant_factory: Callable[[str], RuntimeReadGrant],
         intake_factory: Callable[[str], HostIntakeBinding] | None = None,
+        managed_intake_factory: Callable[[str], ManagedHostIntakeBinding | None] | None = None,
         grant_registry: GrantEpochRegistry | None = None,
         revoked_view: RevokedIdentityServingGate | None = None,
     ) -> None:
@@ -128,6 +146,9 @@ class RuntimeSidecar:
         self._credentials = credentials
         self._grant_factory = grant_factory
         self._intake_factory = intake_factory
+        if intake_factory is not None and managed_intake_factory is not None:
+            raise ValueError("managed and legacy intake bindings are mutually exclusive")
+        self._managed_intake_factory = managed_intake_factory
         # The revocation registry composes by default from the installation
         # control state so a revoked grant fails closed on every served path.
         if grant_registry is None:
@@ -213,6 +234,7 @@ class RuntimeSidecar:
         origin: str | None,
         body: bytes,
         host: str | None = None,
+        operation_origin: str | None = None,
         _content_length_header: str | None = None,
     ) -> tuple[int, bytes]:
         """Admit one runtime command durably; authority is server-derived.
@@ -234,6 +256,8 @@ class RuntimeSidecar:
         principal = self._principal_for(bearer_token or "")
         if principal is None:
             return _error(401, "unauthenticated", None)
+        if self._managed_intake_factory is not None:
+            return self._handle_managed_intake(bearer_token or "", body, operation_origin)
         if self._intake_factory is None:
             return _error(503, "unavailable", None)
         binding = self._intake_factory(principal)
@@ -265,6 +289,77 @@ class RuntimeSidecar:
             return _error(503, "unavailable", None)
         return 200, record.model_dump_json().encode("utf-8")
 
+    def handle_prepare_request(
+        self, *, bearer_token: str | None, origin: str | None, body: bytes, host: str | None = None
+    ) -> tuple[int, bytes]:
+        """Prepare a new managed intent through the authenticated command owner."""
+        if origin is not None or host not in (None, "127.0.0.1", "localhost", "::1"):
+            return _error(403, "denied", None)
+        secret = bearer_token or ""
+        if self._principal_for(secret) is None:
+            return _error(401, "unauthenticated", None)
+        if self._managed_intake_factory is None:
+            return _error(503, "unavailable", None)
+        if len(body) > _MAXIMUM_INTAKE_BYTES:
+            return _error(400, "invalid_request", None)
+        try:
+            request = RuntimeCommandRequest.model_validate_json(body)
+        except ValueError:
+            return _error(400, "invalid_request", None)
+        try:
+            binding = self._managed_intake_factory(secret)
+            if binding is None:
+                return _error(403, "denied", None)
+            proof = binding.commands.prepare(request)
+        except RuntimeCommandError as exc:
+            code = _harness_error_code(str(exc))
+            return _error(_ERROR_STATUS[code], code, None)
+        except (OSError, StorageAdministrationError):
+            return _error(503, "unavailable", None)
+        return 200, proof.model_dump_json().encode()
+
+    def _handle_managed_intake(
+        self, secret: str, body: bytes, operation_origin: str | None
+    ) -> tuple[int, bytes]:
+        if not operation_origin:
+            return _error(403, "denied", None)
+        if len(body) > _MAXIMUM_INTAKE_BYTES or len(operation_origin) > _MAXIMUM_OPERATION_ORIGIN_BYTES:
+            return _error(400, "invalid_request", None)
+        try:
+            request = SidecarIntakeRequest.model_validate_json(body)
+            proof = OperationOrigin.model_validate_json(operation_origin)
+        except ValueError:
+            return _error(400, "invalid_request", None)
+        factory = self._managed_intake_factory
+        assert factory is not None
+        try:
+            binding = factory(secret)
+            if binding is None:
+                return _error(403, "denied", None)
+            entry = binding.spool.admit(
+                HostEventDelivery(
+                    transport_message_id=request.transport_message_id or f"sidecar:{request.command.operation_id}",
+                    producer_binding=proof.coordinate.client_namespace,
+                    command=request.command,
+                ),
+                operation_origin=proof,
+                validate=lambda command, admitted: binding.commands.validate_intake(
+                    command, operation_origin=admitted,
+                ),
+            )
+        except (RuntimeCommandError, ConsumerDeliveryError) as exc:
+            code = _harness_error_code(str(exc))
+            return _error(_ERROR_STATUS[code], code, None)
+        except (OSError, StorageAdministrationError):
+            return _error(503, "unavailable", None)
+        record = SpoolRecord(
+            operation_id=entry.delivery.command.operation_id,
+            producer_binding=entry.delivery.producer_binding,
+            request_digest=entry.operation_origin.coordinate.request_digest,
+            state=entry.state,
+        )
+        return 200, record.model_dump_json().encode()
+
 
 def _safe_content_length(raw: str | None, maximum: int) -> int | None:
     """Parse Content-Length before any read: non-integer, negative, and
@@ -279,14 +374,15 @@ def _safe_content_length(raw: str | None, maximum: int) -> int | None:
     return length
 
 
-def _error(status: int, code: str, detail: str | None) -> tuple[int, bytes]:
+def _error(status: int, code: SidecarErrorCode, detail: str | None) -> tuple[int, bytes]:
     payload = SidecarError(code=code, retryable=code in ("unavailable", "resource_exhausted"), detail=detail)
     return status, payload.model_dump_json().encode("utf-8")
 
 
-def _harness_error_code(message: str) -> str:
+def _harness_error_code(message: str) -> SidecarErrorCode:
+    supplied_code = message.partition(":")[0]
     for code in _ERROR_STATUS:
-        if message.startswith(code):
+        if supplied_code == code:
             return code
     return "invalid_request"
 
@@ -296,12 +392,28 @@ def build_sidecar_handler(sidecar: RuntimeSidecar) -> type[BaseHTTPRequestHandle
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:  # noqa: N802 - http.server API
+            if self.path == "/v1/operations/prepare":
+                length = _safe_content_length(self.headers.get("Content-Length"), _MAXIMUM_INTAKE_BYTES)
+                if length is None:
+                    self._respond(*_error(400, "invalid_request", None))
+                    return
+                self._respond(*sidecar.handle_prepare_request(
+                    bearer_token=self.headers.get("Authorization", "").removeprefix("Bearer ") or None,
+                    origin=self.headers.get("Origin"),
+                    body=self.rfile.read(length) if length else b"",
+                    host=self.headers.get("Host", "").split(":")[0] or None,
+                ))
+                return
             if self.path == "/v1/runtime/intake":
                 length = _safe_content_length(self.headers.get("Content-Length"), _MAXIMUM_INTAKE_BYTES)
                 if length is None:
                     self._respond(*_error(400, "invalid_request", "content length is invalid or oversized"))
                     return
                 body = self.rfile.read(length) if length else b""
+                proofs = self.headers.get_all("Memorii-Operation-Origin", [])
+                if len(proofs) > 1:
+                    self._respond(*_error(400, "invalid_request", None))
+                    return
                 status, payload = sidecar.handle_intake_request(
                     bearer_token=self.headers.get("Authorization", "").removeprefix(
                         "Bearer "
@@ -310,6 +422,7 @@ def build_sidecar_handler(sidecar: RuntimeSidecar) -> type[BaseHTTPRequestHandle
                     origin=self.headers.get("Origin"),
                     body=body,
                     host=self.headers.get("Host", "").split(":")[0] or None,
+                    operation_origin=proofs[0] if proofs else None,
                 )
                 self._respond(status, payload)
                 return
@@ -332,7 +445,7 @@ def build_sidecar_handler(sidecar: RuntimeSidecar) -> type[BaseHTTPRequestHandle
             )
             self._respond(status, payload)
 
-        def log_message(self, *args: object) -> None:
+        def log_message(self, format: str, *args: object) -> None:
             return  # content-free logging only
 
         def _respond(self, status: int, payload: bytes) -> None:

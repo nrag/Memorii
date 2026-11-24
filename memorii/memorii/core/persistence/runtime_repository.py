@@ -21,6 +21,8 @@ from typing import TypeVar
 
 from pydantic import BaseModel, TypeAdapter
 
+from memorii.core.consolidation.runtime_outputs import ConsolidationResult
+from memorii.core.persistence.contracts import InstallationControlState, RuntimePublicationState
 from memorii.core.persistence.runtime_contracts import (
     ActionAttemptRecord,
     RuntimeCommandReceipt,
@@ -437,6 +439,46 @@ class RuntimeStateRepository:
             record_json=delivery.model_dump_json(),
         )
 
+    def apply_consolidation_result(
+        self, connection: sqlite3.Connection, result: ConsolidationResult,
+    ) -> None:
+        """Insert a sealed result in its origin publication transaction."""
+        result = ConsolidationResult.model_validate(result)
+        prior = self.get_consolidation_result_in(connection, result.result_id)
+        if prior is not None:
+            if prior.canonical_bytes() != result.canonical_bytes():
+                raise RuntimeStateError("conflict: divergent consolidation result for origin")
+            return
+        self._partition.insert_consolidation_row(
+            connection, result_id=result.result_id, record_json=result.model_dump_json(),
+        )
+
+    @staticmethod
+    def _decode_consolidation_result(row: sqlite3.Row) -> ConsolidationResult:
+        result = ConsolidationResult.model_validate_json(row["record_json"])
+        if result.result_id != row["result_id"]:
+            raise RuntimeStateError("integrity_error: consolidation catalog key mismatch")
+        return result
+
+    def get_consolidation_result_in(
+        self, connection: sqlite3.Connection, result_id: str,
+    ) -> ConsolidationResult | None:
+        rows = self._partition.read_consolidation_rows(connection, result_id=result_id)
+        return self._decode_consolidation_result(rows[0]) if rows else None
+
+    def list_consolidation_results_in(
+        self, connection: sqlite3.Connection,
+    ) -> tuple[ConsolidationResult, ...]:
+        return tuple(
+            self._decode_consolidation_result(row)
+            for row in self._partition.read_consolidation_rows(connection)
+        )
+
+    def get_consolidation_result(self, result_id: str) -> ConsolidationResult | None:
+        """Internal owner read. The public API must grant-check and verify its snapshot."""
+        with self._partition.transaction(write=False) as connection:
+            return self.get_consolidation_result_in(connection, result_id)
+
     def get_outbox_delivery(
         self, connection: sqlite3.Connection, delivery_id: str
     ) -> RuntimeOutboxDelivery | None:
@@ -466,13 +508,14 @@ class RuntimeStateRepository:
         return tuple(entry for entry in entries if entry.status == "pending")
 
     def apply_command_receipt(
-        self, connection: sqlite3.Connection, receipt: RuntimeCommandReceipt
+        self, connection: sqlite3.Connection, receipt: RuntimeCommandReceipt,
+        *, lookup_namespace: str | None = None,
     ) -> None:
         self._partition.upsert_runtime_row(
             connection,
             table="runtime_command_receipts",
             keys=("client_namespace", "operation_id"),
-            values=(receipt.client_namespace, receipt.operation_id),
+            values=(lookup_namespace or receipt.client_namespace, receipt.operation_id),
             record_json=receipt.model_dump_json(),
         )
 
@@ -494,6 +537,7 @@ def publish_runtime_change(
     apply: Callable[[sqlite3.Connection, RuntimeStateRepository], None],
     *,
     operation_binding: str = "runtime_change",
+    validate_authority: Callable[[InstallationControlState, RuntimePublicationState], None] | None = None,
 ) -> int:
     """Apply one runtime change and publish it atomically.
 
@@ -547,7 +591,10 @@ def publish_runtime_change(
         )
         if finalized is None:
             raise RuntimeStateError("installation is not initialized")
+        state = administration._require_operational()
         administration._verified_snapshot_locked(state)
+        if validate_authority is not None:
+            validate_authority(state, finalized)
         partition = administration.partition()
         with partition.manual_write_transaction() as handle:
             connection = handle.connection

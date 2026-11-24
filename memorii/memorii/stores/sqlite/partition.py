@@ -27,7 +27,9 @@ if TYPE_CHECKING:
     from memorii.core.persistence.contracts import MaterializationCatalogEntry
     from memorii.core.semantic_ingestion.ontology_index import OntologyIndexProjection
 
-PARTITION_SCHEMA_VERSION = 1
+PARTITION_SCHEMA_VERSION = 2
+_INITIAL_PARTITION_SCHEMA_VERSION = 1
+_CONSOLIDATION_SCHEMA_VERSION = 2
 _DEFAULT_BUSY_TIMEOUT_MS = 5_000
 
 _SCHEMA_STATEMENTS = (
@@ -282,6 +284,13 @@ _SCHEMA_STATEMENTS = (
     """,
 )
 
+_CONSOLIDATION_SCHEMA_STATEMENT = """
+    CREATE TABLE consolidation_results (
+        result_id TEXT PRIMARY KEY NOT NULL,
+        record_json TEXT NOT NULL
+    )
+"""
+
 # Authoritative materialized catalogs covered by the signed manifest. The
 # fold is canonical: per-row digest over (primary key, payload), chained in
 # the catalog's primary-key order from a domain-separated per-catalog seed.
@@ -289,7 +298,7 @@ _SCHEMA_STATEMENTS = (
 # or self-referential and are excluded from the row root; the derived
 # semantic tables ARE authoritative materialized state (rebuildable from
 # canonical records, never independent facts) and are covered.
-_MATERIALIZATION_CATALOGS = (
+_INITIAL_MATERIALIZATION_CATALOGS = (
     ("memory_batches", "revision", "batch_json"),
     ("memory_record_versions", "memory_id || ':' || batch_revision", "record_json"),
     ("memory_current_records", "memory_id", "record_json"),
@@ -346,6 +355,11 @@ _MATERIALIZATION_CATALOGS = (
     ("runtime_outbox_deliveries", "delivery_id", "record_json"),
     ("runtime_checkpoints", "checkpoint_id", "record_json"),
 )
+_CONSOLIDATION_CATALOG = ("consolidation_results", "result_id", "record_json")
+_MATERIALIZATION_CATALOGS_BY_VERSION = {
+    _INITIAL_PARTITION_SCHEMA_VERSION: _INITIAL_MATERIALIZATION_CATALOGS,
+    _CONSOLIDATION_SCHEMA_VERSION: (*_INITIAL_MATERIALIZATION_CATALOGS, _CONSOLIDATION_CATALOG),
+}
 _CATALOG_SEED_DOMAIN = b"memorii.materialization-catalog.v1\x00"
 
 
@@ -484,8 +498,12 @@ class PartitionDataRepository:
     ) -> tuple[MaterializationCatalogEntry, ...]:
         from memorii.core.persistence.contracts import MaterializationCatalogEntry
 
+        version = self.read_schema_version(connection)
+        catalogs = _MATERIALIZATION_CATALOGS_BY_VERSION[version]
+        if version == _INITIAL_PARTITION_SCHEMA_VERSION and self._has_consolidation_catalog(connection):
+            raise sqlite3.DatabaseError("consolidation catalog is outside the declared partition schema")
         entries: list[MaterializationCatalogEntry] = []
-        for catalog, key_expression, payload_column in _MATERIALIZATION_CATALOGS:
+        for catalog, key_expression, payload_column in catalogs:
             rows = connection.execute(
                 f"SELECT {key_expression} AS sort_key, {payload_column} AS payload"
                 f" FROM {catalog} ORDER BY {key_expression}"
@@ -508,12 +526,48 @@ class PartitionDataRepository:
         # Closed rule: the manifest covers exactly the declared catalogs —
         # one entry per name, no silent subset.
         if {entry.catalog for entry in entries} != {
-            catalog for catalog, _, _ in _MATERIALIZATION_CATALOGS
+            catalog for catalog, _, _ in catalogs
         }:
             raise sqlite3.DatabaseError(
                 "materialization manifest does not cover the declared catalogs"
             )
         return tuple(sorted(entries, key=lambda entry: entry.catalog))
+
+    @staticmethod
+    def read_schema_version(connection: sqlite3.Connection) -> int:
+        row = connection.execute(
+            "SELECT value FROM partition_schema WHERE key = 'schema_version'"
+        ).fetchone()
+        if row is None or row[0] not in {str(version) for version in _MATERIALIZATION_CATALOGS_BY_VERSION}:
+            raise sqlite3.DatabaseError("unsupported or missing partition schema version")
+        return int(row[0])
+
+    @staticmethod
+    def _has_consolidation_catalog(connection: sqlite3.Connection) -> bool:
+        return connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'consolidation_results'"
+        ).fetchone() is not None
+
+    def stage_consolidation_schema_upgrade(self, connection: sqlite3.Connection) -> None:
+        """Install the new catalog on an unpublished staged generation.
+
+        The administration owner must verify the old signed generation and
+        publish this staged database as a distinct, signed generation before
+        managed reads or writes use it.
+        """
+        if not connection.in_transaction or self.read_publication_row(connection) is not None:
+            raise sqlite3.DatabaseError("schema upgrade requires an unpublished staging transaction")
+        if self.read_schema_version(connection) != _INITIAL_PARTITION_SCHEMA_VERSION:
+            raise sqlite3.DatabaseError("consolidation upgrade requires the initial partition format")
+        self._install_consolidation_catalog(connection)
+        connection.execute(
+            "UPDATE partition_schema SET value = ? WHERE key = 'schema_version'",
+            (str(_CONSOLIDATION_SCHEMA_VERSION),),
+        )
+
+    @staticmethod
+    def _install_consolidation_catalog(connection: sqlite3.Connection) -> None:
+        connection.execute(_CONSOLIDATION_SCHEMA_STATEMENT)
 
     def read_publication_row(self, connection: sqlite3.Connection) -> sqlite3.Row | None:
         return connection.execute(
@@ -837,6 +891,32 @@ class PartitionDataRepository:
         rows = self.read_runtime_rows(connection, table=table, match=match)
         return rows[0] if rows else None
 
+    def _require_consolidation_catalog(self, connection: sqlite3.Connection) -> None:
+        if self.read_schema_version(connection) < _CONSOLIDATION_SCHEMA_VERSION:
+            raise sqlite3.DatabaseError("partition schema upgrade required for consolidation results")
+
+    def read_consolidation_rows(
+        self, connection: sqlite3.Connection, *, result_id: str | None = None,
+    ) -> Sequence[sqlite3.Row]:
+        self._require_consolidation_catalog(connection)
+        if result_id is not None:
+            return connection.execute(
+                "SELECT result_id, record_json FROM consolidation_results WHERE result_id = ?",
+                (result_id,),
+            ).fetchall()
+        return connection.execute(
+            "SELECT result_id, record_json FROM consolidation_results ORDER BY result_id"
+        ).fetchall()
+
+    def insert_consolidation_row(
+        self, connection: sqlite3.Connection, *, result_id: str, record_json: str,
+    ) -> None:
+        self._require_consolidation_catalog(connection)
+        connection.execute(
+            "INSERT INTO consolidation_results (result_id, record_json) VALUES (?, ?)",
+            (result_id, record_json),
+        )
+
     def read_batch_rows(self, connection: sqlite3.Connection) -> Sequence[sqlite3.Row]:
         return connection.execute(
             "SELECT revision, data_revision, checksum, batch_json FROM memory_batches ORDER BY revision"
@@ -942,18 +1022,12 @@ class PartitionDataRepository:
                 "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'partition_schema'"
             ).fetchone()
             if catalog_row is not None:
-                row = connection.execute(
-                    "SELECT value FROM partition_schema WHERE key = 'schema_version'"
-                ).fetchone()
-                if row is not None:
-                    version = int(row["value"])
-                    if version != PARTITION_SCHEMA_VERSION:
-                        raise sqlite3.DatabaseError(
-                            f"unsupported partition schema version: {version}"
-                        )
-                    return
+                self.read_schema_version(connection)
+                return
             for statement in _SCHEMA_STATEMENTS:
                 connection.execute(statement)
+            if PARTITION_SCHEMA_VERSION == _CONSOLIDATION_SCHEMA_VERSION:
+                self._install_consolidation_catalog(connection)
             connection.execute(
                 "INSERT INTO memory_revision_state (id, write_revision, data_revision)"
                 " VALUES (1, 0, 0)"

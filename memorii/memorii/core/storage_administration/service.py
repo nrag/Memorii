@@ -14,7 +14,7 @@ from __future__ import annotations
 import hashlib
 import sqlite3
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,7 +42,11 @@ from memorii.core.persistence.contracts import (
     empty_chain_commitment,
     empty_pointer_set_digest,
 )
-from memorii.core.persistence.key_owner import LocalSigningKeyOwner
+from memorii.core.persistence.key_owner import (
+    OPERATION_ORIGIN_SIGNATURE_PURPOSE,
+    LocalSigningKeyOwner,
+)
+from memorii.core.persistence.runtime_contracts import OperationOrigin, OperationOriginCoordinate
 from memorii.stores.sqlite.control import ControlDatabase, ControlJournalChainError
 from memorii.stores.sqlite.partition import PartitionDataRepository
 
@@ -810,6 +814,43 @@ class StorageAdministrationService:
         state = self._require_operational()
         with self._publication_fence():
             return self._verified_snapshot_locked(state)
+
+    @contextmanager
+    def verified_operation_context(
+        self,
+    ) -> Iterator[tuple[InstallationControlState, RuntimePublicationState]]:
+        """Hold the publication fence through origin preparation or receipt release."""
+        with self._publication_fence():
+            self.resolve_pending_publication()
+            state = self._require_operational()
+            snapshot = self._verified_snapshot_locked(state)
+            finalized = self._control.read_publication_state(self._repository_id())
+            if finalized is None or finalized.payload_digest() != snapshot.tuple_digest:
+                raise InstallationIntegrityError("verified operation tuple is missing")
+            yield state, finalized
+
+    def sign_operation_origin(self, coordinate: OperationOriginCoordinate) -> OperationOrigin:
+        """Sign a resolved operation coordinate using the installation key owner."""
+        return OperationOrigin(
+            coordinate=coordinate,
+            signature=self._signing.sign(
+                self._signer_key_id,
+                OPERATION_ORIGIN_SIGNATURE_PURPOSE,
+                canonical_json_digest(coordinate.model_dump(mode="json")),
+            ),
+        )
+
+    def verify_operation_origin(self, proof: OperationOrigin) -> bool:
+        """Authenticate origin with the configured installation key and purpose."""
+        try:
+            return self._signing.verify(
+                self._signer_key_id,
+                OPERATION_ORIGIN_SIGNATURE_PURPOSE,
+                canonical_json_digest(proof.coordinate.model_dump(mode="json")),
+                proof.signature,
+            )
+        except (PermissionError, ValueError):
+            return False
 
     def _verified_snapshot_locked(
         self, state: InstallationControlState
