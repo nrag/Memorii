@@ -1,23 +1,13 @@
 """Backup/restore operator controls over one installation.
 
 Owner-authorized, plan-governed operations matching the design contract:
-backup create runs under the acknowledged exclusive barrier (read_only)
-AND holds the publication fence for the whole snapshot window, snapshots
-the control and partition databases through SQLite's online backup API
-(never live file copies), encrypts every participant snapshot with AEAD
-under a fresh per-backup content key wrapped by the operator's recovery
-key, signs the manifest with the installation's Ed25519 signing key,
-records the revision vector and control epoch, and writes an atomically
-renamed complete marker plus a signed control recovery bundle and an
-independent recovery anchor the owner retains. Backup verify checks the
-manifest signature and recomputes every digest, refusing torn, tampered,
-foreign, and path-traversing archives. Restore plans from a verified
-archive with installation-identity binding and explicit data-loss
-acknowledgement for older control revisions, applies into a staging
-directory whose participants are validated (plain basenames only), and
-reapplies the CURRENT installation's suppression journals into staging so
-restored data cannot resurrect revoked evidence. Neither the source
-archive nor the live installation is ever modified.
+Backup create snapshots control and partition SQLite databases through the
+online backup API under the acknowledged read_only barrier. It verifies the
+pair against the captured signed tuple and control journal tip, encrypts
+participants with a wrapped content key, and atomically publishes the archive.
+Restore plans bind the verified archive and the current live watermark.
+Staging verifies the decrypted pair before copying current suppression evidence
+and publishing an inert staging directory.
 """
 from __future__ import annotations
 
@@ -25,22 +15,32 @@ import base64
 import hashlib
 import json
 import os
-import shutil
 import sqlite3
+import tempfile
 import time
 from contextlib import closing
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from memorii.core.persistence.contracts import (
+    InstallationControlState,
+    RuntimeMaterializationManifest,
+    RuntimePublicationState,
+    canonical_json_digest,
+    empty_pointer_set_digest,
+)
+from memorii.core.persistence.runtime_journal import RuntimeJournalError, verify_runtime_history
 from memorii.core.storage_administration.operator import (
     OperatorError,
     OwnerCapability,
     StorageAdministrationOperator,
     require_owner_capability,
 )
+from memorii.core.storage_administration.service import StorageAdministrationService
+from memorii.stores.sqlite.control import ControlDatabase, ControlJournalChainError
 from memorii.stores.sqlite.partition import PartitionDataRepository
 
 _BACKUP_MARKER = "backup-complete.json"
@@ -67,7 +67,7 @@ class BackupParticipant(BaseModel):
 class InstallationBackupManifest(BaseModel):
     """Closed backup manifest; secrets and signing keys are never included."""
 
-    manifest_version: Literal[1] = 1
+    manifest_version: Literal[1, 2] = 1
     installation_id: str = Field(min_length=1)
     created_at_unix: int = Field(ge=0)
     control_revision: int = Field(ge=1)
@@ -75,6 +75,8 @@ class InstallationBackupManifest(BaseModel):
     runtime_revision: int = Field(ge=0)
     memory_write_revision: int = Field(ge=0)
     memory_data_revision: int = Field(ge=0)
+    publication_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    control_tip_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     participants: tuple[BackupParticipant, ...] = Field(min_length=1)
     wrapped_content_key: str = Field(min_length=1)
     key_wrap_nonce: str = Field(min_length=16, max_length=32)
@@ -82,6 +84,21 @@ class InstallationBackupManifest(BaseModel):
     manifest_signature: str = Field(pattern=r"^[0-9a-f]{128}$")
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def exact_watermark(self) -> Self:
+        if self.manifest_version == 2:
+            if self.publication_digest is None or self.control_tip_digest is None:
+                raise ValueError("backup manifest requires its signed publication and control tip")
+        elif self.publication_digest is not None or self.control_tip_digest is not None:
+            raise ValueError("legacy backup manifest cannot include an exact watermark")
+        return self
+
+    def unsigned_digest(self) -> str:
+        excluded = {"manifest_digest", "manifest_signature"}
+        if self.manifest_version == 1:
+            excluded.update({"publication_digest", "control_tip_digest"})
+        return hashlib.sha256(json.dumps(self.model_dump(exclude=excluded), sort_keys=True).encode()).hexdigest()
 
 
 class RestorePlan(BaseModel):
@@ -91,9 +108,17 @@ class RestorePlan(BaseModel):
     installation_id: str = Field(min_length=1)
     control_revision: int = Field(ge=1)
     participant_count: int = Field(ge=1)
+    archive_manifest_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_publication_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_control_revision: int = Field(ge=1)
+    expected_control_tip_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     data_loss_acknowledged: bool = False
+    plan_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    def unsigned_digest(self) -> str:
+        return canonical_json_digest(self.model_dump(exclude={"plan_digest"}))
 
 
 def _sha256_file(path: Path) -> str:
@@ -109,7 +134,7 @@ def _sha256_file(path: Path) -> str:
 
 def _sqlite_backup(source: Path, destination: Path) -> None:
     """Snapshot one SQLite database through the online backup API."""
-    source_connection = sqlite3.connect(f"file:{source}?mode=ro", uri=True)
+    source_connection = sqlite3.connect(source.resolve().as_uri() + "?mode=ro", uri=True)
     try:
         destination_connection = sqlite3.connect(str(destination))
         try:
@@ -129,7 +154,11 @@ def _atomic_write(path: Path, payload: bytes, mode: int = 0o600) -> None:
         os.fsync(handle.fileno())
     os.chmod(temporary, mode)
     os.replace(temporary, path)
-    directory = os.open(path.parent, os.O_RDONLY)
+    _sync_directory(path.parent)
+
+
+def _sync_directory(path: Path) -> None:
+    directory = os.open(path, os.O_RDONLY)
     try:
         os.fsync(directory)
     finally:
@@ -174,19 +203,34 @@ class BackupRestoreOperator:
             raise OperatorError(
                 "invalid_request: recovery key must be exactly 32 bytes"
             )
-        archive_root.mkdir(parents=True, exist_ok=True)
-        os.chmod(archive_root, 0o700)
-
-        status = self._operator.status()
-        if status.mode != "read_only":
-            raise OperatorError(
-                "conflict: backups require the acknowledged exclusive barrier"
-                " (change mode to read_only first)"
-            )
-
-        # The fence spans status + snapshots + manifest assembly so the
-        # recorded revision vector always agrees with the snapshot bytes.
-        with service._publication_fence():
+        if archive_root.is_symlink() or (
+            archive_root.exists() and (not archive_root.is_dir() or any(archive_root.iterdir()))
+        ):
+            raise OperatorError("invalid_request: use a fresh backup directory")
+        archive_root.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix=".backup-", dir=archive_root.parent) as scratch:
+            copies = Path(scratch) / "copies"
+            encrypted = Path(scratch) / "encrypted"
+            copies.mkdir(mode=0o700)
+            encrypted.mkdir(mode=0o700)
+            # Only capture and the live watermark checks need the barrier.
+            with service.verified_operation_context() as (state, finalized):
+                if state.mode != "read_only":
+                    raise OperatorError(
+                        "conflict: backups require the acknowledged exclusive barrier"
+                        " (change mode to read_only first)"
+                    )
+                _, tip = service._control.next_journal_position()
+                with service.partition().transaction(write=False) as connection:
+                    runtime_revision = service.partition().read_runtime_revision(connection)
+                _sqlite_backup(service.control_path(), copies / "control.sqlite3")
+                _sqlite_backup(service.partition_path(), copies / "partition.sqlite3")
+                if (
+                    service._control_state() != state
+                    or service._control.read_publication_state(finalized.repository_id) != finalized
+                    or service._control.next_journal_position()[1] != tip
+                ):
+                    raise OperatorError("conflict: live watermark changed during backup capture")
             participants: list[BackupParticipant] = []
             content_key = os.urandom(32)
             key_wrap_nonce = os.urandom(12)
@@ -194,19 +238,11 @@ class BackupRestoreOperator:
                 key_wrap_nonce, content_key, None
             )
             for participant_id in _ALLOWED_PARTICIPANTS:
-                database_path = (
-                    service.control_path()
-                    if participant_id == "control"
-                    else service.partition_path()
-                )
-                plain_path = archive_root / f".{participant_id}.plain"
-                _sqlite_backup(Path(database_path), plain_path)
                 nonce = os.urandom(12)
                 ciphertext = AESGCM(content_key).encrypt(
-                    nonce, plain_path.read_bytes(), None
+                    nonce, (copies / f"{participant_id}.sqlite3").read_bytes(), None,
                 )
-                plain_path.unlink()
-                snapshot_path = archive_root / f"{participant_id}.sqlite3.enc"
+                snapshot_path = encrypted / f"{participant_id}.sqlite3.enc"
                 _atomic_write(snapshot_path, ciphertext)
                 participants.append(
                     BackupParticipant(
@@ -220,38 +256,29 @@ class BackupRestoreOperator:
                 )
 
             manifest = InstallationBackupManifest(
-                installation_id=service._control_state().installation_id,
+                manifest_version=2,
+                installation_id=state.installation_id,
                 created_at_unix=int(time.time()),
-                control_revision=status.control_revision,
-                eligibility_epoch=status.eligibility_epoch,
-                runtime_revision=status.runtime_revision,
-                memory_write_revision=status.memory_write_revision,
-                memory_data_revision=status.memory_data_revision,
+                control_revision=state.control_revision,
+                eligibility_epoch=state.eligibility_epoch,
+                runtime_revision=runtime_revision,
+                memory_write_revision=finalized.vector.memory_write_revision,
+                memory_data_revision=finalized.vector.memory_data_revision,
+                publication_digest=finalized.payload_digest(),
+                control_tip_digest=tip,
                 participants=tuple(participants),
                 wrapped_content_key=base64.b64encode(wrapped_key).decode("ascii"),
                 key_wrap_nonce=base64.b64encode(key_wrap_nonce).decode("ascii"),
                 manifest_digest="0" * 64,
                 manifest_signature="0" * 128,
             )
-            digest = hashlib.sha256(
-                json.dumps(
-                    manifest.model_dump(
-                        exclude={"manifest_digest", "manifest_signature"}
-                    ),
-                    sort_keys=True,
-                ).encode()
-            ).hexdigest()
+            _verify_staged_backup(service, copies, manifest)
+            digest = manifest.unsigned_digest()
             key_id = service._signer_key_id
-            service._ensure_signing_key()
             signature = service._signing.sign(key_id, _SIGNING_PURPOSE, digest)
             manifest = manifest.model_copy(
                 update={"manifest_digest": digest, "manifest_signature": signature}
             )
-            _atomic_write(
-                archive_root / _BACKUP_MARKER,
-                (manifest.model_dump_json() + "\n").encode(),
-            )
-
             # Signed control recovery bundle + the independent anchor the
             # owner retains out of band (fresh-host restore material).
             bundle = {
@@ -273,12 +300,12 @@ class BackupRestoreOperator:
                 hashlib.sha256(bundle_bytes).hexdigest(),
             )
             _atomic_write(
-                archive_root / _RECOVERY_BUNDLE,
+                encrypted / _RECOVERY_BUNDLE,
                 json.dumps({**bundle, "signature": bundle_signature}, sort_keys=True).encode()
                 + b"\n",
             )
             _atomic_write(
-                archive_root / _RECOVERY_ANCHOR,
+                encrypted / _RECOVERY_ANCHOR,
                 json.dumps(
                     {
                         "installation_id": bundle["installation_id"],
@@ -290,6 +317,12 @@ class BackupRestoreOperator:
                 ).encode()
                 + b"\n",
             )
+            _atomic_write(
+                encrypted / _BACKUP_MARKER,
+                (manifest.model_dump_json() + "\n").encode(),
+            )
+            os.replace(encrypted, archive_root)
+            _sync_directory(archive_root.parent)
         return manifest
 
     def verify_backup(
@@ -305,18 +338,10 @@ class BackupRestoreOperator:
             marker_path.read_text()
         )
         service = self._operator._administration
-        digest = hashlib.sha256(
-            json.dumps(
-                manifest.model_dump(
-                    exclude={"manifest_digest", "manifest_signature"}
-                ),
-                sort_keys=True,
-            ).encode()
-        ).hexdigest()
+        digest = manifest.unsigned_digest()
         if digest != manifest.manifest_digest:
             raise OperatorError("integrity_error: backup manifest digest mismatch")
         try:
-            service._ensure_signing_key()
             valid = service._signing.verify(
                 service._signer_key_id,
                 _SIGNING_PURPOSE,
@@ -362,6 +387,8 @@ class BackupRestoreOperator:
                     f"integrity_error: participant {participant.participant_id}"
                     " digest mismatch"
                 )
+        if seen_ids != set(_ALLOWED_PARTICIPANTS):
+            raise OperatorError("integrity_error: backup participant inventory is incomplete")
         return manifest
 
     def plan_restore(
@@ -374,26 +401,35 @@ class BackupRestoreOperator:
         service = self._operator._administration
         require_owner_capability(service, capability)
         manifest = self.verify_backup(archive_root=archive_root)
-        current = service._control_state()
-        if manifest.installation_id != current.installation_id:
-            raise OperatorError(
-                "denied: backup belongs to a different installation"
+        with service.verified_operation_context() as (current, finalized):
+            if manifest.installation_id != current.installation_id:
+                raise OperatorError("denied: backup belongs to a different installation")
+            partition = service.partition()
+            with partition.transaction(write=False) as connection:
+                live_runtime_revision = partition.read_runtime_revision(connection)
+            if not data_loss_acknowledged and (
+                manifest.control_revision < current.control_revision
+                or manifest.runtime_revision != live_runtime_revision
+                or manifest.memory_write_revision != finalized.vector.memory_write_revision
+                or manifest.memory_data_revision != finalized.vector.memory_data_revision
+                or manifest.publication_digest not in (None, finalized.payload_digest())
+            ):
+                raise OperatorError(
+                    "conflict: restoring a different backup watermark requires explicit data-loss acknowledgement"
+                )
+            plan = RestorePlan(
+                archive_path=str(archive_root.resolve()),
+                installation_id=manifest.installation_id,
+                control_revision=manifest.control_revision,
+                participant_count=len(manifest.participants),
+                archive_manifest_digest=manifest.manifest_digest,
+                expected_publication_digest=finalized.payload_digest(),
+                expected_control_revision=current.control_revision,
+                expected_control_tip_digest=service._control.next_journal_position()[1],
+                data_loss_acknowledged=data_loss_acknowledged,
+                plan_digest="0" * 64,
             )
-        if (
-            not data_loss_acknowledged
-            and manifest.control_revision < current.control_revision
-        ):
-            raise OperatorError(
-                "conflict: restoring an older backup requires explicit"
-                " data-loss acknowledgement"
-            )
-        return RestorePlan(
-            archive_path=str(archive_root),
-            installation_id=manifest.installation_id,
-            control_revision=manifest.control_revision,
-            participant_count=len(manifest.participants),
-            data_loss_acknowledged=data_loss_acknowledged,
-        )
+            return plan.model_copy(update={"plan_digest": plan.unsigned_digest()})
 
     def apply_restore(
         self,
@@ -409,58 +445,136 @@ class BackupRestoreOperator:
             raise OperatorError(
                 "invalid_request: recovery key must be exactly 32 bytes"
             )
-        manifest = self.verify_backup(archive_root=Path(plan.archive_path))
-        if manifest.installation_id != plan.installation_id:
-            raise OperatorError("conflict: plan and archive disagree")
+        if plan.plan_digest != plan.unsigned_digest():
+            raise OperatorError("conflict: restore plan digest does not match reviewed inputs")
+        archive_root = Path(plan.archive_path)
+        manifest = self.verify_backup(archive_root=archive_root)
         if (
-            not plan.data_loss_acknowledged
-            and manifest.control_revision
-            < service._control_state().control_revision
+            manifest.installation_id != plan.installation_id
+            or manifest.manifest_digest != plan.archive_manifest_digest
+            or manifest.control_revision != plan.control_revision
+            or len(manifest.participants) != plan.participant_count
         ):
-            raise OperatorError(
-                "conflict: data-loss acknowledgement missing for older backup"
-            )
-        staging_root.mkdir(parents=True, exist_ok=True)
-        os.chmod(staging_root, 0o700)
+            raise OperatorError("conflict: plan and archive disagree")
+        with service.verified_operation_context() as (state, finalized):
+            self._require_restore_watermark(service, plan, state, finalized)
+        if staging_root.is_symlink() or (
+            staging_root.exists() and (not staging_root.is_dir() or any(staging_root.iterdir()))
+        ):
+            raise OperatorError("invalid_request: use a fresh staging directory")
+        staging_root.parent.mkdir(parents=True, exist_ok=True)
         content_key = AESGCM(recovery_key).decrypt(
             base64.b64decode(manifest.key_wrap_nonce),
             base64.b64decode(manifest.wrapped_content_key),
             None,
         )
-        restored: list[Path] = []
-        for participant in manifest.participants:
-            source = Path(plan.archive_path) / _validate_participant(participant)
-            destination = staging_root / f"{participant.participant_id}.sqlite3"
-            if destination.exists():
-                for path in restored:
-                    path.unlink(missing_ok=True)
-                raise OperatorError(
-                    "invalid_request: staging root is not empty;"
-                    " use a fresh staging directory"
+        with tempfile.TemporaryDirectory(prefix=".restore-", dir=staging_root.parent) as scratch:
+            staging = Path(scratch)
+            for participant in manifest.participants:
+                source = archive_root / _validate_participant(participant)
+                ciphertext = source.read_bytes()
+                if hashlib.sha256(ciphertext).hexdigest() != participant.sha256:
+                    raise OperatorError("integrity_error: archive mutated during restore")
+                plaintext = AESGCM(content_key).decrypt(
+                    base64.b64decode(participant.nonce), ciphertext, None,
                 )
-            ciphertext = source.read_bytes()
-            if hashlib.sha256(ciphertext).hexdigest() != participant.sha256:
-                for path in restored:
-                    path.unlink(missing_ok=True)
-                raise OperatorError(
-                    "integrity_error: archive mutated during restore"
-                )
-            plaintext = AESGCM(content_key).decrypt(
-                base64.b64decode(participant.nonce), ciphertext, None
-            )
-            _atomic_write(destination, plaintext)
-            restored.append(destination)
-        # Reapply the CURRENT installation's suppression journals so restored
-        # data can never resurrect revoked evidence (design: restore reapply).
-        current_suppressions = (
-            service.installation_root / "control" / "suppressions"
-        )
-        if current_suppressions.is_dir():
-            staging_suppressions = staging_root / "suppressions"
-            staging_suppressions.mkdir(exist_ok=True)
-            for journal in sorted(current_suppressions.glob("forget-*.json")):
-                shutil.copyfile(journal, staging_suppressions / journal.name)
+                _atomic_write(staging / f"{participant.participant_id}.sqlite3", plaintext)
+            restored_digest = _verify_staged_backup(service, staging, manifest)
+            with service.verified_operation_context() as (state, finalized):
+                self._require_restore_watermark(service, plan, state, finalized)
+                if not plan.data_loss_acknowledged and restored_digest != finalized.payload_digest():
+                    raise OperatorError("conflict: staged backup is older than the live publication")
+                # Stage current suppression evidence rather than the older
+                # control snapshot's view of eligible records.
+                current_suppressions = service.installation_root / "control" / "suppressions"
+                if current_suppressions.is_dir():
+                    staging_suppressions = staging / "suppressions"
+                    staging_suppressions.mkdir(mode=0o700)
+                    for journal in sorted(current_suppressions.glob("forget-*.json")):
+                        _atomic_write(staging_suppressions / journal.name, journal.read_bytes())
+                os.replace(staging, staging_root)
+                _sync_directory(staging_root.parent)
         return staging_root
+
+    @staticmethod
+    def _require_restore_watermark(
+        service: StorageAdministrationService,
+        plan: RestorePlan,
+        state: InstallationControlState,
+        finalized: RuntimePublicationState,
+    ) -> None:
+        if state.installation_id != plan.installation_id:
+            raise OperatorError("denied: restore plan belongs to another installation")
+        if (
+            finalized.payload_digest() != plan.expected_publication_digest
+            or state.control_revision != plan.expected_control_revision
+            or service._control.next_journal_position()[1] != plan.expected_control_tip_digest
+        ):
+            raise OperatorError("conflict: live restore watermark changed after planning")
+        if state.mode != "read_only":
+            raise OperatorError("conflict: restore staging requires read_only mode")
+
+
+def _verify_staged_backup(
+    service: StorageAdministrationService, staging: Path, manifest: InstallationBackupManifest,
+) -> str:
+    """Verify the decrypted pair against one signed backup watermark."""
+    try:
+        with (
+            ControlDatabase(staging / "control.sqlite3", journal_verifier=service._verify_journal_signature) as control,
+            PartitionDataRepository(staging / "partition.sqlite3") as partition,
+        ):
+            control.validate_journal()
+            state = control.read_control_state()
+            repository = f"{manifest.installation_id}:default-partition"
+            finalized = control.read_publication_state(repository)
+            trust_entries = control.list_trust_entries()
+            trust_digest = (
+                canonical_json_digest({"entries": [entry.model_dump_json() for entry in trust_entries]})
+                if trust_entries else empty_pointer_set_digest()
+            )
+            if (
+                state is None or finalized is None
+                or state.installation_id != manifest.installation_id
+                or finalized.installation_id != state.installation_id
+                or finalized.repository_id != repository
+                or state.mode != "read_only"
+                or state.quarantined_reason is not None
+                or state.control_revision != manifest.control_revision
+                or state.eligibility_epoch != manifest.eligibility_epoch
+                or finalized.eligibility_epoch != state.eligibility_epoch
+                or finalized.trust_registry_digest != trust_digest
+                or control.read_pending_intent(repository) is not None
+                or manifest.control_tip_digest not in (None, control.next_journal_position()[1])
+                or manifest.publication_digest not in (None, finalized.payload_digest())
+            ):
+                raise OperatorError("integrity_error: staged control does not match the backup watermark")
+            with partition.transaction(write=False) as connection:
+                row = partition.read_publication_row(connection)
+                materialization = RuntimeMaterializationManifest(
+                    catalogs=partition.compute_materialization_manifest(connection),
+                )
+                write_revision, data_revision = partition.read_revision_state(connection)
+                if (
+                    row is None or str(row["tuple_digest"]) != finalized.payload_digest()
+                    or not service._matches_signed_publication(row, finalized)
+                    or materialization.digest() != finalized.manifest_digest
+                    or partition.read_runtime_revision(connection) != manifest.runtime_revision
+                    or write_revision != manifest.memory_write_revision
+                    or data_revision != manifest.memory_data_revision
+                    or write_revision != finalized.vector.memory_write_revision
+                    or data_revision != finalized.vector.memory_data_revision
+                ):
+                    raise OperatorError("integrity_error: staged partition does not match the backup watermark")
+                verify_runtime_history(
+                    connection, finalized=finalized,
+                    verify=lambda purpose, digest, signature: service._verify_journal_signature(
+                        service._signer_key_id, purpose, digest, signature,
+                    ),
+                )
+            return finalized.payload_digest()
+    except (ControlJournalChainError, RuntimeJournalError, ValidationError, sqlite3.DatabaseError) as exc:
+        raise OperatorError("integrity_error: staged backup verification failed") from exc
 
 
 def boot_restored_installation(

@@ -63,10 +63,14 @@ def test_mode_change_fences_and_round_trips(tmp_path: Path) -> None:
             InstallationQuarantinedError,
         )
 
+        def write_task(connection, repository) -> None:
+            repository.apply_task(connection, TaskRecord(
+                task_id="task:maintenance", principal="owner:one", goal="Resume writes",
+                created_at=_NOW, root_execution_node_id="exec:maintenance",
+            ))
+
         with pytest.raises(InstallationQuarantinedError, match="read_only"):
-            publish_runtime_change(
-                service, lambda connection, repository: None
-            )
+            publish_runtime_change(service, write_task)
         resumed = operator.change_mode(
             ModeChangeRequest(
                 target_mode="active",
@@ -76,10 +80,7 @@ def test_mode_change_fences_and_round_trips(tmp_path: Path) -> None:
             capability=capability,
         )
         assert resumed.mode == "active"
-        revision = publish_runtime_change(
-            service, lambda connection, repository: None
-        )
-        assert revision >= 1
+        assert publish_runtime_change(service, write_task) == 1
     finally:
         service.close()
 
@@ -348,6 +349,150 @@ def test_backup_foreign_installation_and_missing_marker_refuse(tmp_path: Path) -
         (tmp_path / "backup" / "backup-complete.json").unlink()
         with pytest.raises(OperatorError, match="no complete marker"):
             backups.verify_backup(archive_root=tmp_path / "backup")
+    finally:
+        service.close()
+
+
+def test_restore_planning_detects_data_only_watermark_change(tmp_path: Path) -> None:
+    from memorii.core.storage_administration.operator_backup import BackupRestoreOperator
+
+    operator, service, capability = _fenced_operator(tmp_path)
+    try:
+        backups = BackupRestoreOperator(operator)
+        archive = tmp_path / "archive"
+        recovery_key = b"k" * 32
+        manifest = backups.create_backup(
+            capability=capability, archive_root=archive, reason="data watermark", recovery_key=recovery_key,
+        )
+        plan = backups.plan_restore(capability=capability, archive_root=archive, data_loss_acknowledged=True)
+        assert manifest.publication_digest == plan.expected_publication_digest
+        assert manifest.control_tip_digest == plan.expected_control_tip_digest
+        # Maintenance publication can move data under read_only without a mode or control revision change.
+        publish_runtime_change(
+            service,
+            lambda connection, repository: repository.apply_task(connection, TaskRecord(
+                task_id="task:new", root_execution_node_id="exec:new", goal="newer graph",
+                principal="principal:one", created_at=_NOW,
+            )),
+            operation_binding="migrate",
+        )
+        assert operator.status().control_revision == manifest.control_revision
+        with pytest.raises(OperatorError, match="data-loss acknowledgement"):
+            backups.plan_restore(capability=capability, archive_root=archive, data_loss_acknowledged=False)
+        staging = tmp_path / "staged"
+        with pytest.raises(OperatorError, match="live restore watermark changed"):
+            backups.apply_restore(capability=capability, plan=plan, staging_root=staging, recovery_key=recovery_key)
+        assert not staging.exists()
+        renewed = backups.plan_restore(capability=capability, archive_root=archive, data_loss_acknowledged=True)
+        live = service.acquire_verified_snapshot()
+        assert backups.apply_restore(
+            capability=capability, plan=renewed, staging_root=staging, recovery_key=recovery_key,
+        ) == staging
+        assert service.acquire_verified_snapshot() == live
+    finally:
+        service.close()
+
+
+def test_restore_plan_rejects_archive_substitution(tmp_path: Path) -> None:
+    from memorii.core.storage_administration.operator_backup import BackupRestoreOperator
+
+    operator, service, capability = _fenced_operator(tmp_path)
+    try:
+        backups = BackupRestoreOperator(operator)
+        archive = tmp_path / "archive"
+        recovery_key = b"k" * 32
+        backups.create_backup(
+            capability=capability, archive_root=archive, reason="reviewed", recovery_key=recovery_key,
+        )
+        plan = backups.plan_restore(capability=capability, archive_root=archive, data_loss_acknowledged=False)
+        archive.rename(tmp_path / "reviewed-archive")
+        backups.create_backup(
+            capability=capability, archive_root=archive, reason="replacement", recovery_key=recovery_key,
+        )
+        staging = tmp_path / "staged"
+        with pytest.raises(OperatorError, match="plan and archive disagree"):
+            backups.apply_restore(capability=capability, plan=plan, staging_root=staging, recovery_key=recovery_key)
+        assert not staging.exists()
+    finally:
+        service.close()
+
+
+def test_restore_staging_refuses_decrypted_history_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sqlite3
+    from contextlib import closing
+
+    from memorii.core.storage_administration import operator_backup
+
+    operator, service = _operator(tmp_path)
+    try:
+        publish_runtime_change(
+            service,
+            lambda connection, repository: repository.apply_task(connection, TaskRecord(
+                task_id="task:source", root_execution_node_id="exec:source", goal="verified graph",
+                principal="principal:one", created_at=_NOW,
+            )),
+        )
+        capability = _capability(service)
+        operator.change_mode(
+            ModeChangeRequest(
+                target_mode="read_only", expected_control_revision=operator.status().control_revision,
+                reason="prepare backup verification",
+            ),
+            capability=capability,
+        )
+        backups = operator_backup.BackupRestoreOperator(operator)
+        archive = tmp_path / "archive"
+        recovery_key = b"k" * 32
+        backups.create_backup(capability=capability, archive_root=archive, reason="valid", recovery_key=recovery_key)
+        plan = backups.plan_restore(capability=capability, archive_root=archive, data_loss_acknowledged=False)
+        original = operator_backup._atomic_write
+
+        def remove_history(path: Path, payload: bytes, mode: int = 0o600) -> None:
+            original(path, payload, mode)
+            if path.name == "partition.sqlite3":
+                with closing(sqlite3.connect(path)) as connection:
+                    connection.execute("DELETE FROM runtime_event_batches")
+                    connection.commit()
+
+        monkeypatch.setattr(operator_backup, "_atomic_write", remove_history)
+        staging = tmp_path / "staged"
+        with pytest.raises(OperatorError, match="staged backup verification failed"):
+            backups.apply_restore(capability=capability, plan=plan, staging_root=staging, recovery_key=recovery_key)
+        assert not staging.exists()
+        assert service.acquire_verified_snapshot().tuple_digest == plan.expected_publication_digest
+    finally:
+        service.close()
+
+
+def test_backup_refuses_a_captured_partition_outside_the_fenced_tuple(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sqlite3
+    from contextlib import closing
+
+    from memorii.core.storage_administration import operator_backup
+
+    operator, service, capability = _fenced_operator(tmp_path)
+    try:
+        original = operator_backup._sqlite_backup
+
+        def corrupt_copy(source: Path, destination: Path) -> None:
+            original(source, destination)
+            if destination.name == "partition.sqlite3":
+                with closing(sqlite3.connect(destination)) as connection:
+                    connection.execute("UPDATE runtime_revision_state SET runtime_revision = 7")
+                    connection.commit()
+
+        monkeypatch.setattr(operator_backup, "_sqlite_backup", corrupt_copy)
+        backups = operator_backup.BackupRestoreOperator(operator)
+        archive = tmp_path / "archive"
+        live = service.acquire_verified_snapshot()
+        with pytest.raises(OperatorError, match="staged partition does not match the backup watermark"):
+            backups.create_backup(capability=capability, archive_root=archive, reason="broken copy", recovery_key=b"k" * 32)
+        assert not archive.exists()
+        assert service.acquire_verified_snapshot() == live
     finally:
         service.close()
 
