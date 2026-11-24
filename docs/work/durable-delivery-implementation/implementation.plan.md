@@ -44,4 +44,4 @@ Implementation branch `codex/durable-delivery-implementation` is published to or
 
 ## Next Action
 
-Resolve the authorization lifetime for provider-protected evidence after a provider session disconnects, then use the selected provider-owned authority for source-backed pause, archive and offer release, host decisions, and worker publication.
+Wire the authenticated generation-change intent and replay ancestry into the restore owner before enabling installed delivery polling.

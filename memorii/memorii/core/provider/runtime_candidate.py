@@ -27,7 +27,7 @@ from memorii.core.persistence.managed_delivery import (
     MemoryPlaneCandidateScope,
     ProtectedSkillCandidateScope,
 )
-from memorii.core.persistence.runtime_contracts import canonical_runtime_digest
+from memorii.core.persistence.runtime_contracts import RuntimeSourceAdmissionReceipt, canonical_runtime_digest
 from memorii.core.storage_administration.revoked_identity_view import RevokedIdentityServingGate
 from memorii.domain.enums import (
     CommitStatus,
@@ -88,6 +88,7 @@ def prepare_candidate_stage(
     current_sources: tuple[CanonicalMemoryRecord, ...],
     revoked: RevokedIdentityServingGate,
     now: datetime,
+    released_provider_sources: tuple[RuntimeSourceAdmissionReceipt, ...] = (),
 ) -> CanonicalMemoryRecord | ProtectedSkillCandidate:
     """Derive an inert staging record from verified inputs, without writing it.
 
@@ -120,7 +121,12 @@ def prepare_candidate_stage(
         raise CandidateStageError("denied: sealed source closure differs from delivery authority")
     if not isinstance(payload, EpisodicSummary) and not payload.source_refs:
         raise CandidateStageError("denied: candidate requires retained source evidence")
-    _require_eligible_sources(authority, payload.source_refs, current_sources, revoked, now=now)
+    if released_provider_sources and not isinstance(payload, EpisodicSummary):
+        raise CandidateStageError("denied: protected native observations authorize episodic candidates")
+    _require_eligible_sources(
+        authority, payload.source_refs, current_sources, revoked, now=now,
+        released_provider_sources=released_provider_sources,
+    )
 
     candidate_id = f"{RUNTIME_WRITEBACK_CANDIDATE_ID_PREFIX}{output.output_id}"
     if revoked.is_revoked_record(candidate_id):
@@ -187,11 +193,24 @@ def _require_eligible_sources(
     revoked: RevokedIdentityServingGate,
     *,
     now: datetime,
+    released_provider_sources: tuple[RuntimeSourceAdmissionReceipt, ...],
 ) -> None:
     by_id = {record.memory_id: record for record in records}
-    if len(by_id) != len(records) or set(by_id) != {ref.source_id for ref in refs}:
+    released = {item.source_id: item for item in released_provider_sources}
+    if (
+        len(by_id) != len(records) or len(released) != len(released_provider_sources)
+        or set(by_id).intersection(released) or (set(by_id) | set(released)) != {ref.source_id for ref in refs}
+    ):
         raise CandidateStageError("denied: candidate source closure is not complete")
     for ref in refs:
+        if ref.source_id in released:
+            receipt = released[ref.source_id]
+            if (
+                receipt.task_id != authority.scope.task_id or receipt.source_record_digest != ref.source_digest
+                or revoked.is_revoked_source(ref.source_id) or revoked.is_revoked_record(ref.source_id)
+            ):
+                raise CandidateStageError("denied: protected source release differs from the candidate closure")
+            continue
         record = by_id[ref.source_id]
         if (
             record.user_id != authority.principal

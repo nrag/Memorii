@@ -27,11 +27,13 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 if TYPE_CHECKING:
     from memorii.core.harness_state.write_authority import ResolvedHostCommandAuthority
 
+from memorii.core.consolidation.consolidator import Consolidator
 from memorii.core.consolidation.runtime_outputs import (
     ArchivePackage,
     ConsolidationOmission,
     ConsolidationOrigin,
     ConsolidationResult,
+    SourceReferences,
     UnresolvedFollowUpSummary,
     build_consolidation_result,
 )
@@ -43,7 +45,7 @@ from memorii.core.persistence.contracts import (
 from memorii.core.persistence.runtime_checkpoint import (
     RuntimeCheckpointError,
     TaskLifecycleArchive,
-    read_source_free_task_root,
+    read_bounded_task_root,
     stage_task_lifecycle_archive,
 )
 from memorii.core.persistence.runtime_contracts import (
@@ -315,6 +317,7 @@ class RuntimeCommandService:
             ):
                 raise RuntimeCommandError("unsupported_configuration: completion requires an evidence owner")
         try:
+            source_closure = self._lifecycle_sources(connection, repository, task, revoked)
             archive, root = stage_task_lifecycle_archive(
                 repository, connection, task=task,
                 installation_id=coordinate.installation_id,
@@ -324,12 +327,16 @@ class RuntimeCommandService:
                 sign=lambda purpose, message: self._administration._signing.sign(
                     self._administration._signer_key_id, purpose, message,
                 ),
+                source_closure=source_closure,
             )
             if request.kind == "complete_task" and (
                 root.acceptance_criteria
                 or root.status in {ExecutionNodeStatus.BLOCKED, ExecutionNodeStatus.FAILED}
             ):
                 raise RuntimeCommandError("unsupported_configuration: root completion is not validated")
+            episode = Consolidator().from_task_lifecycle(
+                completed=request.kind == "complete_task", execution_node_id=root.id, source_refs=source_closure,
+            )
             result = build_consolidation_result(
                 ConsolidationOrigin(
                     installation_id=coordinate.installation_id,
@@ -341,9 +348,13 @@ class RuntimeCommandService:
                     request_digest=coordinate.request_digest,
                 ),
                 origin_revision=archive.manifest.origin_revision,
-                outputs=(UnresolvedFollowUpSummary(), ArchivePackage(reference=archive.reference())),
+                outputs=(
+                    *((episode,) if episode is not None else ()),
+                    UnresolvedFollowUpSummary(), ArchivePackage(reference=archive.reference()),
+                ),
                 omissions=(
-                    ConsolidationOmission(kind="episodic_summary", reason="insufficient_evidence"),
+                    *((ConsolidationOmission(kind="episodic_summary", reason="insufficient_evidence"),)
+                      if episode is None else ()),
                     ConsolidationOmission(kind="skill_candidate", reason="insufficient_evidence"),
                     ConsolidationOmission(kind="semantic_candidate", reason="insufficient_evidence"),
                     ConsolidationOmission(kind="user_candidate", reason="insufficient_evidence"),
@@ -367,6 +378,29 @@ class RuntimeCommandService:
         repository.apply_consolidation_result(connection, result)
         return result
 
+    @staticmethod
+    def _lifecycle_sources(
+        connection: sqlite3.Connection, repository: RuntimeStateRepository, task: TaskRecord,
+        revoked: RefreshingRevokedIdentityView,
+    ) -> SourceReferences:
+        from memorii.core.provider.runtime_source_release import list_runtime_released_sources
+
+        current = list_runtime_released_sources(
+            connection, repository, task_id=task.task_id, principal=task.principal,
+            now=datetime.now(UTC), revoked=revoked,
+        )
+        observations = connection.execute(
+            "SELECT DISTINCT json_extract(record_json, '$.source_admission.source_id') AS source_id,"
+            " json_extract(record_json, '$.source_admission.source_record_digest') AS source_digest"
+            " FROM runtime_command_receipts WHERE json_extract(record_json, '$.source_admission.task_id') = ? LIMIT 65",
+            (task.task_id,),
+        )
+        required = {(row["source_id"], row["source_digest"]) for row in observations}
+        eligible = {(ref.source_id, ref.source_digest) for ref in current}
+        if not required.issubset(eligible):
+            raise RuntimeCheckpointError("denied: admitted source archive closure is unavailable")
+        return tuple(ref for ref in current if (ref.source_id, ref.source_digest) in required)
+
     def _apply_managed_resume(
         self,
         connection: sqlite3.Connection,
@@ -386,7 +420,8 @@ class RuntimeCommandService:
             raise RuntimeCommandError("conflict: task cannot be resumed")
         partition = repository.partition
         try:
-            root = read_source_free_task_root(repository, connection, task)
+            current_sources = self._lifecycle_sources(connection, repository, task, revoked)
+            root = read_bounded_task_root(repository, connection, task, verified_sources=current_sources)
             validated_archives: list[TaskLifecycleArchive] = []
             for result in repository.list_consolidation_results_in(connection):
                 origin = result.origin
@@ -409,6 +444,8 @@ class RuntimeCommandService:
                     archive = TaskLifecycleArchive.model_validate_json(row["record_json"])
                     if archive.checkpoint.task.version + 1 != task.version:
                         continue
+                    if any(ref not in current_sources for ref in archive.checkpoint.source_closure):
+                        raise RuntimeCheckpointError("denied: archived source authority is unavailable")
                     if (
                         ref != archive.reference()
                         or archive.checkpoint.generation_id != coordinate.generation_id
@@ -861,12 +898,44 @@ class ManagedRuntimeCommandService:
                         or hashlib.sha256(result.canonical_bytes()).hexdigest() != receipt.result_digest
                     ):
                         raise RuntimeCommandError("integrity_error: consolidation receipt does not bind its sealed result")
+                    self._verify_lifecycle_archive_release(repository, result, task, revoked)
             if for_intake and receipt is None:
                 self._require_supported(request)
                 self._require_active(state)
                 if self._require_authority(request, "dispatch", coordinate, state, finalized) != authority:
                     raise RuntimeCommandError("denied: mismatched intake authority")
             return receipt
+
+    @staticmethod
+    def _verify_lifecycle_archive_release(
+        repository: RuntimeStateRepository, result: ConsolidationResult, task: TaskRecord,
+        revoked: RefreshingRevokedIdentityView,
+    ) -> None:
+        from memorii.core.provider.runtime_source_release import get_current_source_release
+
+        partition = repository.partition
+        with partition.transaction(write=False) as connection:
+            for output in result.outputs:
+                if not isinstance(output.payload, ArchivePackage):
+                    continue
+                reference = output.payload.reference
+                row = partition.read_runtime_row(
+                    connection, table="runtime_checkpoints", match=(("checkpoint_id", reference.checkpoint_id),),
+                )
+                if row is None:
+                    raise RuntimeCommandError("integrity_error: sealed archive is missing")
+                try:
+                    archive = TaskLifecycleArchive.model_validate_json(row["record_json"])
+                except ValidationError as exc:
+                    raise RuntimeCommandError("integrity_error: sealed archive is malformed") from exc
+                if archive.reference() != reference:
+                    raise RuntimeCommandError("integrity_error: sealed archive does not match the result")
+                now = datetime.now(UTC)
+                if any(get_current_source_release(
+                    connection, repository, task_id=task.task_id, principal=task.principal,
+                    source_ref=source, now=now, revoked=revoked,
+                ) is None for source in archive.checkpoint.source_closure):
+                    raise RuntimeCommandError("denied: archived source authority is unavailable")
 
     def _resolve_observation(
         self, connection: sqlite3.Connection, repository: RuntimeStateRepository,

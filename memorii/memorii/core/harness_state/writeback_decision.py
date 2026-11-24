@@ -310,6 +310,7 @@ class WritebackDecisionService:
         try:
             eligible = bool(refs) and all(ConsolidationReadService._source_is_current(
                 connection, repository, ref, self._revoked, task.task_id, authority.principal, now,
+                allow_protected=isinstance(payload, EpisodicSummary),
             ) for ref in refs)
         except ConsolidationReadError as exc:
             raise WritebackDecisionError("integrity_error") from exc

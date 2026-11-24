@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from memorii.core.consolidation.policies import ConsolidationPolicy
+from memorii.core.consolidation.runtime_outputs import EpisodicSummary, SourceReferences
 from memorii.domain.common import Provenance
 from memorii.domain.enums import MemoryDomain, SourceType
 from memorii.domain.routing import ValidationState
@@ -13,6 +14,20 @@ from memorii.domain.writebacks import ValidityWindow, WritebackCandidate, Writeb
 class Consolidator:
     def __init__(self, policy: ConsolidationPolicy | None = None) -> None:
         self._policy = policy or ConsolidationPolicy()
+
+    def from_task_lifecycle(
+        self, *, completed: bool, execution_node_id: str, source_refs: SourceReferences,
+    ) -> EpisodicSummary | None:
+        """Summarize a transition using already verified native observation references."""
+        if not source_refs:
+            return None
+        count = len(source_refs)
+        observations = "observation" if count == 1 else "observations"
+        transition = "completed" if completed else "paused"
+        return EpisodicSummary(
+            summary=f"Task {transition} with {count} authorized user {observations}.",
+            execution_node_id=execution_node_id, source_refs=source_refs,
+        )
 
     def from_solver_resolution(
         self,

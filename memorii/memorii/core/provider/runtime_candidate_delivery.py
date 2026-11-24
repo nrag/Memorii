@@ -36,7 +36,7 @@ from memorii.core.persistence.managed_delivery import (
     reject_pending_delivery,
 )
 from memorii.core.persistence.runtime_api import operation_origin_namespace, operation_origin_proof_digest
-from memorii.core.persistence.runtime_contracts import OperationOriginCoordinate
+from memorii.core.persistence.runtime_contracts import OperationOriginCoordinate, RuntimeSourceAdmissionReceipt
 from memorii.core.persistence.runtime_repository import (
     RuntimeStateError,
     RuntimeStateRepository,
@@ -52,6 +52,7 @@ from memorii.core.provider.runtime_candidate import (
 from memorii.core.storage_administration.revoked_identity_view import RefreshingRevokedIdentityView
 from memorii.core.storage_administration.service import StorageAdministrationService
 from memorii.core.storage_administration.writer_enrollment import WriterEnrollmentError, WriterEnrollmentRegistry
+from memorii.domain.enums import MemoryRecordVisibility
 
 _T = TypeVar("_T")
 _Candidate = CanonicalMemoryRecord | ProtectedSkillCandidate
@@ -308,7 +309,10 @@ class ManagedCandidateDeliveryWorker:
             raise DeliveryTransitionError("integrity_error: writeback result lacks its exact origin receipt")
         if not binding.source_refs:
             raise _CandidateRejected("invalid_payload")
+        from memorii.core.provider.runtime_source_release import get_current_source_release
+
         sources: list[CanonicalMemoryRecord] = []
+        released: list[RuntimeSourceAdmissionReceipt] = []
         for ref in binding.source_refs:
             if self._revoked.is_revoked_source(ref.source_id) or self._revoked.is_revoked_record(ref.source_id):
                 raise _CandidateRejected("forgotten")
@@ -316,9 +320,19 @@ class ManagedCandidateDeliveryWorker:
             if row is None:
                 raise _CandidateRejected("denied")
             try:
-                sources.append(CanonicalMemoryRecord.model_validate_json(row["record_json"]))
+                source = CanonicalMemoryRecord.model_validate_json(row["record_json"])
             except ValidationError as exc:
                 raise DeliveryTransitionError("integrity_error: invalid persisted source record") from exc
+            if source.visibility == MemoryRecordVisibility.INTERNAL_CONTROL:
+                scoped_source = get_current_source_release(
+                    connection, repository, task_id=decision.scope.task_id, principal=binding.principal,
+                    source_ref=ref, now=now, revoked=self._revoked,
+                )
+                if scoped_source is None:
+                    raise _CandidateRejected("denied")
+                released.append(scoped_source)
+            else:
+                sources.append(source)
         try:
             return prepare_candidate_stage(
                 result=result,
@@ -328,6 +342,7 @@ class ManagedCandidateDeliveryWorker:
                     accepted_at=decision.decided_at, target_scope=decision.scope,
                 ),
                 authority=binding, current_sources=tuple(sources), revoked=self._revoked, now=now,
+                released_provider_sources=tuple(released),
             )
         except CandidateStageError as exc:
             if str(exc).startswith("integrity_error:"):

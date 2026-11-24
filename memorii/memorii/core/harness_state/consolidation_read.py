@@ -16,6 +16,7 @@ from memorii.core.consolidation.runtime_outputs import (
     ConsolidationOutput,
     ConsolidationResult,
     ConsolidationSourceReference,
+    EpisodicSummary,
     UnresolvedFollowUpSummary,
 )
 from memorii.core.harness_state.credentials import SidecarCredentialStore
@@ -329,7 +330,10 @@ class ConsolidationReadService:
                     archive.verify_signature(key_owner.verify)
                 except (ValidationError, RuntimeCheckpointError) as exc:
                     raise ConsolidationReadError("integrity_error") from exc
-                visible.append(ConsolidationReadEntry(output=output))
+                if all(self._source_is_current(
+                    connection, repository, ref, revoked, task_id, principal, moment, allow_protected=True,
+                ) for ref in archive.checkpoint.source_closure):
+                    visible.append(ConsolidationReadEntry(output=output))
                 continue
             refs = (
                 tuple(ref for item in payload.items for ref in item.source_refs)
@@ -337,7 +341,10 @@ class ConsolidationReadService:
                 else payload.source_refs
             )
             if not all(
-                self._source_is_current(connection, repository, ref, revoked, task_id, principal, moment)
+                self._source_is_current(
+                    connection, repository, ref, revoked, task_id, principal, moment,
+                    allow_protected=isinstance(payload, EpisodicSummary),
+                )
                 for ref in refs
             ):
                 continue
@@ -393,6 +400,8 @@ class ConsolidationReadService:
         task_id: str,
         principal: str,
         moment: datetime,
+        *,
+        allow_protected: bool = False,
     ) -> bool:
         if revoked.is_revoked_source(ref.source_id) or revoked.is_revoked_record(ref.source_id):
             return False
@@ -403,6 +412,13 @@ class ConsolidationReadService:
             record = CanonicalMemoryRecord.model_validate_json(row["record_json"])
         except ValidationError as exc:
             raise ConsolidationReadError("integrity_error") from exc
+        if allow_protected and record.visibility == MemoryRecordVisibility.INTERNAL_CONTROL:
+            from memorii.core.provider.runtime_source_release import get_current_source_release
+
+            return get_current_source_release(
+                connection, repository, task_id=task_id, principal=principal, source_ref=ref,
+                now=moment, revoked=revoked,
+            ) is not None
         return (
             record.memory_id == ref.source_id
             and record.user_id == principal

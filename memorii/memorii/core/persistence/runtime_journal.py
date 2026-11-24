@@ -40,6 +40,7 @@ _Catalog = Literal[
     "runtime_command_receipts", "runtime_operation_attempts", "runtime_outbox_deliveries",
     "runtime_checkpoints", "consolidation_results", "writeback_decisions",
     "runtime_work_projections", "runtime_target_receipts", "runtime_skill_candidates",
+    "runtime_source_release_grants",
 ]
 _GRAPH_ENTITY = {
     "runtime_execution_nodes": ("execution", "node"),
@@ -54,9 +55,11 @@ _GRAPH_ENTITY = {
     "runtime_work_projections": ("system", "routing"),
     "runtime_target_receipts": ("system", "routing"),
     "runtime_skill_candidates": ("system", "routing"),
+    "runtime_source_release_grants": ("system", "routing"),
 }
 _OWNER_VERSIONED = frozenset({
     "runtime_tasks", "runtime_solver_runs", "runtime_justifications", "runtime_action_attempts",
+    "runtime_source_release_grants",
 })
 _IMMUTABLE = frozenset({
     "runtime_overlay_versions", "runtime_checkpoints", "runtime_command_receipts", "consolidation_results",
@@ -167,8 +170,22 @@ def _state_version(catalog: str, record_json: str, revision: int) -> int:
     return version
 
 
+def _validate_release_transition(row: RuntimeMaterializedRow, previous_json: str | None) -> None:
+    if row.catalog != "runtime_source_release_grants":
+        return
+    from memorii.core.provider.runtime_source_release import validate_runtime_source_release_event
+
+    if len(row.key) != 1 or row.indexed:
+        raise RuntimeJournalError("integrity_error: invalid source release grant catalog key")
+    try:
+        validate_runtime_source_release_event(row.record_json, grant_id=row.key[0], previous_json=previous_json)
+    except ValueError as exc:
+        raise RuntimeJournalError("integrity_error: invalid source release grant transition") from exc
+
+
 def _to_event(change: RuntimeRowChange, previous: RuntimePublicationState, revision: int) -> RuntimeEventEnvelope:
     row = change.row
+    _validate_release_transition(row, change.prior_record_json)
     version = _state_version(row.catalog, row.record_json, revision)
     if change.prior_record_json is not None and version <= _state_version(
         row.catalog, change.prior_record_json, revision - 1,
@@ -297,6 +314,7 @@ def verify_runtime_history(
             row = full_state.row()
             identity = (row.catalog, row.key)
             prior = replayed.get(identity)
+            _validate_release_transition(row, None if prior is None else prior.record_json)
             graph_type, entity_type = _GRAPH_ENTITY.get(row.catalog, ("system", "directory"))
             if (
                 event.record_id != _record_id(row)

@@ -107,6 +107,11 @@ def main(argv: list[str] | None = None) -> int:
     grant_revoke = grant_sub.add_parser("revoke", help="Revoke one host command grant")
     grant_revoke.add_argument("--grant-id", required=True)
 
+    source_grant = commands.add_parser("runtime-source-grant", help="Manage durable provider source release")
+    source_grant_sub = source_grant.add_subparsers(dest="source_grant_command", required=True)
+    source_grant_revoke = source_grant_sub.add_parser("revoke", help="Revoke one exact task/source release grant")
+    source_grant_revoke.add_argument("--grant-id", required=True)
+
     common = parser.add_argument_group("owner capability")
     common.add_argument("--owner-principal", default="")
     common.add_argument("--capability-digest", default="")
@@ -245,6 +250,20 @@ def main(argv: list[str] | None = None) -> int:
                 data_loss_acknowledged=arguments.data_loss_acknowledged,
             )
             print(plan.model_dump_json())
+            return 0
+        if arguments.command == "runtime-source-grant":
+            from memorii.core.persistence.runtime_repository import RuntimeStateError
+            from memorii.core.provider.runtime_source_authority import RuntimeSourceAuthorityError
+            from memorii.core.provider.runtime_source_release import RuntimeSourceReleaseAuthority
+            from memorii.core.storage_administration.service import StorageAdministrationError
+
+            try:
+                release = RuntimeSourceReleaseAuthority(administration).revoke(
+                    capability=require_capability(), grant_id=arguments.grant_id,
+                )
+            except (RuntimeSourceAuthorityError, RuntimeStateError, StorageAdministrationError) as exc:
+                raise OperatorError(str(exc)) from exc
+            print(json.dumps({"grant_id": release.grant_id, "status": release.status}, sort_keys=True))
             return 0
         if arguments.command == "runtime-grant":
             from datetime import datetime

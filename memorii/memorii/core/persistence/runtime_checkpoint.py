@@ -23,7 +23,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from memorii.core.consolidation.runtime_outputs import ArchivePackageRef
+from memorii.core.consolidation.runtime_outputs import ArchivePackageRef, SourceReferences
 from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
 from memorii.core.persistence.runtime_contracts import (
     RuntimeOverlayVersion,
@@ -47,7 +47,7 @@ class RuntimeCheckpointError(RuntimeError):
 
 
 class TaskLifecycleCheckpoint(BaseModel):
-    """Full pre-transition snapshot for the supported source-free root graph."""
+    """Full pre-transition snapshot for a managed root and its source closure."""
 
     kind: Literal["task_lifecycle_checkpoint"] = "task_lifecycle_checkpoint"
     installation_id: str = Field(min_length=1)
@@ -57,7 +57,7 @@ class TaskLifecycleCheckpoint(BaseModel):
     runtime_revision: int = Field(ge=1)
     task: TaskRecord
     root_node: ExecutionNode
-    source_closure: tuple[()] = ()
+    source_closure: SourceReferences = ()
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -77,7 +77,7 @@ class TaskLifecycleArchiveManifest(BaseModel):
     checkpoint_id: str = Field(min_length=1)
     checkpoint_digest: str = Field(pattern=_HEX_64)
     origin_revision: int = Field(ge=1)
-    source_closure: tuple[()] = ()
+    source_closure: SourceReferences = ()
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -107,6 +107,7 @@ class TaskLifecycleArchive(BaseModel):
             or self.manifest.checkpoint_id != self.checkpoint_id
             or self.manifest.checkpoint_digest != self.checkpoint_digest
             or self.manifest.origin_revision != self.checkpoint.runtime_revision + 1
+            or self.manifest.source_closure != self.checkpoint.source_closure
         ):
             raise ValueError("task archive does not bind its exact checkpoint and origin")
         return self
@@ -132,14 +133,29 @@ class TaskLifecycleArchive(BaseModel):
             raise RuntimeCheckpointError("integrity_error: task checkpoint signature verification failed")
 
 
-def read_source_free_task_root(
+def read_bounded_task_root(
     repository: RuntimeStateRepository, connection: sqlite3.Connection, task: TaskRecord,
+    *, verified_sources: SourceReferences = (),
 ) -> ExecutionNode:
     """Validate the complete archive/resume graph supported by this owner."""
+    from memorii.core.memory_plane.store import (
+        RUNTIME_WRITEBACK_CANDIDATE_ID_PREFIX,
+        RUNTIME_WRITEBACK_CANDIDATE_SOURCE_KIND,
+    )
+
     partition = repository.partition
     rows = partition.read_runtime_rows(
         connection, table="runtime_execution_nodes", match=(("task_id", task.task_id),),
     )
+    verified_ids = tuple(ref.source_id for ref in verified_sources)
+    permitted = ", ".join("?" for _ in verified_ids)
+    other_evidence = connection.execute(
+        "SELECT 1 FROM memory_current_records WHERE json_extract(record_json, '$.task_id') = ?"
+        " AND NOT (source_kind = ? AND memory_id GLOB ?)"
+        + (f" AND memory_id NOT IN ({permitted})" if verified_ids else "")
+        + " LIMIT 1",
+        (task.task_id, RUNTIME_WRITEBACK_CANDIDATE_SOURCE_KIND, RUNTIME_WRITEBACK_CANDIDATE_ID_PREFIX + "*", *verified_ids),
+    ).fetchone()
     if (
         len(rows) != 1
         or task.active_solver_by_execution_node
@@ -148,11 +164,7 @@ def read_source_free_task_root(
         or partition.read_runtime_rows(
             connection, table="runtime_execution_edges", match=(("task_id", task.task_id),),
         )
-        or connection.execute(
-            "SELECT 1 FROM memory_current_records"
-            " WHERE json_extract(record_json, '$.task_id') = ? LIMIT 1",
-            (task.task_id,),
-        ).fetchone() is not None
+        or other_evidence is not None
     ):
         raise RuntimeCheckpointError("unsupported_configuration: full task archive closure is unavailable")
     root = ExecutionNode.model_validate_json(rows[0]["record_json"])
@@ -173,13 +185,14 @@ def stage_task_lifecycle_archive(
     generation_id: str,
     signer_key_id: str,
     sign: Callable[[str, str], str],
+    source_closure: SourceReferences = (),
 ) -> tuple[TaskLifecycleArchive, ExecutionNode]:
     """Archive verified task state before a managed lifecycle transition."""
     partition = repository.partition
     publication = partition.read_publication_row(connection)
     if publication is None or publication["generation_id"] != generation_id:
         raise RuntimeCheckpointError("integrity_error: task archive publication origin mismatch")
-    root = read_source_free_task_root(repository, connection, task)
+    root = read_bounded_task_root(repository, connection, task, verified_sources=source_closure)
     checkpoint = TaskLifecycleCheckpoint(
         installation_id=installation_id,
         partition_id=partition_id,
@@ -188,6 +201,7 @@ def stage_task_lifecycle_archive(
         runtime_revision=repository.read_runtime_revision_in(connection) - 1,
         task=task,
         root_node=root,
+        source_closure=source_closure,
     )
     checkpoint_digest = checkpoint.digest()
     checkpoint_id = f"checkpoint:{checkpoint_digest}"
@@ -202,6 +216,7 @@ def stage_task_lifecycle_archive(
             checkpoint_id=checkpoint_id,
             checkpoint_digest=checkpoint_digest,
             origin_revision=checkpoint.runtime_revision + 1,
+            source_closure=source_closure,
         ),
     )
     prior = partition.read_runtime_row(
