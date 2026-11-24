@@ -32,8 +32,10 @@ def test_catalog_projection_matches_incremental_digest_framing() -> None:
             (_key_bytes((row["identity"],), allow_bytes=True), _value_digest(row, allow_bytes=True))
             for row in connection.execute(sql)
         ]
+        rows = connection.execute(sql)
+        rows.row_factory = None
         assert list(_catalog_digests(
-            connection.execute(sql), ("identity",), ("identity", "record"), allow_bytes=True,
+            rows, ("identity",), ("identity", "record"), allow_bytes=True,
         )) == expected
 
         composite_sql = "SELECT record, identity FROM records ORDER BY identity COLLATE BINARY"
@@ -41,8 +43,10 @@ def test_catalog_projection_matches_incremental_digest_framing() -> None:
             (_key_bytes((row["identity"],), allow_bytes=True), _value_digest(row, allow_bytes=True))
             for row in connection.execute(composite_sql)
         ]
+        rows = connection.execute(composite_sql)
+        rows.row_factory = None
         assert list(_catalog_digests(
-            connection.execute(composite_sql), ("identity",), ("record", "identity"), allow_bytes=True,
+            rows, ("identity",), ("record", "identity"), allow_bytes=True,
         )) == reordered
 
 

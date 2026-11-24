@@ -88,7 +88,7 @@ def _key_bytes(values: tuple[_Value, ...], *, allow_bytes: bool = False) -> byte
     return b"".join(components)
 
 
-def _value_digest(row: sqlite3.Row, *, allow_bytes: bool = False) -> bytes:
+def _value_digest(row: Iterable[_Value], *, allow_bytes: bool = False) -> bytes:
     digest = hashlib.sha256(_ROW_DOMAIN)
     for value in row:
         if isinstance(value, str):
@@ -108,7 +108,7 @@ def _value_digest(row: sqlite3.Row, *, allow_bytes: bool = False) -> bytes:
 
 
 def _catalog_digests(
-    rows: Iterable[sqlite3.Row], key: tuple[str, ...], columns: tuple[str, ...], *, allow_bytes: bool,
+    rows: Iterable[tuple[_Value, ...]], key: tuple[str, ...], columns: tuple[str, ...], *, allow_bytes: bool,
 ) -> Iterator[tuple[bytes, bytes]]:
     key_length = len(key)
     key_prefix = key == columns[:key_length]
@@ -128,9 +128,15 @@ def _catalog_digests(
             else:
                 yield _key_bytes((identity,), allow_bytes=allow_bytes), _value_digest(row, allow_bytes=allow_bytes)
         return
+    if key_prefix:
+        for row in rows:
+            yield _key_bytes(row[:key_length], allow_bytes=allow_bytes), _value_digest(row, allow_bytes=allow_bytes)
+        return
+    key_positions = tuple(columns.index(column) for column in key)
     for row in rows:
-        coordinates = row[:key_length] if key_prefix else tuple(row[column] for column in key)
-        yield _key_bytes(coordinates, allow_bytes=allow_bytes), _value_digest(row, allow_bytes=allow_bytes)
+        yield _key_bytes(tuple(row[position] for position in key_positions), allow_bytes=allow_bytes), _value_digest(
+            row, allow_bytes=allow_bytes,
+        )
 
 
 def _validate_layout(connection: sqlite3.Connection, layouts: dict[str, _Layout]) -> None:
@@ -179,6 +185,7 @@ def rebuild_manifest(connection: sqlite3.Connection, catalog_names: frozenset[st
         if raw_catalog and catalog == "memory_current_records":
             scan = f" {RAW_CURRENT_BASE_SELECTOR}"
         rows = connection.execute(f"SELECT {', '.join(columns)} FROM main.{catalog}{scan} ORDER BY {order}")
+        rows.row_factory = None
         tree = MaterializationAccumulator.from_sorted_digests(
             _catalog_digests(rows, key, columns, allow_bytes=raw_catalog),
         )

@@ -11,6 +11,7 @@ _DOMAIN = b"memorii.materialization-accumulator.v1\x00"
 _EMPTY_DIGEST = sha256(_DOMAIN + b"empty").digest()
 _DIGEST_LENGTH = len(_EMPTY_DIGEST)
 _NODE_DOMAIN = _DOMAIN + b"node\x00"
+_PRIORITY_DOMAIN = _DOMAIN + b"priority\x00"
 
 
 def _frame(value: bytes) -> bytes:
@@ -25,7 +26,7 @@ def row_value_digest(value: bytes) -> bytes:
 
 
 def _priority(key: bytes) -> bytes:
-    return sha256(_DOMAIN + b"priority\x00" + key).digest()
+    return sha256(_PRIORITY_DOMAIN + key).digest()
 
 
 class _Node(NamedTuple):
@@ -49,10 +50,17 @@ def _count(node: _Node | None) -> int:
 def _node(
     key: bytes, value_digest: bytes, priority: bytes, left: _Node | None = None, right: _Node | None = None,
 ) -> _Node:
-    count = 1 + _count(left) + _count(right)
+    count = 1
+    left_digest = right_digest = _EMPTY_DIGEST
+    if left is not None:
+        count += left.subtree_size
+        left_digest = left.digest
+    if right is not None:
+        count += right.subtree_size
+        right_digest = right.digest
     digest = sha256(b"".join((
         _NODE_DOMAIN, len(key).to_bytes(8, "big"), key, value_digest,
-        _root_digest(left), _root_digest(right), count.to_bytes(8, "big"),
+        left_digest, right_digest, count.to_bytes(8, "big"),
     ))).digest()
     return _Node(key, value_digest, priority, left, right, count, digest)
 
