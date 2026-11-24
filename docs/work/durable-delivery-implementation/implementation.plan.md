@@ -44,4 +44,4 @@ Implementation branch `codex/durable-delivery-implementation` is published to or
 
 ## Next Action
 
-Run a larger reference-fixture diagnostic to profile semantic replay and cold acquisition before full platform qualification.
+Prototype eliminating duplicate canonical memory payload storage while preserving signed publication and replay, then measure acquisition and backup on the same diagnostic fixtures.
