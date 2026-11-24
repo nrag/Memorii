@@ -10,8 +10,9 @@ import pytest
 from memorii.core.persistence.runtime_repository import RuntimeStateError, publish_runtime_change
 from memorii.core.storage_administration.service import StorageAdministrationService
 from memorii.domain.solver_graph.edges import SolverEdge
+from memorii.stores.sqlite.partition import PARTITION_SCHEMA_VERSION, RAW_MEMORY_PAYLOAD_SCHEMA_VERSION
 from tests.support.reference_capacity import FIXTURE_START, SOURCE_BODY_BYTES, EventFillInput, TaskAllocation
-from tests.support.reference_capacity_fixture import _prepare, main
+from tests.support.reference_capacity_fixture import ReferenceFixtureError, _audit, _prepare, main
 
 _TASK = TaskAllocation(
     distribution="balanced", index=0, execution_nodes=3, solver_nodes=9, first_solver_node=0,
@@ -58,28 +59,38 @@ def test_solver_edge_owner_refuses_an_endpoint_outside_the_run(tmp_path: Path) -
         assert service.acquire_verified_snapshot() == before
 
 
+@pytest.mark.parametrize("raw_payloads", [False, True], ids=["default-format", "staged-raw-format"])
 def test_full_fixture_seals_boundary_and_replays_exact_single_event_tail(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, raw_payloads: bool,
 ) -> None:
     monkeypatch.setattr("tests.support.reference_capacity_fixture.EVENT_COUNT", 29)
     monkeypatch.setattr("tests.support.reference_capacity_fixture.CHECKPOINT_TAIL_COUNT", 2)
+    expected_mandatory = 26 if raw_payloads else 25
 
     def planned_fill(mandatory_count: int) -> list[EventFillInput]:
-        assert mandatory_count == 25
+        assert mandatory_count == expected_mandatory
         return [
             EventFillInput(
                 ordinal=ordinal, task_id=_TASK.task_id, timestamp=FIXTURE_START + timedelta(seconds=ordinal),
                 kind="status_update", checkpoint_tail=ordinal >= 27,
-            ) for ordinal in range(25, 29)
+            ) for ordinal in range(mandatory_count, 29)
         ]
 
-    audit = _prepare(tmp_path / "fixture", "balanced", (_TASK,), fill=planned_fill)
+    root = tmp_path / "fixture"
+    audit = _prepare(root, "balanced", (_TASK,), fill=planned_fill, raw_payloads=raw_payloads)
     assert audit.runtime_event_count == 29
     assert audit.runtime_event_batch_count == 8
-    assert audit.runtime_operation_counts["runtime_execution_nodes/execution/node/update"] == 4
+    assert audit.runtime_operation_counts["runtime_execution_nodes/execution/node/update"] == 29 - expected_mandatory
     assert audit.checkpoint_digest
     assert audit.checkpoint_tail_count == 2
     assert "runtime_checkpoints" not in audit.graph_row_counts
+    assert audit.source_receipt_count == 2
+    assert audit.partition_schema_version == (RAW_MEMORY_PAYLOAD_SCHEMA_VERSION if raw_payloads else PARTITION_SCHEMA_VERSION)
+    with StorageAdministrationService(root) as service, pytest.raises(ReferenceFixtureError, match="expected reference partition"):
+        _audit(
+            service, "balanced", (_TASK,), expected_events=29, expected_tail=2,
+            expected_schema=PARTITION_SCHEMA_VERSION if raw_payloads else RAW_MEMORY_PAYLOAD_SCHEMA_VERSION,
+        )
 
 
 def test_qualification_preflight_exposes_missing_owner_paths_without_writing(

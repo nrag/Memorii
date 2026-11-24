@@ -13,8 +13,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sqlite3
 import sys
+import tempfile
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import asdict, dataclass
@@ -30,6 +32,7 @@ from memorii.core.memory_evolution.admission import source_admission_source_dige
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.store import record_digest
 from memorii.core.persistence.contracts import BatchPosition, RuntimePublicationState, canonical_json_digest
+from memorii.core.persistence.managed_delivery import DeliveryRestoreHold
 from memorii.core.persistence.runtime_api import RuntimeOperationAttempt, operation_origin_namespace
 from memorii.core.persistence.runtime_contracts import (
     HypothesisContent,
@@ -43,6 +46,12 @@ from memorii.core.persistence.runtime_contracts import (
 )
 from memorii.core.persistence.runtime_journal import verify_runtime_history
 from memorii.core.persistence.runtime_repository import RuntimeStateRepository, publish_runtime_change
+from memorii.core.storage_administration.operator import (
+    ModeChangeRequest,
+    StorageAdministrationOperator,
+    mint_owner_capability,
+)
+from memorii.core.storage_administration.operator_backup import BackupRestoreOperator
 from memorii.core.storage_administration.service import StorageAdministrationService
 from memorii.domain.common import SolverEdgeMetadata, SolverNodeMetadata
 from memorii.domain.enums import (
@@ -59,7 +68,12 @@ from memorii.domain.enums import (
 from memorii.domain.execution_graph.edges import ExecutionEdge
 from memorii.domain.execution_graph.nodes import ExecutionNode
 from memorii.domain.solver_graph.edges import SolverEdge
-from memorii.stores.sqlite.partition import RuntimeMaterializedRow
+from memorii.stores.sqlite.partition import (
+    PARTITION_SCHEMA_VERSION,
+    RAW_MEMORY_PAYLOAD_SCHEMA_VERSION,
+    PartitionDataRepository,
+    RuntimeMaterializedRow,
+)
 
 from tests.support.reference_capacity import (
     CHECKPOINT_TAIL_COUNT,
@@ -81,6 +95,7 @@ from tests.support.reference_capacity_sources import (
 
 _GRAPH_CHUNK = 512
 _SOURCE_RUNTIME_CATALOGS = frozenset({"runtime_command_receipts", "runtime_operation_attempts"})
+_RESTORE_HOLD_CATALOG = "runtime_delivery_restore_holds"
 _QUALIFICATION_BLOCKERS = ("timed_reference_workload_not_measured",)
 _T = TypeVar("_T")
 _Mutation = Callable[[sqlite3.Connection, RuntimeStateRepository], None]
@@ -98,6 +113,7 @@ class ReferenceStorageAudit:
     loader_digest: str
     source_driver_digest: str
     partition_tuple_digest: str
+    partition_schema_version: int
     graph_digest: str
     sources_digest: str
     source_receipts_digest: str
@@ -389,19 +405,28 @@ def _audit(
     *,
     expected_events: int,
     expected_tail: int,
+    expected_schema: int = PARTITION_SCHEMA_VERSION,
 ) -> ReferenceStorageAudit:
     graph_digest = hashlib.sha256()
     counts: Counter[str] = Counter()
     partition = service.partition()
     with service.verified_operation_context() as (_state, finalized):
         with partition.transaction(write=False) as connection:
+            version = partition.read_schema_version(connection)
+            if version != expected_schema:
+                raise ReferenceFixtureError(f"expected reference partition v{expected_schema}, found v{version}")
             expected_refs, source_bytes, source_digest, receipt_digest = _audit_native_sources(
-                connection, finalized, allocations,
+                partition, connection, finalized, allocations,
             )
-            observed = sorted(
-                (row for row in partition.runtime_materialized_rows(connection) if row.catalog not in _SOURCE_RUNTIME_CATALOGS),
-                key=lambda row: (row.catalog, row.key),
-            )
+            observed = []
+            holds = []
+            for row in partition.runtime_materialized_rows(connection):
+                if row.catalog == _RESTORE_HOLD_CATALOG:
+                    holds.append(row)
+                elif row.catalog not in _SOURCE_RUNTIME_CATALOGS:
+                    observed.append(row)
+            _verify_fixture_cutover(holds, finalized, expected_schema)
+            observed.sort(key=lambda row: (row.catalog, row.key))
             _verify_graph(observed, allocations, expected_refs)
             for row in observed:
                 counts[row.catalog] += 1
@@ -421,13 +446,33 @@ def _audit(
             generator_digest=hashlib.sha256(Path(workload_manifest.__code__.co_filename).read_bytes()).hexdigest(),
             loader_digest=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             source_driver_digest=hashlib.sha256(Path(ReferenceSourceCapture.capture.__code__.co_filename).read_bytes()).hexdigest(),
-            partition_tuple_digest=finalized.payload_digest(), graph_digest=graph_digest.hexdigest(),
+            partition_tuple_digest=finalized.payload_digest(), partition_schema_version=version,
+            graph_digest=graph_digest.hexdigest(),
             sources_digest=source_digest, source_receipts_digest=receipt_digest, event_inventory_digest=event_digest,
             graph_row_counts=dict(counts), source_count=len(expected_refs), source_receipt_count=len(expected_refs),
             source_body_bytes=source_bytes,
             runtime_event_count=events, runtime_event_batch_count=batches, runtime_operation_counts=dict(operations),
             checkpoint_digest=checkpoint_digest, checkpoint_tail_count=expected_tail,
         )
+
+
+def _verify_fixture_cutover(
+    holds: Sequence[RuntimeMaterializedRow], finalized: RuntimePublicationState, expected_schema: int,
+) -> None:
+    raw_payloads = expected_schema == RAW_MEMORY_PAYLOAD_SCHEMA_VERSION
+    if len(holds) != int(raw_payloads):
+        raise ReferenceFixtureError("fixture must have exactly one restore hold after staging and none by default")
+    if raw_payloads:
+        row, = holds
+        hold = DeliveryRestoreHold.model_validate_json(row.record_json)
+        if (
+            row.key != (hold.hold_id,) or hold.hold_id != hold.preview_digest
+            or hold.installation_id != finalized.installation_id or hold.partition_id != finalized.repository_id
+            or hold.restored_generation_id != finalized.data_generation_id
+            or hold.source_generation_id == hold.restored_generation_id
+            or hold.source_publication_digest != hold.live_publication_digest
+        ):
+            raise ReferenceFixtureError("fixture restore hold does not bind the exact-current cutover")
 
 
 def _verify_checkpoint_tail(
@@ -466,7 +511,8 @@ def _verify_checkpoint_tail(
 
 
 def _audit_native_sources(
-    connection: sqlite3.Connection, finalized: RuntimePublicationState, allocations: Sequence[TaskAllocation],
+    partition: PartitionDataRepository, connection: sqlite3.Connection, finalized: RuntimePublicationState,
+    allocations: Sequence[TaskAllocation],
 ) -> tuple[dict[str, NodeEvidenceReference], int, str, str]:
     sources = {}
     for task in allocations:
@@ -480,7 +526,7 @@ def _audit_native_sources(
     source_bytes = 0
     source_digest = hashlib.sha256()
     for row in connection.execute(
-        "SELECT memory_id, record_json FROM memory_current_records WHERE domain = ? ORDER BY memory_id",
+        partition._current_memory_select(connection) + " WHERE domain = ? ORDER BY memory_id",
         (MemoryDomain.TRANSCRIPT.value,),
     ):
         record = CanonicalMemoryRecord.model_validate_json(row["record_json"])
@@ -552,16 +598,49 @@ def _audit_native_sources(
     return references, source_bytes, source_digest.hexdigest(), receipt_digest.hexdigest()
 
 
+def _stage_raw_payloads(service: StorageAdministrationService) -> None:
+    owner = mint_owner_capability(service, REFERENCE_PRINCIPAL)
+    operator = StorageAdministrationOperator(service)
+    reason = "reference capacity raw payload format"
+    operator.change_mode(ModeChangeRequest(
+        target_mode="read_only", expected_control_revision=operator.status().control_revision, reason=reason,
+    ), capability=owner)
+    backups = BackupRestoreOperator(operator)
+    with tempfile.TemporaryDirectory(prefix="reference-upgrade-", dir=service.installation_root.parent) as scratch:
+        archive, staging = Path(scratch) / "archive", Path(scratch) / "stage"
+        recovery_key = os.urandom(32)
+        backups.create_backup(capability=owner, archive_root=archive, reason=reason, recovery_key=recovery_key)
+        plan = backups.plan_restore(capability=owner, archive_root=archive, data_loss_acknowledged=False)
+        backups.apply_restore(capability=owner, plan=plan, staging_root=staging, recovery_key=recovery_key)
+        preview = backups.preview_staged_restore(capability=owner, plan=plan, staging_root=staging, raw_payloads=True)
+        intent = backups.upgrade_current_runtime(
+            capability=owner, plan=plan, staging_root=staging, preview_digest=preview.digest(), raw_payloads=True,
+        )
+        if intent.phase != "finalized":
+            raise ReferenceFixtureError("raw payload fixture cutover did not finalize")
+
+
 def _prepare(
     root: Path,
     distribution: Distribution,
     allocations: Sequence[TaskAllocation],
     *,
     fill: Callable[[int], Iterable[EventFillInput]] | None = None,
+    raw_payloads: bool = False,
 ) -> ReferenceStorageAudit:
     if root.exists():
         raise ReferenceFixtureError("fixture root already exists; supply a fresh path")
+    if raw_payloads:
+        with StorageAdministrationService(root) as service:
+            service.initialize()
+            _stage_raw_payloads(service)
     with StorageAdministrationService(root) as service:
+        if raw_payloads:
+            operator = StorageAdministrationOperator(service)
+            operator.change_mode(ModeChangeRequest(
+                target_mode="active", expected_control_revision=operator.status().control_revision,
+                reason="populate the selected reference capacity generation",
+            ), capability=mint_owner_capability(service, REFERENCE_PRINCIPAL))
         installation = service.initialize()
         _publish_changes(service, _execution_changes(allocations))
         capture = ReferenceSourceCapture(service, installation, tuple(task.task_id for task in allocations))
@@ -591,7 +670,10 @@ def _prepare(
     # The fresh process-compatible handle verifies signatures, replay, and
     # projections from bytes on disk rather than trusting our writer cache.
     with StorageAdministrationService(root) as service:
-        return _audit(service, distribution, allocations, expected_events=expected_events, expected_tail=expected_tail)
+        return _audit(
+            service, distribution, allocations, expected_events=expected_events, expected_tail=expected_tail,
+            expected_schema=RAW_MEMORY_PAYLOAD_SCHEMA_VERSION if raw_payloads else PARTITION_SCHEMA_VERSION,
+        )
 
 
 def _installed_wheel_digest(wheel: Path) -> str:
@@ -626,6 +708,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--distribution", required=True, choices=("balanced", "concentrated"))
     parser.add_argument("--candidate-wheel", type=Path)
     parser.add_argument("--require-qualified", action="store_true")
+    parser.add_argument("--raw-payloads", action="store_true", help="stage and verify the v8 fixture format")
     args = parser.parse_args(argv)
     if args.require_qualified:
         print(json.dumps({"status": "unavailable", "blockers": _QUALIFICATION_BLOCKERS}), file=sys.stderr)
@@ -637,6 +720,7 @@ def main(argv: list[str] | None = None) -> int:
     audit = _prepare(
         args.installation_root, distribution, task_allocations(distribution),
         fill=lambda count: event_fill_inputs(distribution, verified_mandatory_events=count),
+        raw_payloads=args.raw_payloads,
     )
     print(json.dumps({"status": "diagnostic_only", "candidate_wheel_digest": wheel_digest, **asdict(audit)}, sort_keys=True))
     return 0
