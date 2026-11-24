@@ -44,4 +44,4 @@ Implementation branch `codex/durable-delivery-implementation` is published to or
 
 ## Next Action
 
-Prototype eliminating duplicate canonical memory payload storage while preserving signed publication and replay, then measure acquisition and backup on the same diagnostic fixtures.
+Resume after the [SQLite payload design spike](../sqlite-memory-payload-design/design.plan.md) demonstrates a production-shaped raw verification path with a credible margin for the acquisition budget.

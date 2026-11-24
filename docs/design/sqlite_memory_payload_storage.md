@@ -1,0 +1,31 @@
+# SQLite Memory Payload Storage
+
+Status: feasibility draft. The live partition continues to use the approved storage contracts in [storage details](memorii_storage_details.md) and [durable execution and solver runtime](durable_execution_and_solver_runtime.md).
+
+The v7 partition repeats each newly admitted record in the immutable memory batch, the record version catalog, and the current record catalog. In the installed 128-source diagnostic those three catalogs accounted for 97.7% of the file. Acquisition spent 226 of 273 ms rebuilding the catalog manifest. On the 512-source diagnostic the physical file was 1.85 GiB for 128 MiB of source bodies. [Capacity evidence](../work/durable-delivery-implementation/validation.md)
+
+## Proposed Physical Boundary
+
+Store a canonical record's exact UTF-8 JSON bytes once per physical partition. Derive its payload coordinate with a domain-separated SHA-256 over the bytes, independent of the existing semantic record digest and batch checksum. Release continues to resolve a typed current or historical record identity before looking up its payload. Preserve scope, source kind, status, domain, logical forget behavior and provenance.
+
+Keep the memory batch revision, data revision, original checksum, and creation metadata. Store the ordered batch member coordinates. Keep the existing version identities and current first-insertion order in signed catalogs. A current row refers to its latest authenticated version or the exact payload coordinate verified against that version. Compare every reconstructed batch, version and current row against the signed source during upgrade. Require complete ordinals and reject missing, substituted, duplicate, or unreferenced payloads. Preserve raw stored bytes where they differ from the serialization emitted by the current model. A converter must either preserve exact historical framing or reject the staged upgrade before cutover while leaving the original generation operable.
+
+Evaluate raw storage first. An optional per-payload lossless codec needs a closed version, an authenticated raw byte length, a configured upper bound, and complete stream exhaustion. Reject truncation, trailing bytes, or decoded bytes that differ from the authenticated digest. Retain a raw codec for historical payloads beyond the compression limit. Authenticate decoded content before release. Record separate timings for decoding, content verification and SQL copy so a smaller archive cannot mask more expensive acquisition.
+
+## Publication, Replay And Restore
+
+The publication owner appends a payload when absent and updates batch membership, version refs, current refs, and the signed manifest in the same SQLite transaction. Exact retries reuse a payload only after checking its complete hash and byte length. The previous catalog root remains the precondition for incremental publication. Verification scans each unique payload once and verifies reference closure and ordered batch checksums without trusting unsigned SQL metadata. Earlier signed manifest algorithms remain readable for existing generations.
+
+All storage reads that use the old JSON columns need an explicit binding before implementation. The memory-plane store owns decoding and still verifies logical batch checksums, revision order, and context increments. Runtime source authority must still prove that the current source and admission records equal their exact first versions and were written at the same revision. Checkpoint archive validation needs an authenticated task selector for the existing evidence query. Forensic export must still enumerate ordered versions and verify their content. Exact-current restore preserves its original data format. A format upgrade verifies source bytes under their original signed root, constructs a separate staging generation, and uses the existing owner-reviewed cutover and current suppression policy. The existing generation remains available for rollback as allowed by storage administration.
+
+Current and historical references stay within a partition and its selected data generation. Logical forget continues to suppress identities and derivatives even when signed history retains their bytes. Selective payload deletion would change historical replay. Physical erasure continues through the approved whole-partition owner.
+
+## Feasibility And Acceptance
+
+Use the same verified 128- and 512-source fixtures for the v7 baseline and both experimental encodings. The experiment starts from a read-only source, writes an isolated scratch database, and compares all three reconstructed v7 catalog commitments against the original. The production service does not select the scratch database. Retain exact fixture and candidate identity and raw measurement boundaries.
+
+A production implementation requires verified new-format acquisition, read and write parity, legacy upgrade and backup/restore fault tests, and the complete installed Linux and macOS reference workload. Three-catalog size and copy diagnostics identify likely savings. They do not certify a full backup pause or production acquisition.
+
+The [Linux feasibility experiment](../work/sqlite-memory-payload-design/design.plan.md) reproduced all three signed v7 catalog commitments for both encodings. Raw deduplication cut catalog bytes by 66% on the 512-source fixture. Compression cut them by 81%, while hashing and decompressing each unique payload took substantially longer than reading and hashing the v7 catalogs. The probe checks only its experimental format, with 16 MiB per record and 64 MiB per batch. Those caps are not proposed constraints on the existing persisted format.
+
+Carry forward raw storage as the first candidate. Benchmark a production-shaped acquisition path that reads the raw payload table sequentially, verifies each payload once, and authenticates the complete typed reference and selector catalogs separately. Keep logical batch validation and replay on their normal entry points and time the first memory-plane read so acquisition savings cannot come from moving the work. Use compressed storage as a separate experiment if the raw path meets the acquisition budget and backup still requires it. The existing v7 baseline remains an alternative until a replacement passes both budgets.
