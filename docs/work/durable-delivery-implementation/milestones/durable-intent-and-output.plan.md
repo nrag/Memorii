@@ -1,7 +1,7 @@
 # Durable Intent And Output
 
 - Parent: [durable delivery implementation](../implementation.plan.md)
-- Status: proposed
+- Status: active
 - Requirements: DUR-01/02/03/05/06/07/12
 - Dependencies: Readiness preflight and test-matrix review
 - Closure identity: unset, record actual base, code head, dirty state and artifact/run digests before claim
@@ -34,4 +34,4 @@ Use the approved design and existing semantic owners. Keep unsupported roots vis
 
 ## Progress And Review
 
-Proposed. No product edits, tests or milestone approvals recorded.
+Base fd74fc49. The coordinator checked the signature, runtime receipt, command digest, sidecar, spool and catalog owner paths. Independent test reviewer approved the bounded matrix with fixture distinctions recorded in the [testing WorkPlan](../../durable-delivery-testing/testing.plan.md). One delegated writer owns embedded origin and dispatch. Subsequent ingress and sealed outputs remain in this packet. No milestone approval yet.
