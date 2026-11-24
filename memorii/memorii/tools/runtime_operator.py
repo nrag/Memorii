@@ -60,6 +60,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     preview_stage.add_argument("--plan-file", type=Path, required=True)
     preview_stage.add_argument("--staging-root", type=Path, required=True)
+    preview_stage.add_argument(
+        "--raw-payloads", action="store_true", help="Review an opt-in raw memory payload format upgrade",
+    )
     activate_current = backup_sub.add_parser(
         "restore-activate-current", help="Select a verified staged backup at the exact live watermark",
     )
@@ -77,6 +80,9 @@ def main(argv: list[str] | None = None) -> int:
     upgrade.add_argument("--plan-file", type=Path, required=True)
     upgrade.add_argument("--staging-root", type=Path, required=True)
     upgrade.add_argument("--preview-digest", required=True)
+    upgrade.add_argument(
+        "--raw-payloads", action="store_true", help="Apply a reviewed raw memory payload format upgrade",
+    )
     reconcile = commands.add_parser("reconcile-delivery", help="Review a held delivery from a restored generation")
     reconcile_sub = reconcile.add_subparsers(dest="reconcile_command", required=True)
     reject_plan = reconcile_sub.add_parser("plan-reject", help="Plan to permanently decline a held delivery")
@@ -242,28 +248,36 @@ def main(argv: list[str] | None = None) -> int:
                 if arguments.backup_command == "restore-preview-stage":
                     preview = backups.preview_staged_restore(
                         capability=owner, plan=plan, staging_root=arguments.staging_root,
+                        raw_payloads=arguments.raw_payloads,
                     )
                     print(json.dumps({**preview.model_dump(mode="json"), "preview_digest": preview.digest()}))
                     return 0
                 if arguments.backup_command in {"restore-activate-older", "upgrade-runtime"}:
                     from memorii.core.storage_administration.service import StorageAdministrationError
                     from memorii.stores.sqlite.control import ControlStateError
+                    from memorii.stores.sqlite.partition import RAW_MEMORY_PAYLOAD_SCHEMA_VERSION
 
                     try:
-                        change = (
-                            backups.activate_older_restore if arguments.backup_command == "restore-activate-older"
-                            else backups.upgrade_current_runtime
-                        )
-                        intent = change(
-                            capability=owner, plan=plan, staging_root=arguments.staging_root,
-                            preview_digest=arguments.preview_digest,
-                        )
+                        if arguments.backup_command == "upgrade-runtime":
+                            intent = backups.upgrade_current_runtime(
+                                capability=owner, plan=plan, staging_root=arguments.staging_root,
+                                preview_digest=arguments.preview_digest, raw_payloads=arguments.raw_payloads,
+                            )
+                        else:
+                            intent = backups.activate_older_restore(
+                                capability=owner, plan=plan, staging_root=arguments.staging_root,
+                                preview_digest=arguments.preview_digest,
+                            )
                     except (StorageAdministrationError, ControlStateError) as exc:
                         raise OperatorError(f"unavailable: generation change could not be published: {exc}") from exc
-                    print(json.dumps({
+                    result: dict[str, str | int | bool] = {
                         "status": "selected", "generation_id": intent.candidate_publication.data_generation_id,
                         "delivery_status": "needs_reconciliation", "reopen_required": True,
-                    }, sort_keys=True))
+                    }
+                    if arguments.backup_command == "upgrade-runtime" and arguments.raw_payloads:
+                        result["previous_generation_id"] = intent.old_publication.data_generation_id
+                        result["storage_schema_version"] = RAW_MEMORY_PAYLOAD_SCHEMA_VERSION
+                    print(json.dumps(result, sort_keys=True))
                     return 0
                 if arguments.backup_command == "restore-activate-current":
                     try:

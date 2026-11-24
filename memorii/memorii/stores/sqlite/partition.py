@@ -21,6 +21,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+from memorii.stores.sqlite.raw_memory_payloads import RAW_SCHEMA_VERSION as RAW_MEMORY_PAYLOAD_SCHEMA_VERSION
+
 if TYPE_CHECKING:
     # Imported lazily at runtime: the storage layer must not trigger the
     # eager memorii.core package initializer at import time (it pulls the
@@ -410,6 +412,11 @@ _MATERIALIZATION_CATALOGS_BY_VERSION = {
 _MATERIALIZATION_CATALOGS_BY_VERSION[_INCREMENTAL_MANIFEST_SCHEMA_VERSION] = (
     _MATERIALIZATION_CATALOGS_BY_VERSION[_RUNTIME_REPLAY_CHECKPOINT_SCHEMA_VERSION]
 )
+_MATERIALIZATION_CATALOGS_BY_VERSION[RAW_MEMORY_PAYLOAD_SCHEMA_VERSION] = (
+    *_MATERIALIZATION_CATALOGS_BY_VERSION[_INCREMENTAL_MANIFEST_SCHEMA_VERSION],
+    ("memory_batch_members", "revision", "payload_digest"),
+    ("memory_payloads", "payload_digest", "raw_size"),
+)
 _CATALOG_SEED_DOMAIN = b"memorii.materialization-catalog.v1\x00"
 VerificationCookie = tuple[int, int, int]
 
@@ -772,7 +779,7 @@ class PartitionDataRepository:
             raise sqlite3.DatabaseError("recovery upgrade requires the exact staged source publication")
         if version < _RUNTIME_HISTORY_SCHEMA_VERSION:
             raise sqlite3.DatabaseError("recovery upgrade requires an authenticated runtime event journal")
-        if version == PARTITION_SCHEMA_VERSION:
+        if version >= _INCREMENTAL_MANIFEST_SCHEMA_VERSION:
             return
         from memorii.stores.sqlite.materialization_sql import verify_legacy_memory_selectors
 
@@ -783,8 +790,20 @@ class PartitionDataRepository:
             self._install_runtime_recovery_catalogs(connection)
         connection.execute(
             "UPDATE partition_schema SET value = ? WHERE key = 'schema_version'",
-            (str(PARTITION_SCHEMA_VERSION),),
+            (str(_INCREMENTAL_MANIFEST_SCHEMA_VERSION),),
         )
+
+    def stage_raw_memory_payload_upgrade(self, connection: sqlite3.Connection) -> None:
+        """Convert the memory catalogs in an owner-verified staging transaction."""
+        from memorii.stores.sqlite.raw_memory_payloads import convert_v7
+
+        if not connection.in_transaction or self.read_schema_version(connection) != _INCREMENTAL_MANIFEST_SCHEMA_VERSION:
+            raise sqlite3.DatabaseError("raw payload upgrade requires a v7 staging transaction")
+        convert_v7(connection)
+
+    @staticmethod
+    def uses_raw_memory_payloads(connection: sqlite3.Connection) -> bool:
+        return PartitionDataRepository.read_schema_version(connection) == RAW_MEMORY_PAYLOAD_SCHEMA_VERSION
 
     @staticmethod
     def _install_source_release_catalog(connection: sqlite3.Connection) -> None:
@@ -1430,6 +1449,10 @@ class PartitionDataRepository:
         return list(self.iter_batch_rows(connection))
 
     def iter_batch_rows(self, connection: sqlite3.Connection) -> Iterator[sqlite3.Row]:
+        if self.uses_raw_memory_payloads(connection):
+            from memorii.stores.sqlite.raw_memory_payloads import iter_batch_rows
+
+            return iter_batch_rows(connection)
         return iter(connection.execute(
             "SELECT revision, data_revision, checksum, batch_json FROM memory_batches ORDER BY revision"
         ))
@@ -1464,10 +1487,17 @@ class PartitionDataRepository:
         where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
         limit_clause = "" if limit is None else f" LIMIT {int(limit) + int(offset)}"
         return connection.execute(
-            "SELECT memory_id, record_json FROM memory_current_records"
-            f"{where} ORDER BY insertion_order{limit_clause}",
+            self._current_memory_select(connection) + f"{where} ORDER BY insertion_order{limit_clause}",
             parameters,
         ).fetchall()[offset:]
+
+    def _current_memory_select(self, connection: sqlite3.Connection) -> str:
+        if self.uses_raw_memory_payloads(connection):
+            return (
+                "SELECT c.memory_id, CAST(p.body AS TEXT) AS record_json FROM memory_current_records c"
+                " JOIN memory_payloads p USING (payload_digest)"
+            )
+        return "SELECT memory_id, record_json FROM memory_current_records"
 
     def read_current_record_row(
         self,
@@ -1475,9 +1505,58 @@ class PartitionDataRepository:
         memory_id: str,
     ) -> sqlite3.Row | None:
         return connection.execute(
-            "SELECT memory_id, record_json FROM memory_current_records WHERE memory_id = ?",
+            self._current_memory_select(connection) + " WHERE memory_id = ?",
             (memory_id,),
         ).fetchone()
+
+    def read_memory_version_rows(self, connection: sqlite3.Connection) -> Iterator[sqlite3.Row]:
+        if self.uses_raw_memory_payloads(connection):
+            return iter(connection.execute(
+                "SELECT v.memory_id, v.batch_revision, CAST(p.body AS TEXT) AS record_json"
+                " FROM memory_record_versions v JOIN memory_payloads p USING (payload_digest)"
+                " ORDER BY v.memory_id, v.batch_revision"
+            ))
+        return iter(connection.execute(
+            "SELECT memory_id, batch_revision, record_json FROM memory_record_versions ORDER BY memory_id, batch_revision"
+        ))
+
+    def first_memory_pair_revision(
+        self, connection: sqlite3.Connection, source: tuple[str, str], admission: tuple[str, str],
+    ) -> sqlite3.Row | None:
+        column = "record_json"
+        source_id, source_json = source
+        admission_id, admission_json = admission
+        source_value: str | bytes = source_json
+        admission_value: str | bytes = admission_json
+        if self.uses_raw_memory_payloads(connection):
+            from memorii.stores.sqlite.raw_memory_payloads import payload_digest
+
+            column = "payload_digest"
+            source_value = payload_digest(source_json.encode("utf-8"))
+            admission_value = payload_digest(admission_json.encode("utf-8"))
+        return connection.execute(
+            "SELECT original.batch_revision FROM memory_record_versions AS original"
+            " JOIN memory_record_versions AS admission ON admission.batch_revision = original.batch_revision"
+            f" WHERE original.memory_id = ? AND original.{column} = ?"
+            f" AND admission.memory_id = ? AND admission.{column} = ?"
+            " AND original.batch_revision = (SELECT MIN(first.batch_revision) FROM memory_record_versions AS first"
+            " WHERE first.memory_id = original.memory_id)"
+            " AND admission.batch_revision = (SELECT MIN(first.batch_revision) FROM memory_record_versions AS first"
+            " WHERE first.memory_id = admission.memory_id)",
+            (source_id, source_value, admission_id, admission_value),
+        ).fetchone()
+
+    def has_other_task_evidence(
+        self, connection: sqlite3.Connection, *, task_id: str,
+        allowed_kind: str, allowed_pattern: str, allowed_ids: Sequence[str],
+    ) -> bool:
+        selector = "task_id" if self.uses_raw_memory_payloads(connection) else "json_extract(record_json, '$.task_id')"
+        excluded = f" AND memory_id NOT IN ({_placeholders(allowed_ids)})" if allowed_ids else ""
+        return connection.execute(
+            f"SELECT 1 FROM memory_current_records WHERE {selector} = ?"
+            f" AND NOT (source_kind = ? AND memory_id GLOB ?){excluded} LIMIT 1",
+            (task_id, allowed_kind, allowed_pattern, *allowed_ids),
+        ).fetchone() is not None
 
     def append_memory_batch(
         self,
@@ -1496,6 +1575,14 @@ class PartitionDataRepository:
         first-insertion order; new identities take the next order value.
         """
         created_utc = datetime.now(UTC).isoformat()
+        if self.uses_raw_memory_payloads(connection):
+            from memorii.stores.sqlite.raw_memory_payloads import append_batch
+
+            append_batch(
+                connection, revision=revision, data_revision=data_revision, checksum=checksum,
+                batch_json=batch_json, records_json=records_json, created_utc=created_utc,
+            )
+            return
         connection.execute(
             "INSERT INTO memory_batches (revision, data_revision, checksum, batch_json, created_utc)"
             " VALUES (?, ?, ?, ?, ?)",

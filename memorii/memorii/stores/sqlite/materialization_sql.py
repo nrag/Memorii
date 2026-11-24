@@ -10,9 +10,16 @@ from dataclasses import dataclass
 
 from memorii.core.persistence.contracts import MaterializationCatalogEntry, RuntimeMaterializationManifest
 from memorii.stores.sqlite.materialization_accumulator import MaterializationAccumulator
+from memorii.stores.sqlite.raw_memory_payloads import (
+    RAW_CURRENT_BASE_SELECTOR,
+    RAW_MEMORY_LAYOUTS,
+    validate_raw_schema,
+    verify_payload_at_digest,
+    verify_raw_payloads,
+)
 
 _Layout = tuple[tuple[str, ...], tuple[str, ...]]
-_Value = str | int | None
+_Value = str | bytes | int | None
 
 # Format 7 commits every stored column of each authoritative catalog, including
 # persisted filtering coordinates omitted by the historical ordered fold.
@@ -54,28 +61,42 @@ _LAYOUTS: dict[str, _Layout] = {
 }
 
 _CAPTURE_TABLE = "manifest_changed_keys"
+_RAW_LAYOUTS: dict[str, _Layout] = dict(sorted((_LAYOUTS | RAW_MEMORY_LAYOUTS).items()))
 
 
-def _key_bytes(values: tuple[_Value, ...]) -> bytes:
+def _layouts_for_catalogs(catalog_names: frozenset[str]) -> dict[str, _Layout]:
+    if catalog_names == _LAYOUTS.keys():
+        return _LAYOUTS
+    if catalog_names == _RAW_LAYOUTS.keys():
+        return _RAW_LAYOUTS
+    raise sqlite3.DatabaseError("manifest accumulator does not cover the declared catalogs")
+
+
+def _key_bytes(values: tuple[_Value, ...], *, allow_bytes: bool = False) -> bytes:
     components: list[bytes] = []
     for value in values:
         if isinstance(value, str):
             # Preserve SQLite BINARY order, including embedded NUL bytes.
             components.append(b"s" + value.encode("utf-8").replace(b"\x00", b"\x00\xff") + b"\x00\x00")
+        elif allow_bytes and isinstance(value, bytes):
+            components.append(b"b" + value.replace(b"\x00", b"\x00\xff") + b"\x00\x00")
         elif isinstance(value, int):
             components.append(b"i" + (value + 2**63).to_bytes(8, "big"))
         else:
-            raise sqlite3.DatabaseError("materialization catalog key must be text or integer")
+            raise sqlite3.DatabaseError("unsupported storage type in materialization catalog key")
     return b"".join(components)
 
 
-def _value_digest(row: sqlite3.Row) -> bytes:
+def _value_digest(row: sqlite3.Row, *, allow_bytes: bool = False) -> bytes:
     digest = hashlib.sha256(b"memorii.materialization-row.v2\x00")
     for value in row:
         if isinstance(value, str):
             encoded = value.encode("utf-8")
             digest.update(b"s" + len(encoded).to_bytes(8, "big"))
             digest.update(encoded)
+        elif allow_bytes and isinstance(value, bytes):
+            digest.update(b"b" + len(value).to_bytes(8, "big"))
+            digest.update(value)
         elif isinstance(value, int):
             digest.update(b"i" + value.to_bytes(8, "big", signed=True))
         elif value is None:
@@ -85,10 +106,20 @@ def _value_digest(row: sqlite3.Row) -> bytes:
     return digest.digest()
 
 
-def _validate_layout(connection: sqlite3.Connection) -> None:
+def _validate_layout(connection: sqlite3.Connection, layouts: dict[str, _Layout]) -> None:
     if connection.execute("SELECT 1 FROM main.sqlite_schema WHERE type = 'trigger'").fetchone() is not None:
         raise sqlite3.DatabaseError("persistent triggers are outside the partition schema")
-    for catalog, (key, columns) in _LAYOUTS.items():
+    if layouts is _RAW_LAYOUTS:
+        validate_raw_schema(connection)
+    else:
+        names = tuple(RAW_MEMORY_LAYOUTS.keys() - _LAYOUTS.keys())
+        if connection.execute(
+            "SELECT 1 FROM main.sqlite_schema WHERE name IN (?, ?)", names,
+        ).fetchone() is not None:
+            raise sqlite3.DatabaseError("raw memory payload catalogs are outside the declared format")
+    for catalog, (key, columns) in layouts.items():
+        if layouts is _RAW_LAYOUTS and catalog in RAW_MEMORY_LAYOUTS:
+            continue
         info = tuple(connection.execute(f"PRAGMA main.table_xinfo({catalog})"))
         if (
             tuple(row["name"] for row in info) != columns
@@ -109,15 +140,24 @@ class MaterializationForest:
 
 
 def rebuild_manifest(connection: sqlite3.Connection, catalog_names: frozenset[str]) -> MaterializationForest:
-    if catalog_names != _LAYOUTS.keys():
-        raise sqlite3.DatabaseError("manifest accumulator does not cover the declared catalogs")
-    _validate_layout(connection)
+    layouts = _layouts_for_catalogs(catalog_names)
+    _validate_layout(connection, layouts)
+    if layouts is _RAW_LAYOUTS:
+        verify_raw_payloads(connection)
     trees = []
-    for catalog, (key, columns) in _LAYOUTS.items():
+    for catalog, (key, columns) in layouts.items():
         order = ", ".join(f"{column} COLLATE BINARY" for column in key)
-        rows = connection.execute(f"SELECT {', '.join(columns)} FROM main.{catalog} ORDER BY {order}")
+        raw_catalog = layouts is _RAW_LAYOUTS and catalog in RAW_MEMORY_LAYOUTS
+        scan = " NOT INDEXED" if raw_catalog else ""
+        if raw_catalog and catalog == "memory_current_records":
+            scan = f" {RAW_CURRENT_BASE_SELECTOR}"
+        rows = connection.execute(f"SELECT {', '.join(columns)} FROM main.{catalog}{scan} ORDER BY {order}")
         tree = MaterializationAccumulator.from_sorted_digests(
-            (_key_bytes(tuple(row[column] for column in key)), _value_digest(row)) for row in rows
+            (
+                _key_bytes(tuple(row[column] for column in key), allow_bytes=raw_catalog),
+                _value_digest(row, allow_bytes=raw_catalog),
+            )
+            for row in rows
         )
         trees.append((catalog, tree))
     return MaterializationForest(tuple(trees), RuntimeMaterializationManifest(
@@ -135,6 +175,7 @@ def capture_manifest_changes(
     connection: sqlite3.Connection, base: MaterializationForest,
 ) -> Iterator[MaterializationCapture]:
     """Track only affected keys, transactionally, including rolled-back statements."""
+    layouts = _layouts_for_catalogs(frozenset(name for name, _ in base.trees))
     schema_version = connection.execute("PRAGMA main.schema_version").fetchone()[0]
     recursive_triggers = connection.execute("PRAGMA recursive_triggers").fetchone()[0]
     connection.execute("PRAGMA recursive_triggers = ON")
@@ -145,7 +186,7 @@ def capture_manifest_changes(
     )
     capture = MaterializationCapture()
     try:
-        for catalog, (key, _) in _LAYOUTS.items():
+        for catalog, (key, _) in layouts.items():
             for operation, sources in (("INSERT", ("NEW",)), ("DELETE", ("OLD",)), ("UPDATE", ("OLD", "NEW"))):
                 name = f"memorii_manifest_{catalog}_{operation.lower()}"
                 statements = []
@@ -161,7 +202,7 @@ def capture_manifest_changes(
         yield capture
         if connection.execute("PRAGMA main.schema_version").fetchone()[0] != schema_version:
             raise sqlite3.DatabaseError("partition schema changed during materialization capture")
-        capture.result = _apply_changes(connection, base)
+        capture.result = _apply_changes(connection, base, layouts)
     finally:
         for name in trigger_names:
             connection.execute(f"DROP TRIGGER temp.{name}")
@@ -169,20 +210,28 @@ def capture_manifest_changes(
         connection.execute(f"PRAGMA recursive_triggers = {int(recursive_triggers)}")
 
 
-def _apply_changes(connection: sqlite3.Connection, base: MaterializationForest) -> MaterializationForest:
+def _apply_changes(
+    connection: sqlite3.Connection, base: MaterializationForest, layouts: dict[str, _Layout],
+) -> MaterializationForest:
     trees = dict(base.trees)
     entries = {entry.catalog: entry for entry in base.manifest.catalogs}
     for name, first_key, second_key in connection.execute(f"SELECT * FROM temp.{_CAPTURE_TABLE}"):
-        key, columns = _LAYOUTS[name]
+        key, columns = layouts[name]
+        raw_catalog = layouts is _RAW_LAYOUTS and name in RAW_MEMORY_LAYOUTS
         coordinates = (first_key, second_key)[:len(key)]
-        encoded = _key_bytes(coordinates)
+        encoded = _key_bytes(coordinates, allow_bytes=raw_catalog)
         selector = " AND ".join(f"{column} COLLATE BINARY = ?" for column in key)
         row = connection.execute(
             f"SELECT {', '.join(columns)} FROM main.{name} WHERE {selector}", coordinates,
         ).fetchone()
         tree = trees[name]
         if row is not None:
-            tree = tree.upsert_digest(encoded, _value_digest(row))
+            if name == "memory_payloads":
+                digest = coordinates[0]
+                if not isinstance(digest, bytes):
+                    raise sqlite3.DatabaseError("invalid raw memory payload coordinate")
+                verify_payload_at_digest(connection, digest)
+            tree = tree.upsert_digest(encoded, _value_digest(row, allow_bytes=raw_catalog))
         elif tree.lookup_digest(encoded) is not None:
             tree = tree.delete(encoded)
         trees[name] = tree

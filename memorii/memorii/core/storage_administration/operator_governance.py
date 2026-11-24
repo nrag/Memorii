@@ -540,15 +540,8 @@ class GovernanceOperator:
         entries: list[RetainedLineageEntry] = []
         repository = service.partition()
         with repository.transaction(write=False) as connection:
-            version_rows = connection.execute(
-                "SELECT memory_id, batch_revision, record_json"
-                " FROM memory_record_versions"
-                " ORDER BY memory_id, batch_revision"
-            ).fetchall()
-            current_ids = {
-                row["memory_id"]
-                for row in repository.read_current_record_rows(connection)
-            }
+            version_rows = list(repository.read_memory_version_rows(connection))
+            current_ids = {row[0] for row in connection.execute("SELECT memory_id FROM memory_current_records")}
         for row in version_rows:
             try:
                 record = _json.loads(row["record_json"])

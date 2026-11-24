@@ -12,6 +12,7 @@ and publishing an inert, signed staging directory.
 from __future__ import annotations
 
 import base64
+import errno
 import hashlib
 import json
 import os
@@ -27,7 +28,15 @@ from pathlib import Path
 from typing import Annotated, Literal, Self
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    ValidationError,
+    model_serializer,
+    model_validator,
+)
 
 from memorii.core.persistence.contracts import (
     BatchPosition,
@@ -58,7 +67,12 @@ from memorii.core.storage_administration.operator import (
 )
 from memorii.core.storage_administration.service import StorageAdministrationError, StorageAdministrationService
 from memorii.stores.sqlite.control import ControlDatabase, ControlJournalChainError
-from memorii.stores.sqlite.partition import PARTITION_SCHEMA_VERSION, PartitionDataRepository
+from memorii.stores.sqlite.partition import (
+    PARTITION_SCHEMA_VERSION,
+    RAW_MEMORY_PAYLOAD_SCHEMA_VERSION,
+    PartitionDataRepository,
+)
+from memorii.stores.sqlite.raw_memory_payloads import RawPayloadFramingError, validate_upgrade_framing
 
 _BACKUP_MARKER = "backup-complete.json"
 _RECOVERY_BUNDLE = "control-recovery-bundle.json"
@@ -174,6 +188,18 @@ class RestoreInventoryDelta(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class RawPayloadUpgradePreview(BaseModel):
+    """Reviewed physical format and workspace inputs for an opt-in upgrade."""
+
+    source_schema_version: int = Field(ge=4, le=PARTITION_SCHEMA_VERSION)
+    target_schema_version: Literal[8] = RAW_MEMORY_PAYLOAD_SCHEMA_VERSION
+    source_partition_bytes: int = Field(gt=0)
+    estimated_workspace_bytes: int = Field(gt=0)
+    available_workspace_bytes: int = Field(ge=0)
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
 class RestoreStagePreview(BaseModel):
     """Evidence about verified catalog differences for the owner's review."""
 
@@ -185,11 +211,22 @@ class RestoreStagePreview(BaseModel):
     target_receipts: RestoreInventoryDelta
     outbox_deliveries: RestoreInventoryDelta
     writeback_decisions: RestoreInventoryDelta
+    raw_payload_upgrade: RawPayloadUpgradePreview | None = None
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    @model_serializer(mode="wrap")
+    def serialize_review(self, serialize: SerializerFunctionWrapHandler) -> dict[str, object]:
+        payload = serialize(self)
+        if self.raw_payload_upgrade is None:
+            payload.pop("raw_payload_upgrade", None)
+        return payload
+
     def digest(self) -> str:
-        return _canonical_digest(self.model_dump(mode="json"))
+        # Free space is a point-in-time diagnostic, not a reviewed input.
+        return _canonical_digest(
+            self.model_dump(mode="json", exclude={"raw_payload_upgrade": {"available_workspace_bytes"}})
+        )
 
 
 def _restore_inventory_delta(
@@ -702,11 +739,12 @@ class BackupRestoreOperator:
         return attestation
 
     def preview_staged_restore(
-        self, *, capability: OwnerCapability, plan: RestorePlan, staging_root: Path,
+        self, *, capability: OwnerCapability, plan: RestorePlan, staging_root: Path, raw_payloads: bool = False,
     ) -> RestoreStagePreview:
         """Compare attested staging and current catalogs without changing either."""
         service = self._operator._administration
         attestation = self.verify_staged_restore(capability=capability, plan=plan, staging_root=staging_root)
+        raw_upgrade = None
         try:
             with tempfile.TemporaryDirectory(prefix="memorii-restore-preview-") as scratch:
                 snapshot = Path(scratch) / "partition.sqlite3"
@@ -714,6 +752,25 @@ class BackupRestoreOperator:
                     staging_root / "partition.sqlite3", snapshot, attestation.partition_snapshot_digest,
                 )
                 uri = snapshot.as_uri() + "?mode=ro&immutable=1"
+                if raw_payloads:
+                    if attestation.source_publication.payload_digest() != plan.expected_publication_digest:
+                        raise OperatorError("conflict: raw payload upgrade requires an exact-current staged backup")
+                    with closing(sqlite3.connect(uri, uri=True)) as staged:
+                        staged.row_factory = sqlite3.Row
+                        version = PartitionDataRepository.read_schema_version(staged)
+                        if not 4 <= version <= PARTITION_SCHEMA_VERSION:
+                            raise OperatorError(
+                                "unsupported_configuration: raw payload upgrade requires storage format 4 through 7"
+                            )
+                        validate_upgrade_framing(staged)
+                    source_size = snapshot.stat().st_size
+                    # Working copy plus transient conversion and compaction pages.
+                    raw_upgrade = RawPayloadUpgradePreview(
+                        source_schema_version=version,
+                        source_partition_bytes=source_size,
+                        estimated_workspace_bytes=3 * source_size,
+                        available_workspace_bytes=shutil.disk_usage(service.installation_root / "partition").free,
+                    )
                 with service.verified_operation_context() as (state, finalized):
                     require_owner_capability(service, capability)
                     self._require_restore_watermark(service, plan, state, finalized)
@@ -721,6 +778,8 @@ class BackupRestoreOperator:
                     deltas = self._preview_inventory(service, uri)
         except StorageAdministrationError as exc:
             raise OperatorError(f"unavailable: live restore watermark could not be verified: {exc}") from exc
+        except RawPayloadFramingError as exc:
+            raise OperatorError(f"unsupported_configuration: {exc}") from exc
         except (OSError, sqlite3.DatabaseError) as exc:
             raise OperatorError("integrity_error: restore preview inventory could not be read") from exc
         return RestoreStagePreview(
@@ -732,6 +791,7 @@ class BackupRestoreOperator:
             target_receipts=deltas["runtime_target_receipts"],
             outbox_deliveries=deltas["runtime_outbox_deliveries"],
             writeback_decisions=deltas["writeback_decisions"],
+            raw_payload_upgrade=raw_upgrade,
         )
 
     @staticmethod
@@ -824,11 +884,12 @@ class BackupRestoreOperator:
         plan: RestorePlan,
         staging_root: Path,
         preview_digest: str,
+        raw_payloads: bool = False,
     ) -> InstallationGenerationChangeIntent:
         """Upgrade an exact-current signed runtime copy under a reviewed generation cutover."""
         return self._activate_staged_generation(
             capability=capability, plan=plan, staging_root=staging_root, preview_digest=preview_digest,
-            operation="migrate",
+            operation="migrate", raw_payloads=raw_payloads,
         )
 
     def _activate_staged_generation(
@@ -839,6 +900,7 @@ class BackupRestoreOperator:
         staging_root: Path,
         preview_digest: str,
         operation: Literal["restore", "migrate"],
+        raw_payloads: bool = False,
     ) -> InstallationGenerationChangeIntent:
         service = self._operator._administration
         require_owner_capability(service, capability)
@@ -853,8 +915,17 @@ class BackupRestoreOperator:
                 and prior.expected_control_revision == plan.expected_control_revision
                 and prior.candidate_publication.data_generation_id == finalized.data_generation_id
             ):
+                if operation == "migrate":
+                    with service.partition().transaction(write=False) as connection:
+                        current_raw = (
+                            service.partition().read_schema_version(connection) == RAW_MEMORY_PAYLOAD_SCHEMA_VERSION
+                        )
+                    if raw_payloads != current_raw:
+                        raise OperatorError("conflict: generation change requires the exact reviewed storage format")
                 return prior
-        preview = self.preview_staged_restore(capability=capability, plan=plan, staging_root=staging_root)
+        preview = self.preview_staged_restore(
+            capability=capability, plan=plan, staging_root=staging_root, raw_payloads=raw_payloads,
+        )
         is_current = preview.live_publication_digest == preview.staged_publication_digest
         if preview.digest() != preview_digest or is_current != (operation == "migrate"):
             raise OperatorError("conflict: generation change requires the exact reviewed preview for this operation")
@@ -867,6 +938,13 @@ class BackupRestoreOperator:
             raise OperatorError("integrity_error: generation storage must not use symlinks")
         generations.mkdir(mode=0o700, exist_ok=True)
         try:
+            if preview.raw_payload_upgrade is not None:
+                size = preview.raw_payload_upgrade.source_partition_bytes
+                available = shutil.disk_usage(generations).free
+                if available < size:
+                    raise OperatorError(
+                        f"resource_exhausted: staged partition copy requires {size} bytes, available {available}"
+                    )
             with tempfile.TemporaryDirectory(prefix=".older-restore-", dir=generations) as scratch:
                 working = Path(scratch) / "partition.sqlite3"
                 _copy_attested_partition(staging_root / "partition.sqlite3", working, attestation.partition_snapshot_digest)
@@ -876,7 +954,7 @@ class BackupRestoreOperator:
                     self._require_staging_suppression(service, attestation)
                     target = self._prepare_restored_generation(
                         working, source=attestation.source_publication, live=finalized, preview_digest=preview_digest,
-                        require_upgrade=operation == "migrate",
+                        require_upgrade=operation == "migrate", raw_payloads=raw_payloads,
                     )
                     old_selector = read_partition_generation_selector(service.installation_root / "control")
                     intent = InstallationGenerationChangeIntent(
@@ -887,7 +965,16 @@ class BackupRestoreOperator:
                         data_loss_acknowledged=plan.data_loss_acknowledged,
                     )
                     return self._select_replacement(generations, working.parent, intent)
-        except (OSError, ValidationError, sqlite3.DatabaseError, RuntimeJournalError) as exc:
+        except RawPayloadFramingError as exc:
+            raise OperatorError(f"unsupported_configuration: {exc}") from exc
+        except (OSError, sqlite3.DatabaseError) as exc:
+            if raw_payloads and (
+                (isinstance(exc, OSError) and exc.errno == errno.ENOSPC)
+                or getattr(exc, "sqlite_errorcode", None) == sqlite3.SQLITE_FULL
+            ):
+                raise OperatorError("resource_exhausted: raw payload upgrade ran out of staging space") from exc
+            raise OperatorError("integrity_error: older restore candidate could not be prepared or published") from exc
+        except (ValidationError, RuntimeJournalError) as exc:
             raise OperatorError("integrity_error: older restore candidate could not be prepared or published") from exc
 
     def _prepare_restored_generation(
@@ -898,6 +985,7 @@ class BackupRestoreOperator:
         live: RuntimePublicationState,
         preview_digest: str,
         require_upgrade: bool,
+        raw_payloads: bool,
     ) -> RuntimePublicationState:
         service = self._operator._administration
         generation_id = uuid.uuid4().hex
@@ -917,8 +1005,11 @@ class BackupRestoreOperator:
             PartitionDataRepository(working, require_existing=True) as staged,
             staged.transaction(write=True) as connection,
         ):
-            upgrade_needed = staged.read_schema_version(connection) != PARTITION_SCHEMA_VERSION
+            upgrade_needed = staged.read_schema_version(connection) < PARTITION_SCHEMA_VERSION
             staged.stage_runtime_recovery_upgrade(connection, source_digest=source.payload_digest())
+            if raw_payloads:
+                staged.stage_raw_memory_payload_upgrade(connection)
+                upgrade_needed = True
             previous = source.model_copy(update={"data_generation_id": generation_id})
             revision = staged.bump_runtime_revision(connection)
             with staged.capture_runtime_rows(connection) as changes:
@@ -955,6 +1046,15 @@ class BackupRestoreOperator:
             )
             if not service._matches_materialization(connection, publication, partition=staged):
                 raise OperatorError("integrity_error: restored generation does not replay to its signed tuple")
+        if raw_payloads:
+            with closing(sqlite3.connect(working)) as connection:
+                connection.execute("VACUUM")
+            with (
+                PartitionDataRepository(working, require_existing=True) as compacted,
+                compacted.transaction(write=False) as connection,
+            ):
+                if not service._matches_materialization(connection, publication, partition=compacted):
+                    raise OperatorError("integrity_error: compacted generation does not replay to its signed tuple")
         _snapshot_digest(working)
         with working.open("rb") as database:
             os.fsync(database.fileno())

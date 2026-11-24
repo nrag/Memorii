@@ -130,17 +130,7 @@ def resolve_runtime_source(
     index_bytes = str(index_row["record_json"])
     # The immutable source and admission index are an atomic provider write.
     # Read their original revision by primary key without exposing source text.
-    version = connection.execute(
-        "SELECT original.batch_revision FROM memory_record_versions AS original"
-        " JOIN memory_record_versions AS admission ON admission.batch_revision = original.batch_revision"
-        " WHERE original.memory_id = ? AND original.record_json = ?"
-        " AND admission.memory_id = ? AND admission.record_json = ?"
-        " AND original.batch_revision = (SELECT MIN(first.batch_revision) FROM memory_record_versions AS first"
-        " WHERE first.memory_id = original.memory_id)"
-        " AND admission.batch_revision = (SELECT MIN(first.batch_revision) FROM memory_record_versions AS first"
-        " WHERE first.memory_id = admission.memory_id)",
-        (source_id, source_bytes, index_id, index_bytes),
-    ).fetchone()
+    version = partition.first_memory_pair_revision(connection, (source_id, source_bytes), (index_id, index_bytes))
     if version is None or not 0 < int(version["batch_revision"]) <= finalized.vector.memory_write_revision:
         raise _denied()
 

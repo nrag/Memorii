@@ -148,15 +148,11 @@ def read_bounded_task_root(
     rows = partition.read_runtime_rows(
         connection, table="runtime_execution_nodes", match=(("task_id", task.task_id),),
     )
-    verified_ids = tuple(ref.source_id for ref in verified_sources)
-    permitted = ", ".join("?" for _ in verified_ids)
-    other_evidence = connection.execute(
-        "SELECT 1 FROM memory_current_records WHERE json_extract(record_json, '$.task_id') = ?"
-        " AND NOT (source_kind = ? AND memory_id GLOB ?)"
-        + (f" AND memory_id NOT IN ({permitted})" if verified_ids else "")
-        + " LIMIT 1",
-        (task.task_id, RUNTIME_WRITEBACK_CANDIDATE_SOURCE_KIND, RUNTIME_WRITEBACK_CANDIDATE_ID_PREFIX + "*", *verified_ids),
-    ).fetchone()
+    other_evidence = partition.has_other_task_evidence(
+        connection, task_id=task.task_id, allowed_kind=RUNTIME_WRITEBACK_CANDIDATE_SOURCE_KIND,
+        allowed_pattern=RUNTIME_WRITEBACK_CANDIDATE_ID_PREFIX + "*",
+        allowed_ids=tuple(ref.source_id for ref in verified_sources),
+    )
     if (
         len(rows) != 1
         or task.active_solver_by_execution_node
@@ -165,7 +161,7 @@ def read_bounded_task_root(
         or partition.read_runtime_rows(
             connection, table="runtime_execution_edges", match=(("task_id", task.task_id),),
         )
-        or other_evidence is not None
+        or other_evidence
     ):
         raise RuntimeCheckpointError("unsupported_configuration: full task archive closure is unavailable")
     root = ExecutionNode.model_validate_json(rows[0]["record_json"])
