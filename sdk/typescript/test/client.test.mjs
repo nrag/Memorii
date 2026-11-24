@@ -211,6 +211,51 @@ test("readConsolidation sends the origin and paging selectors to the authenticat
   }
 });
 
+test("writeback decision submits the original prepared proof with the exact selectors", async () => {
+  const request = {
+    host_binding: { installation_id: "installation", client_namespace: "namespace", task_id: "task:one" },
+    task_id: "task:one", result_id: "a".repeat(64), output_id: "b".repeat(64),
+    expected_offer_version: 1, expected_payload_digest: "c".repeat(64), operation_id: "op:writeback",
+    decision: "accept",
+  };
+  const proof = {
+    coordinate: {
+      installation_id: "installation", repository_id: "repository", generation_id: "generation",
+      principal: "user\u2603", client_namespace: "namespace", operation_id: request.operation_id,
+      request_digest: "d".repeat(64),
+    },
+    signature: "e".repeat(128),
+  };
+  const receipt = {
+    decision_id: "f".repeat(64), outcome: "accepted", offer_version: 2,
+    delivery_id: "1".repeat(64), delivery_status: "pending",
+  };
+  const seen = [];
+  const server = createServer(async (incoming, response) => {
+    const chunks = [];
+    for await (const chunk of incoming) chunks.push(chunk);
+    seen.push({
+      path: incoming.url, body: JSON.parse(Buffer.concat(chunks)),
+      header: incoming.headers["memorii-operation-origin"],
+    });
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify(incoming.url === "/v1/operations/prepare" ? proof : receipt));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const client = new RuntimeStateClient({ baseUrl: `http://127.0.0.1:${server.address().port}`, credential: "right" });
+    const prepared = await client.prepareOperation(request);
+    assert.deepEqual(await client.decideWriteback(request, prepared), receipt);
+    assert.equal(seen[0].path, "/v1/operations/prepare");
+    assert.deepEqual(seen[0].body, request);
+    assert.equal(seen[1].path, "/v1/consolidation/decision");
+    assert.deepEqual(seen[1].body, request);
+    assert.deepEqual(JSON.parse(seen[1].header), proof);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 /** Minimal one-shot HTTP server serving a fixed response; loopback only. */
 async function serve(status, body, contentType = "application/json") {
   const server = createServer((request, response) => {

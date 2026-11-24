@@ -52,6 +52,8 @@ ConsolidationReadErrorCode = Literal[
 class ConsolidationReadError(RuntimeError):
     """A public reason without identifiers or stored content."""
 
+    code: ConsolidationReadErrorCode
+
     def __init__(self, code: ConsolidationReadErrorCode) -> None:
         super().__init__(code)
         self.code = code
@@ -355,11 +357,28 @@ class ConsolidationReadService:
             if status.output_id != output.output_id or status.payload_digest != output.payload_digest:
                 raise ConsolidationReadError("integrity_error")
             return status
-        partition = repository.partition
-        if partition.read_schema_version(connection) >= 3 and partition.read_delivery_record(
-            connection, catalog="writeback_decisions", record_id=output.output_id,
-        ) is not None:
-            raise ConsolidationReadError("unavailable")
+        from memorii.core.harness_state.writeback_decision import (
+            WritebackDecisionError,
+            load_recorded_decision,
+            read_candidate_delivery,
+        )
+
+        try:
+            decision = load_recorded_decision(connection, repository, output.output_id)
+            if decision is not None:
+                if (
+                    decision.request.expected_payload_digest != output.payload_digest
+                    or not self._administration.verify_operation_origin(decision.origin)
+                ):
+                    raise ConsolidationReadError("integrity_error")
+                receipt = decision.receipt(read_candidate_delivery(connection, repository, decision))
+                return ConsolidationOfferStatus(
+                    output_id=output.output_id, payload_digest=output.payload_digest,
+                    offer_version=receipt.offer_version, decision_status=receipt.outcome,
+                    delivery_status=receipt.delivery_status,
+                )
+        except (WritebackDecisionError, ValueError) as exc:
+            raise ConsolidationReadError("integrity_error") from exc
         return ConsolidationOfferStatus(
             output_id=output.output_id, offer_version=1, payload_digest=output.payload_digest,
             decision_status="offered",

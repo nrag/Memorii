@@ -2131,6 +2131,171 @@
         ],
         "title": "SpoolRecord",
         "type": "object"
+      },
+      "WritebackDecisionReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "decision_id": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Decision Id",
+            "type": "string"
+          },
+          "delivery_id": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Delivery Id"
+          },
+          "delivery_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pending",
+                  "delivering",
+                  "delivered",
+                  "rejected",
+                  "needs_reconciliation"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Delivery Status"
+          },
+          "offer_version": {
+            "const": 2,
+            "default": 2,
+            "title": "Offer Version",
+            "type": "integer"
+          },
+          "outcome": {
+            "enum": [
+              "accepted",
+              "declined"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision_id",
+          "outcome"
+        ],
+        "title": "WritebackDecisionReceipt",
+        "type": "object"
+      },
+      "WritebackDecisionRequest": {
+        "$defs": {
+          "WritebackHostBinding": {
+            "additionalProperties": false,
+            "properties": {
+              "client_namespace": {
+                "maxLength": 512,
+                "minLength": 1,
+                "pattern": "^[^\\x00]+$",
+                "title": "Client Namespace",
+                "type": "string"
+              },
+              "installation_id": {
+                "maxLength": 512,
+                "minLength": 1,
+                "pattern": "^[^\\x00]+$",
+                "title": "Installation Id",
+                "type": "string"
+              },
+              "task_id": {
+                "maxLength": 512,
+                "minLength": 1,
+                "pattern": "^[^\\x00]+$",
+                "title": "Task Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "installation_id",
+              "client_namespace",
+              "task_id"
+            ],
+            "title": "WritebackHostBinding",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "enum": [
+              "accept",
+              "decline"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "expected_offer_version": {
+            "minimum": 1,
+            "title": "Expected Offer Version",
+            "type": "integer"
+          },
+          "expected_payload_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Payload Digest",
+            "type": "string"
+          },
+          "host_binding": {
+            "$ref": "#/$defs/WritebackHostBinding"
+          },
+          "operation_id": {
+            "maxLength": 512,
+            "minLength": 1,
+            "pattern": "^[^\\x00]+$",
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "output_id": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Output Id",
+            "type": "string"
+          },
+          "protocol_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Protocol Version",
+            "type": "integer"
+          },
+          "result_id": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Result Id",
+            "type": "string"
+          },
+          "task_id": {
+            "maxLength": 512,
+            "minLength": 1,
+            "pattern": "^[^\\x00]+$",
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "host_binding",
+          "task_id",
+          "result_id",
+          "output_id",
+          "expected_offer_version",
+          "expected_payload_digest",
+          "operation_id",
+          "decision"
+        ],
+        "title": "WritebackDecisionRequest",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -2147,6 +2312,60 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/v1/consolidation/decision": {
+      "post": {
+        "operationId": "decideWriteback",
+        "parameters": [
+          {
+            "description": "Original signed decision intent, encoded as ASCII JSON.",
+            "in": "header",
+            "name": "Memorii-Operation-Origin",
+            "required": true,
+            "schema": {
+              "maxLength": 8192,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WritebackDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WritebackDecisionReceipt"
+                }
+              }
+            },
+            "description": "Verified host decision and delivery status"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SidecarError"
+                }
+              }
+            },
+            "description": "Closed error envelope"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/v1/consolidation/read": {
       "post": {
         "operationId": "readConsolidation",
@@ -2196,7 +2415,14 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RuntimeCommandRequest"
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/RuntimeCommandRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/WritebackDecisionRequest"
+                  }
+                ]
               }
             }
           },

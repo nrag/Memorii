@@ -24,6 +24,7 @@ def build_openapi_document() -> dict[str, object]:
         SidecarRequest,
     )
     from memorii.core.persistence.runtime_contracts import OperationOrigin, RuntimeCommandRequest
+    from memorii.core.persistence.writeback_decisions import WritebackDecisionReceipt, WritebackDecisionRequest
 
     def schema(model: type) -> dict[str, object]:
         return json.loads(
@@ -45,6 +46,37 @@ def build_openapi_document() -> dict[str, object]:
         },
         "servers": [{"url": "http://127.0.0.1", "description": "loopback only"}],
         "paths": {
+            "/v1/consolidation/decision": {
+                "post": {
+                    "operationId": "decideWriteback",
+                    "security": [{"bearerAuth": []}],
+                    "parameters": [{
+                        "name": "Memorii-Operation-Origin", "in": "header", "required": True,
+                        "description": "Original signed decision intent, encoded as ASCII JSON.",
+                        "schema": {"type": "string", "maxLength": 8192},
+                    }],
+                    "requestBody": {
+                        "required": True,
+                        "content": {"application/json": {
+                            "schema": {"$ref": "#/components/schemas/WritebackDecisionRequest"},
+                        }},
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Verified host decision and delivery status",
+                            "content": {"application/json": {
+                                "schema": {"$ref": "#/components/schemas/WritebackDecisionReceipt"},
+                            }},
+                        },
+                        "default": {
+                            "description": "Closed error envelope",
+                            "content": {"application/json": {
+                                "schema": {"$ref": "#/components/schemas/SidecarError"},
+                            }},
+                        },
+                    },
+                }
+            },
             "/v1/consolidation/read": {
                 "post": {
                     "operationId": "readConsolidation",
@@ -78,7 +110,10 @@ def build_openapi_document() -> dict[str, object]:
                     "requestBody": {
                         "required": True,
                         "content": {"application/json": {
-                            "schema": {"$ref": "#/components/schemas/RuntimeCommandRequest"},
+                            "schema": {"oneOf": [
+                                {"$ref": "#/components/schemas/RuntimeCommandRequest"},
+                                {"$ref": "#/components/schemas/WritebackDecisionRequest"},
+                            ]},
                         }},
                     },
                     "responses": {
@@ -186,6 +221,8 @@ def build_openapi_document() -> dict[str, object]:
                 "OperationOrigin": schema(OperationOrigin),
                 "ConsolidationReadRequest": schema(ConsolidationReadRequest),
                 "ConsolidationReadPage": schema(ConsolidationReadPage),
+                "WritebackDecisionRequest": schema(WritebackDecisionRequest),
+                "WritebackDecisionReceipt": schema(WritebackDecisionReceipt),
                 "SpoolRecord": schema(SpoolRecord),
                 "HarnessStateEnvelope": schema(HarnessStateEnvelope),
                 "SidecarError": schema(SidecarError),

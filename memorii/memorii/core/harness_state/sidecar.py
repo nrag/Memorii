@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from memorii.core.harness_state.consolidation_read import (
     ConsolidationReadError,
@@ -43,9 +43,11 @@ from memorii.core.harness_state.service import (
     HarnessStateService,
     RuntimeReadGrant,
 )
+from memorii.core.harness_state.writeback_decision import WritebackDecisionError, WritebackDecisionService
 from memorii.core.persistence.runtime_api import ManagedRuntimeCommandService, RuntimeCommandError
 from memorii.core.persistence.runtime_contracts import OperationOrigin, RuntimeCommandRequest
 from memorii.core.persistence.runtime_repository import RuntimeStateRepository
+from memorii.core.persistence.writeback_decisions import WritebackDecisionRequest
 from memorii.core.storage_administration.revoked_identity_view import (
     RevokedIdentityServingGate,
 )
@@ -58,6 +60,7 @@ from memorii.core.storage_administration.service import (
 
 _MAXIMUM_INTAKE_BYTES = 1 << 20
 _MAXIMUM_OPERATION_ORIGIN_BYTES = 8192
+_PREPARED_OPERATION = TypeAdapter(RuntimeCommandRequest | WritebackDecisionRequest)
 
 
 class SidecarRequest(BaseModel):
@@ -152,6 +155,7 @@ class RuntimeSidecar:
         intake_factory: Callable[[str], HostIntakeBinding] | None = None,
         managed_intake_factory: Callable[[str], ManagedHostIntakeBinding | None] | None = None,
         consolidation_reader_factory: Callable[[str], ConsolidationReadService] | None = None,
+        writeback_factory: Callable[[str], WritebackDecisionService] | None = None,
         grant_registry: GrantEpochRegistry | None = None,
         revoked_view: RevokedIdentityServingGate | None = None,
     ) -> None:
@@ -163,6 +167,7 @@ class RuntimeSidecar:
             raise ValueError("managed and legacy intake bindings are mutually exclusive")
         self._managed_intake_factory = managed_intake_factory
         self._consolidation_reader_factory = consolidation_reader_factory
+        self._writeback_factory = writeback_factory
         # The revocation registry composes by default from the installation
         # control state so a revoked grant fails closed on every served path.
         if grant_registry is None:
@@ -227,6 +232,7 @@ class RuntimeSidecar:
             consolidation_reader_factory=lambda secret: authenticated_consolidation_reader(
                 administration, credentials, secret, grant_factory,
             ),
+            writeback_factory=lambda secret: WritebackDecisionService(administration, credentials, secret),
         )
 
     def _principal_for(self, secret: str) -> str | None:
@@ -348,20 +354,60 @@ class RuntimeSidecar:
         if len(body) > _MAXIMUM_INTAKE_BYTES:
             return _error(400, "invalid_request", None)
         try:
-            request = RuntimeCommandRequest.model_validate_json(body)
+            request = _PREPARED_OPERATION.validate_json(body)
         except ValueError:
             return _error(400, "invalid_request", None)
         try:
-            binding = self._managed_intake_factory(secret)
-            if binding is None:
-                return _error(403, "denied", None)
-            proof = binding.commands.prepare(request)
+            if isinstance(request, WritebackDecisionRequest):
+                if self._writeback_factory is None:
+                    return _error(503, "unavailable", None)
+                proof = self._writeback_factory(secret).prepare(request)
+            else:
+                binding = self._managed_intake_factory(secret)
+                if binding is None:
+                    return _error(403, "denied", None)
+                proof = binding.commands.prepare(request)
+        except WritebackDecisionError as exc:
+            return _error(_ERROR_STATUS[exc.code], exc.code, None)
+        except (InstallationIntegrityError, InstallationQuarantinedError, sqlite3.DatabaseError, ValidationError):
+            return _error(500, "integrity_error", None)
         except RuntimeCommandError as exc:
             code = _harness_error_code(str(exc))
             return _error(_ERROR_STATUS[code], code, None)
         except (OSError, StorageAdministrationError):
             return _error(503, "unavailable", None)
         return 200, proof.model_dump_json().encode()
+
+    def handle_writeback_decision_request(
+        self, *, bearer_token: str | None, origin: str | None, body: bytes,
+        operation_origin: str | None, host: str | None = None,
+    ) -> tuple[int, bytes]:
+        """Decide a sealed offer using the originally authenticated host intent."""
+        if origin is not None or host not in (None, "127.0.0.1", "localhost", "::1"):
+            return _error(403, "denied", None)
+        secret = bearer_token or ""
+        if self._principal_for(secret) is None:
+            return _error(401, "unauthenticated", None)
+        if self._writeback_factory is None:
+            return _error(503, "unavailable", None)
+        if not operation_origin:
+            return _error(403, "denied", None)
+        if len(body) > _MAXIMUM_INTAKE_BYTES or len(operation_origin) > _MAXIMUM_OPERATION_ORIGIN_BYTES:
+            return _error(400, "invalid_request", None)
+        try:
+            request = WritebackDecisionRequest.model_validate_json(body)
+            proof = OperationOrigin.model_validate_json(operation_origin)
+        except ValidationError:
+            return _error(400, "invalid_request", None)
+        try:
+            receipt = self._writeback_factory(secret).decide(request, operation_origin=proof)
+        except WritebackDecisionError as exc:
+            return _error(_ERROR_STATUS[exc.code], exc.code, None)
+        except (InstallationIntegrityError, InstallationQuarantinedError, sqlite3.DatabaseError, ValidationError):
+            return _error(500, "integrity_error", None)
+        except (OSError, StorageAdministrationError):
+            return _error(503, "unavailable", None)
+        return 200, receipt.model_dump_json().encode()
 
     def handle_consolidation_read_request(
         self, *, bearer_token: str | None, origin: str | None, body: bytes, host: str | None = None
@@ -481,7 +527,7 @@ def build_sidecar_handler(sidecar: RuntimeSidecar) -> type[BaseHTTPRequestHandle
                     host=self.headers.get("Host", "").split(":")[0] or None,
                 ))
                 return
-            if self.path == "/v1/runtime/intake":
+            if self.path in ("/v1/runtime/intake", "/v1/consolidation/decision"):
                 length = _safe_content_length(self.headers.get("Content-Length"), _MAXIMUM_INTAKE_BYTES)
                 if length is None:
                     self._respond(*_error(400, "invalid_request", "content length is invalid or oversized"))
@@ -491,7 +537,11 @@ def build_sidecar_handler(sidecar: RuntimeSidecar) -> type[BaseHTTPRequestHandle
                 if len(proofs) > 1:
                     self._respond(*_error(400, "invalid_request", None))
                     return
-                status, payload = sidecar.handle_intake_request(
+                handle_mutation = (
+                    sidecar.handle_intake_request if self.path == "/v1/runtime/intake"
+                    else sidecar.handle_writeback_decision_request
+                )
+                status, payload = handle_mutation(
                     bearer_token=self.headers.get("Authorization", "").removeprefix(
                         "Bearer "
                     )

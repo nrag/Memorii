@@ -139,6 +139,28 @@ export interface ConsolidationReadRequest {
   page_size?: number;
 }
 
+export interface WritebackDecisionRequest {
+  protocol_version?: 1;
+  host_binding: { installation_id: string; client_namespace: string; task_id: string };
+  task_id: string;
+  result_id: string;
+  output_id: string;
+  expected_offer_version: number;
+  expected_payload_digest: string;
+  operation_id: string;
+  decision: "accept" | "decline";
+}
+
+type WritebackDeliveryStatus = "pending" | "delivering" | "delivered" | "rejected" | "needs_reconciliation";
+
+export interface WritebackDecisionReceipt {
+  decision_id: string;
+  outcome: "accepted" | "declined";
+  offer_version: 2;
+  delivery_id: string | null;
+  delivery_status: WritebackDeliveryStatus | null;
+}
+
 export interface ConsolidationSourceReference {
   source_id: string;
   source_digest: string;
@@ -173,7 +195,7 @@ export interface ConsolidationReadPage {
     offer: {
       output_id: string; offer_version: number; payload_digest: string;
       decision_status: "offered" | "accepted" | "declined";
-      delivery_status: "pending" | "delivering" | "delivered" | "rejected" | "needs_reconciliation" | null;
+      delivery_status: WritebackDeliveryStatus | null;
     } | null;
   }[];
   omissions: {
@@ -246,12 +268,18 @@ export class RuntimeStateClient {
   }
 
   /** Prepare a new intent and retain the returned proof for all retries. */
-  async prepareOperation(command: RuntimeCommand): Promise<OperationOrigin> {
+  async prepareOperation(command: RuntimeCommand | WritebackDecisionRequest): Promise<OperationOrigin> {
     return this.post<OperationOrigin>("/v1/operations/prepare", JSON.stringify(command));
   }
 
   async readConsolidation(request: ConsolidationReadRequest): Promise<ConsolidationReadPage> {
     return this.post<ConsolidationReadPage>("/v1/consolidation/read", JSON.stringify(request));
+  }
+
+  async decideWriteback(
+    request: WritebackDecisionRequest, operationOrigin: OperationOrigin,
+  ): Promise<WritebackDecisionReceipt> {
+    return this.post("/v1/consolidation/decision", JSON.stringify(request), this.originHeader(operationOrigin));
   }
 
   /** Submit an immutable prepared intent to managed intake. */
@@ -260,11 +288,14 @@ export class RuntimeStateClient {
     operationOrigin: OperationOrigin,
     options: { transportMessageId?: string } = {},
   ): Promise<SpoolRecord> {
-    const header = JSON.stringify(operationOrigin).replace(
+    return this.submitEvent(command, options, this.originHeader(operationOrigin));
+  }
+
+  private originHeader(operationOrigin: OperationOrigin): string {
+    return JSON.stringify(operationOrigin).replace(
       /[\u007f-\uffff]/g,
       (character) => "\\u" + character.charCodeAt(0).toString(16).padStart(4, "0"),
     );
-    return this.submitEvent(command, options, header);
   }
 
   /** Legacy intake carrier for hosts not yet composed with managed grants. */

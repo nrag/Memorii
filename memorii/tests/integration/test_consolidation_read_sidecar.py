@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
+from typing import Literal
 
 import pytest
 from memorii.core.consolidation.runtime_outputs import (
@@ -16,20 +19,32 @@ from memorii.core.consolidation.runtime_outputs import (
     SemanticCandidate,
     build_consolidation_result,
 )
+from memorii.core.harness_state.binding import HermesRuntimeStatePorts
+from memorii.core.harness_state.client import RuntimeClientError, RuntimeStateClient
 from memorii.core.harness_state.consolidation_read import ConsolidationReadPage, ConsolidationReadRequest
 from memorii.core.harness_state.consumer import ManagedRuntimeSpool
 from memorii.core.harness_state.credentials import SidecarCredentialStore
 from memorii.core.harness_state.grant_registry import GrantEpochRegistry
 from memorii.core.harness_state.managed_ingress import authenticated_host_commands
 from memorii.core.harness_state.service import RuntimeReadGrant
-from memorii.core.harness_state.sidecar import RuntimeSidecar
+from memorii.core.harness_state.sidecar import RuntimeSidecar, serve_loopback
 from memorii.core.harness_state.write_authority import HostCommandGrantRequest, ManagedHostCommandAuthority
+from memorii.core.harness_state.writeback_decision import WritebackDecisionError, WritebackDecisionService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.store import record_digest
-from memorii.core.persistence.managed_delivery import DeliveryTransitionError, RejectedDelivery
+from memorii.core.persistence.managed_delivery import (
+    DeliveryTransitionError,
+    MemoryPlaneCandidateScope,
+    RejectedDelivery,
+)
 from memorii.core.persistence.runtime_api import operation_origin_namespace, operation_origin_proof_digest
 from memorii.core.persistence.runtime_contracts import RuntimeCommandReceipt, RuntimeCommandRequest
 from memorii.core.persistence.runtime_repository import RuntimeStateRepository, publish_runtime_change
+from memorii.core.persistence.writeback_decisions import (
+    CandidateDeliveryEntry,
+    WritebackDecisionRequest,
+    WritebackHostBinding,
+)
 from memorii.core.storage_administration.operator import (
     ModeChangeRequest,
     OperatorError,
@@ -135,7 +150,10 @@ def installed(tmp_path: Path) -> Iterator[_Installation]:
             principal=credential.principal, client_namespace="host:lifecycle",
             allowed_kinds=("pause_task",), allowed_task_ids=(task.task_id,),
             allowed_projection_task_ids=(task.task_id,),
-            allowed_operation_ids=("pause", "sourced-outputs"), expires_at=expires,
+            allowed_operation_ids=("pause", "sourced-outputs", "accept-offer", "decline-offer"),
+            allowed_writeback_scopes=(MemoryPlaneCandidateScope(
+                partition_id=administration._repository_id(), task_id=task.task_id, domain="semantic",
+            ),), expires_at=expires,
         ), capability=capability)
         pause = RuntimeCommandRequest(
             kind="pause_task", operation_id="pause", task_id=task.task_id,
@@ -279,7 +297,8 @@ def test_result_route_maps_snapshot_failure_to_closed_integrity_error(
     assert json.loads(body) == {"code": "integrity_error", "retryable": False, "detail": None}
 
 
-def test_suppressed_output_is_omitted_and_existing_offer_cursor_is_stale(installed: _Installation) -> None:
+@pytest.fixture
+def sourced_offers(installed: _Installation) -> CanonicalMemoryRecord:
     administration = installed.administration
     commands = authenticated_host_commands(administration, installed.credentials, installed.secret)
     source = CanonicalMemoryRecord(
@@ -322,7 +341,127 @@ def test_suppressed_output_is_omitted_and_existing_offer_cursor_is_stale(install
         repository.apply_command_receipt(connection, receipt, lookup_namespace=operation_origin_namespace(operation))
 
     publish_runtime_change(administration, stage)
-    status, raw = installed.read(operation_id=operation.operation_id, page_size=1)
+    return source
+
+
+def _decision_request(
+    installed: _Installation, page: ConsolidationReadPage, choice: Literal["accept", "decline"],
+) -> WritebackDecisionRequest:
+    offer = page.outputs[0].offer
+    assert offer is not None
+    return WritebackDecisionRequest(
+        host_binding=WritebackHostBinding(
+            installation_id=installed.administration._control_state().installation_id,
+            client_namespace="host:lifecycle", task_id=installed.task_id,
+        ),
+        task_id=installed.task_id, result_id=page.result_id, output_id=offer.output_id,
+        expected_offer_version=offer.offer_version, expected_payload_digest=offer.payload_digest,
+        operation_id=choice + "-offer", decision=choice,
+    )
+
+
+@pytest.mark.parametrize("choice", ["accept", "decline"])
+def test_http_writeback_decision_reopens_and_does_not_mutate_graph(
+    installed: _Installation, sourced_offers: CanonicalMemoryRecord, choice: Literal["accept", "decline"],
+) -> None:
+    administration = installed.administration
+    repository = RuntimeStateRepository(administration.partition())
+    task_before = repository.get_task(installed.task_id)
+    url, server = serve_loopback(installed.sidecar())
+    try:
+        client = RuntimeStateClient(url, credential=installed.secret)
+        lookup = ConsolidationReadRequest(task_id=installed.task_id, origin_operation_id="sourced-outputs")
+        page = client.read_consolidation(lookup)
+        offer = page.outputs[0].offer
+        assert offer is not None
+        request = _decision_request(installed, page, choice)
+        proof = client.prepare_operation(request)
+        receipt = client.decide_writeback(request, proof)
+        outcome = "accepted" if choice == "accept" else "declined"
+        assert receipt.outcome == outcome
+        assert (receipt.delivery_status == "pending") == (choice == "accept")
+        assert receipt.offer_version == 2
+        committed = administration.acquire_verified_snapshot()
+        assert client.decide_writeback(request, proof) == receipt
+        assert administration.acquire_verified_snapshot() == committed
+        refreshed = client.read_consolidation(lookup).outputs[0].offer
+        assert refreshed is not None and refreshed.decision_status == outcome
+        assert repository.get_task(installed.task_id) == task_before
+        with StorageAdministrationService(administration.installation_root) as reopened:
+            assert reopened.acquire_verified_snapshot() == committed
+            with reopened.partition().transaction(write=False) as connection:
+                rows = reopened.partition().read_runtime_rows(connection, table="runtime_outbox_deliveries")
+                queued = [CandidateDeliveryEntry.model_validate_json(row["record_json"]) for row in rows
+                          if json.loads(row["record_json"]).get("record_type") == "managed_writeback_candidate"]
+                assert len(queued) == (1 if choice == "accept" else 0)
+                assert reopened.partition().read_current_record_row(connection, sourced_offers.memory_id) is not None
+                assert reopened.partition().read_current_record_row(connection, f"cand:runtime:{offer.output_id}") is None
+        write_suppression_record(administration.installation_root / "control", SuppressionRecord(
+            suppression_id="1" * 64, plan_digest="2" * 64, closure_digest="3" * 64,
+            scope_note="test fixture",
+            suppressed=(SuppressionCoordinate(coordinate_kind="source", coordinate_id=sourced_offers.memory_id),),
+            applied_at_unix=1,
+        ))
+        with pytest.raises(RuntimeClientError, match="404 not_found"):
+            client.decide_writeback(request, proof)
+        assert administration.acquire_verified_snapshot() == committed
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_competing_embedded_writeback_decisions_have_one_winner(
+    installed: _Installation, sourced_offers: CanonicalMemoryRecord,
+) -> None:
+    status, body = installed.read(operation_id="sourced-outputs")
+    assert status == 200 and sourced_offers.task_id == installed.task_id
+    page = ConsolidationReadPage.model_validate_json(body)
+    port = HermesRuntimeStatePorts(installed.administration).host_writeback(credential=installed.secret)
+    accept = _decision_request(installed, page, "accept")
+    decline = _decision_request(installed, page, "decline")
+    accept_proof = port.prepare(accept)
+    decline_proof = port.prepare(decline)
+    before = installed.administration.acquire_verified_snapshot()
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        pending = (
+            executor.submit(port.decide, accept, operation_origin=accept_proof),
+            executor.submit(port.decide, decline, operation_origin=decline_proof),
+        )
+    settled = [future.exception() for future in pending]
+    assert settled.count(None) == 1
+    failure = next(exc for exc in settled if exc is not None)
+    assert isinstance(failure, WritebackDecisionError) and failure.code == "conflict"
+    assert installed.administration.acquire_verified_snapshot().ordinal == before.ordinal + 1
+
+
+def test_writeback_rolls_back_decision_when_enqueue_fails(
+    installed: _Installation, sourced_offers: CanonicalMemoryRecord, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    status, body = installed.read(operation_id="sourced-outputs")
+    assert status == 200 and sourced_offers.task_id == installed.task_id
+    page = ConsolidationReadPage.model_validate_json(body)
+    request = _decision_request(installed, page, "accept")
+    port = HermesRuntimeStatePorts(installed.administration).host_writeback(credential=installed.secret)
+    proof = port.prepare(request)
+    before = installed.administration.acquire_verified_snapshot()
+
+    def fail_enqueue(*_args: object) -> None:
+        raise sqlite3.OperationalError("interrupted before enqueue")
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(WritebackDecisionService, "_enqueue", staticmethod(fail_enqueue))
+        with pytest.raises(sqlite3.OperationalError, match="before enqueue"):
+            port.decide(request, operation_origin=proof)
+    assert installed.administration.acquire_verified_snapshot() == before
+    assert port.decide(request, operation_origin=proof).outcome == "accepted"
+
+
+def test_suppressed_output_is_omitted_and_existing_offer_cursor_is_stale(
+    installed: _Installation, sourced_offers: CanonicalMemoryRecord,
+) -> None:
+    administration = installed.administration
+    source = sourced_offers
+    status, raw = installed.read(operation_id="sourced-outputs", page_size=1)
     assert status == 200
     before = ConsolidationReadPage.model_validate_json(raw)
     entry, = before.outputs
@@ -340,12 +479,12 @@ def test_suppressed_output_is_omitted_and_existing_offer_cursor_is_stale(install
         suppressed=(SuppressionCoordinate(coordinate_kind="source", coordinate_id=source.memory_id),),
         applied_at_unix=1,
     ))
-    status, raw = installed.read(operation_id=operation.operation_id, page_size=1)
+    status, raw = installed.read(operation_id="sourced-outputs", page_size=1)
     assert status == 200
     after = ConsolidationReadPage.model_validate_json(raw)
     assert after.outputs == () and after.continuation_cursor is None
     assert entry.output.output_id.encode() not in raw
     assert source.memory_id.encode() not in raw
-    status, raw = installed.read(operation_id=operation.operation_id, page_size=1, cursor=before.continuation_cursor)
+    status, raw = installed.read(operation_id="sourced-outputs", page_size=1, cursor=before.continuation_cursor)
     assert status == 409
     assert json.loads(raw)["code"] == "stale_cursor"

@@ -13,5 +13,7 @@ export type {
   RuntimeErrorCode,
   RuntimeView,
   SpoolRecord,
+  WritebackDecisionReceipt,
+  WritebackDecisionRequest,
 } from "./client.js";
 export { RuntimeClientError, RuntimeStateClient } from "./client.js";

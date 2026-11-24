@@ -18,7 +18,9 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from memorii.core.harness_state.credentials import IssuedCredential
+from memorii.core.persistence.managed_delivery import DeliveryAuthorityBinding, WorkStateProjectionScope
 from memorii.core.persistence.runtime_contracts import RuntimeCommandRequest
+from memorii.core.persistence.writeback_decisions import CandidateScope, WritebackDecisionRequest
 from memorii.core.storage_administration.operator import (
     OwnerCapability,
     require_owner_capability,
@@ -55,10 +57,11 @@ class HostCommandGrant(BaseModel):
     credential_id: str = Field(min_length=1)
     principal: str = Field(min_length=1)
     client_namespace: str = Field(min_length=1, max_length=512)
-    allowed_kinds: tuple[RuntimeCommandKind, ...] = Field(min_length=1)
+    allowed_kinds: tuple[RuntimeCommandKind, ...] = ()
     allowed_operation_ids: tuple[str, ...] = ()
     allowed_task_ids: tuple[str, ...] = ()
     allowed_projection_task_ids: tuple[str, ...] = ()
+    allowed_writeback_scopes: tuple[CandidateScope, ...] = ()
     epoch: int = Field(default=1, ge=1)
     expires_at: datetime
     installation_id: str = Field(min_length=1)
@@ -86,6 +89,7 @@ class HostCommandGrant(BaseModel):
         if self.expires_at.tzinfo is None:
             raise ValueError("expires_at must be timezone-aware")
         _validate_projection_tasks(self.allowed_task_ids, self.allowed_projection_task_ids)
+        _validate_writeback_scopes(self.allowed_kinds, self.allowed_writeback_scopes)
         return self
 
 
@@ -96,10 +100,11 @@ class HostCommandGrantRequest(BaseModel):
     credential_id: str = Field(min_length=1)
     principal: str = Field(min_length=1)
     client_namespace: str = Field(min_length=1, max_length=512)
-    allowed_kinds: tuple[RuntimeCommandKind, ...] = Field(min_length=1)
+    allowed_kinds: tuple[RuntimeCommandKind, ...] = ()
     allowed_operation_ids: tuple[str, ...] = ()
     allowed_task_ids: tuple[str, ...] = ()
     allowed_projection_task_ids: tuple[str, ...] = ()
+    allowed_writeback_scopes: tuple[CandidateScope, ...] = ()
     expires_at: datetime
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -124,6 +129,7 @@ class HostCommandGrantRequest(BaseModel):
         if self.expires_at.tzinfo is None:
             raise ValueError("expires_at must be timezone-aware")
         _validate_projection_tasks(self.allowed_task_ids, self.allowed_projection_task_ids)
+        _validate_writeback_scopes(self.allowed_kinds, self.allowed_writeback_scopes)
         return self
 
 
@@ -138,11 +144,26 @@ class ResolvedHostCommandAuthority(BaseModel):
     installation_id: str
     data_generation_id: str
     allowed_projection_task_ids: tuple[str, ...] = ()
+    allowed_writeback_scopes: tuple[CandidateScope, ...] = ()
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     def permits_work_projection(self, task_id: str) -> bool:
         return task_id in self.allowed_projection_task_ids
+
+    def permits_writeback(self, scope: CandidateScope) -> bool:
+        return scope in self.allowed_writeback_scopes
+
+
+def _validate_writeback_scopes(
+    allowed_kinds: tuple[RuntimeCommandKind, ...], scopes: tuple[CandidateScope, ...],
+) -> None:
+    if not allowed_kinds and not scopes:
+        raise ValueError("a grant requires command kinds or writeback scopes")
+    if len(set(scopes)) != len(scopes):
+        raise ValueError("writeback scopes must be unique")
+    if scopes and "start_task" in allowed_kinds:
+        raise ValueError("start_task authority must be granted separately")
 
 
 def _validate_projection_tasks(command_tasks: tuple[str, ...], projection_tasks: tuple[str, ...]) -> None:
@@ -187,6 +208,8 @@ class ManagedHostCommandAuthority:
         """Owner-authorize a new finite grant for the current generation."""
         require_owner_capability(self._administration, capability)
         with self._administration.verified_operation_context() as (state, finalized):
+            if any(scope.partition_id != finalized.repository_id for scope in request.allowed_writeback_scopes):
+                raise HostCommandAuthorityError("denied: writeback scope is outside the installation partition")
             payload = self._read_payload()
             if any(item.grant_id == request.grant_id for item in payload.grants):
                 raise HostCommandAuthorityError("conflict: grant id already exists")
@@ -367,6 +390,99 @@ class ManagedHostCommandAuthority:
             raise HostCommandAuthorityError("unsupported_configuration: ambiguous consolidation origin authority")
         return self._resolved(matches[0])
 
+    def resolve_writeback_in_verified_context(
+        self,
+        *,
+        credential: IssuedCredential,
+        request: WritebackDecisionRequest,
+        state: InstallationControlState,
+        finalized: RuntimePublicationState,
+        now: datetime | None = None,
+    ) -> ResolvedHostCommandAuthority:
+        """Authorize the bound host and task before looking up an offer.
+
+        The decision owner must also check ``permits_writeback(scope)``
+        against the exact candidate scope derived from the sealed output.
+        """
+        binding = request.host_binding
+        if binding.installation_id != state.installation_id or binding.task_id != request.task_id:
+            raise HostCommandAuthorityError("denied: writeback host binding does not match")
+        return self._resolve_writeback_scope(
+            credential=credential,
+            client_namespace=binding.client_namespace,
+            task_id=request.task_id,
+            operation_id=request.operation_id,
+            state=state,
+            finalized=finalized,
+            now=now or datetime.now(UTC),
+        )
+
+    def resolve_persisted_writeback_in_verified_context(
+        self,
+        *,
+        binding: DeliveryAuthorityBinding,
+        operation_id: str,
+        state: InstallationControlState,
+        finalized: RuntimePublicationState,
+        now: datetime | None = None,
+    ) -> ResolvedHostCommandAuthority:
+        """Recheck a verified acceptance's exact grant under the worker fence."""
+        if (
+            isinstance(binding.scope, WorkStateProjectionScope)
+            or binding.installation_id != state.installation_id
+            or binding.host_binding_id != binding.client_namespace
+        ):
+            raise HostCommandAuthorityError("denied: writeback target binding does not match")
+        grant = self._resolve_writeback_scope(
+            credential=IssuedCredential(credential_id=binding.credential_id, principal=binding.principal),
+            client_namespace=binding.client_namespace,
+            task_id=binding.scope.task_id,
+            operation_id=operation_id,
+            state=state,
+            finalized=finalized,
+            now=now or datetime.now(UTC),
+        )
+        if (
+            grant.grant_id != binding.grant_id
+            or grant.grant_epoch != binding.grant_epoch
+            or not grant.permits_writeback(binding.scope)
+        ):
+            raise HostCommandAuthorityError("denied: writeback grant or target scope no longer matches")
+        return grant
+
+    def _resolve_writeback_scope(
+        self,
+        *,
+        credential: IssuedCredential,
+        client_namespace: str,
+        task_id: str,
+        operation_id: str,
+        state: InstallationControlState,
+        finalized: RuntimePublicationState,
+        now: datetime,
+    ) -> ResolvedHostCommandAuthority:
+        payload = self._read_payload()
+        matches = tuple(
+            grant for grant in payload.grants
+            if grant.credential_id == credential.credential_id
+            and grant.principal == credential.principal
+            and grant.client_namespace == client_namespace
+            and grant.installation_id == state.installation_id
+            and grant.data_generation_id == finalized.data_generation_id
+            and grant.expires_at > now
+            and payload.revoked.get(grant.grant_id, grant.epoch) == grant.epoch
+            and (not grant.allowed_operation_ids or operation_id in grant.allowed_operation_ids)
+            and any(
+                scope.partition_id == finalized.repository_id and scope.task_id == task_id
+                for scope in grant.allowed_writeback_scopes
+            )
+        )
+        if not matches:
+            raise HostCommandAuthorityError("denied: no active grant authorizes writeback")
+        if len(matches) != 1:
+            raise HostCommandAuthorityError("unsupported_configuration: writeback namespace is not unique")
+        return self._resolved(matches[0])
+
     def resolve_persisted_namespace_in_verified_context(
         self,
         *,
@@ -451,16 +567,7 @@ class ManagedHostCommandAuthority:
                 raise HostCommandAuthorityError("denied: start task scope is invalid")
         elif request.task_id not in grant.allowed_task_ids:
             raise HostCommandAuthorityError("denied: task id is outside grant scope")
-        return ResolvedHostCommandAuthority(
-            grant_id=grant.grant_id,
-            grant_epoch=grant_epoch,
-            credential_id=credential.credential_id,
-            principal=grant.principal,
-            client_namespace=grant.client_namespace,
-            installation_id=grant.installation_id,
-            data_generation_id=grant.data_generation_id,
-            allowed_projection_task_ids=grant.allowed_projection_task_ids,
-        )
+        return self._resolved(grant)
 
     @staticmethod
     def _resolved(grant: HostCommandGrant) -> ResolvedHostCommandAuthority:
@@ -473,6 +580,7 @@ class ManagedHostCommandAuthority:
             installation_id=grant.installation_id,
             data_generation_id=grant.data_generation_id,
             allowed_projection_task_ids=grant.allowed_projection_task_ids,
+            allowed_writeback_scopes=grant.allowed_writeback_scopes,
         )
 
     def _grant_for(self, grant_id: str) -> HostCommandGrant:

@@ -1,7 +1,7 @@
 # Host Result And Decision
 
 - Parent: [durable delivery implementation](../implementation.plan.md)
-- Status: proposed
+- Status: active
 - Requirements: DUR-03/05/06/07/13/14
 - Dependencies: Durable intent and output
 - Closure identity: unset, record actual base, code head, dirty state and artifact/run digests before claim
@@ -37,3 +37,7 @@ Use the approved design and existing semantic owners. Keep unsupported roots vis
 494508d3 wires the scoped result reader to installed managed sidecar composition, exact offer selectors, signed archive verification, authorization and suppression checks, and bound paging. The Python and TypeScript clients expose the reader. Current results can be read by an authorized host. The signed decision prepare and submit operations and transactional acceptance and enqueue remain open. The packet has no milestone approval.
 
 Review found an exception escaping the HTTP results envelope when the snapshot could not be acquired. The read route now maps storage and integrity failures to the existing closed response codes.
+
+The independent preimplementation matrix requires actual managed HTTP, host-only embedded entry, exact target scope, unchanged task lifecycle, once-only concurrent decisions, rollback and authorized retry. The delegated authority writer added finite writeback scope to the installed grant and owner CLI. The coordinator wired request preparation, the signed decision publication, stable shared operation reservation, pending candidate enqueue, result statuses, Python and TypeScript clients, and generated OpenAPI. The accepted content remains inert until its governed target commits. Current sourced-output tests exercise the installed host entry with owner-sealed fixture results. They do not establish a general production source-backed producer.
+
+Local evidence includes concurrent opposing decisions, a rollback after decision insertion and before enqueue, exact retry, source suppression after acceptance, and signed reopen. The TypeScript clean-package run passed 10 tests, typecheck and installed tarball verification. OpenAPI byte parity passed. OpenClaw/Pi host certification migration remains open.

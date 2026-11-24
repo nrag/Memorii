@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -26,6 +27,9 @@ from memorii.core.harness_state.service import (
 )
 from memorii.core.persistence.runtime_repository import RuntimeStateRepository
 from memorii.core.storage_administration.service import StorageAdministrationService
+
+if TYPE_CHECKING:
+    from memorii.core.harness_state.writeback_decision import WritebackDecisionService
 
 
 class RuntimeTaskBinding(BaseModel):
@@ -56,6 +60,14 @@ class HermesRuntimeStatePorts:
 
     def bind_task(self, binding: RuntimeTaskBinding) -> None:
         self._bindings[binding.granted_to_principal] = binding
+
+    def host_writeback(self, *, credential: str) -> WritebackDecisionService:
+        """Return the embedded host-only port using the installed credential owner."""
+        from memorii.core.harness_state.credentials import SidecarCredentialStore
+        from memorii.core.harness_state.writeback_decision import WritebackDecisionService
+
+        credentials = SidecarCredentialStore(self._administration.installation_root / "control" / "credentials")
+        return WritebackDecisionService(self._administration, credentials, credential)
 
     def runtime_prefetch_text(
         self,

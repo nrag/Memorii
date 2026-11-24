@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -12,7 +13,13 @@ from memorii.core.harness_state.write_authority import (
     HostCommandGrantRequest,
     ManagedHostCommandAuthority,
 )
+from memorii.core.persistence.managed_delivery import (
+    DeliveryAuthorityBinding,
+    MemoryPlaneCandidateScope,
+    ProtectedSkillCandidateScope,
+)
 from memorii.core.persistence.runtime_contracts import RuntimeCommandRequest
+from memorii.core.persistence.writeback_decisions import WritebackDecisionRequest, WritebackHostBinding
 from memorii.core.storage_administration.operator import mint_owner_capability
 from memorii.core.storage_administration.service import StorageAdministrationService
 
@@ -252,3 +259,122 @@ def test_non_start_grants_require_task_scope(tmp_path: Path) -> None:
             allowed_operation_ids=("operation:a",),
             expires_at=datetime.now(UTC) + timedelta(minutes=5),
         )
+
+
+def test_writeback_authority_is_exact_and_rechecked_for_target(tmp_path: Path) -> None:
+    administration, authority, credential = _setup(tmp_path)
+    capability = mint_owner_capability(administration, "owner:a")
+    command_grant = _grant_request(credential)
+    with administration.verified_operation_context() as (state, finalized):
+        scope = MemoryPlaneCandidateScope(
+            partition_id=finalized.repository_id, task_id="task:a", domain="semantic",
+        )
+        request = WritebackDecisionRequest(
+            host_binding=WritebackHostBinding(
+                installation_id=state.installation_id,
+                client_namespace=command_grant.client_namespace,
+                task_id=scope.task_id,
+            ),
+            task_id=scope.task_id,
+            operation_id="operation:a",
+            result_id="a" * 64,
+            output_id="b" * 64,
+            expected_offer_version=1,
+            expected_payload_digest="c" * 64,
+            decision="accept",
+        )
+    grant = authority.issue(
+        HostCommandGrantRequest.model_validate({
+            **command_grant.model_dump(),
+            "allowed_kinds": (),
+            "allowed_task_ids": (),
+            "allowed_writeback_scopes": [scope],
+        }),
+        capability=capability,
+    )
+    with pytest.raises(HostCommandAuthorityError, match="command kind"):
+        authority.resolve(
+            credential=credential, request=_request(), grant_id=grant.grant_id, grant_epoch=grant.epoch,
+        )
+    with administration.verified_operation_context() as (state, finalized):
+        resolved = authority.resolve_writeback_in_verified_context(
+            credential=credential, request=request, state=state, finalized=finalized,
+        )
+        assert resolved.permits_writeback(scope)
+        assert not resolved.permits_writeback(
+            ProtectedSkillCandidateScope(partition_id=scope.partition_id, task_id=scope.task_id)
+        )
+        assert not resolved.permits_writeback(
+            MemoryPlaneCandidateScope(partition_id=scope.partition_id, task_id=scope.task_id, domain="user")
+        )
+        assert not resolved.permits_work_projection(scope.task_id)
+        assert authority.resolve_writeback_in_verified_context(
+            credential=credential, request=request.model_copy(update={"decision": "decline"}),
+            state=state, finalized=finalized,
+        ) == resolved
+        for changed in (
+            request.model_copy(update={"operation_id": "operation:other"}),
+            request.model_copy(update={"task_id": "task:other"}),
+            request.model_copy(update={
+                "host_binding": request.host_binding.model_copy(update={"client_namespace": "namespace:other"}),
+            }),
+        ):
+            with pytest.raises(HostCommandAuthorityError, match="denied:"):
+                authority.resolve_writeback_in_verified_context(
+                    credential=credential, request=changed, state=state, finalized=finalized,
+                )
+        binding = DeliveryAuthorityBinding(
+            principal=resolved.principal,
+            client_namespace=resolved.client_namespace,
+            host_binding_id=resolved.client_namespace,
+            credential_id=resolved.credential_id,
+            installation_id=resolved.installation_id,
+            grant_id=resolved.grant_id,
+            grant_epoch=resolved.grant_epoch,
+            scope=scope,
+        )
+        assert authority.resolve_persisted_writeback_in_verified_context(
+            binding=binding, operation_id=request.operation_id, state=state, finalized=finalized,
+        ) == resolved
+        with pytest.raises(HostCommandAuthorityError, match="grant or target scope"):
+            authority.resolve_persisted_writeback_in_verified_context(
+                binding=binding.model_copy(update={"grant_epoch": binding.grant_epoch + 1}),
+                operation_id=request.operation_id, state=state, finalized=finalized,
+            )
+    authority.revoke(grant.grant_id, capability=capability)
+    with (
+        administration.verified_operation_context() as (state, finalized),
+        pytest.raises(HostCommandAuthorityError, match="no active grant"),
+    ):
+        authority.resolve_persisted_writeback_in_verified_context(
+            binding=binding, operation_id=request.operation_id, state=state, finalized=finalized,
+        )
+
+
+def test_operator_cli_provisions_exact_writeback_scope(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    from memorii.tools.runtime_operator import main
+
+    administration, _authority, credential = _setup(tmp_path)
+    capability = mint_owner_capability(administration, "owner:a")
+    with administration.verified_operation_context() as (_state, finalized):
+        scope = ProtectedSkillCandidateScope(partition_id=finalized.repository_id, task_id="task:a")
+    command = [
+        "--installation-root", str(administration.installation_root),
+        "--owner-principal", capability.owner_principal,
+        "--capability-digest", capability.capability_digest,
+        "runtime-grant", "issue",
+        "--grant-id", "grant:writeback",
+        "--credential-id", credential.credential_id,
+        "--principal", credential.principal,
+        "--client-namespace", "host:hermes:installation:a",
+        "--expires-at", (datetime.now(UTC) + timedelta(minutes=5)).isoformat(),
+    ]
+    foreign_scope = scope.model_copy(update={"partition_id": "partition:other"})
+    assert main([*command, "--writeback-scope", foreign_scope.model_dump_json()]) == 3
+    assert "outside the installation partition" in capsys.readouterr().err
+    assert main([*command, "--writeback-scope", scope.model_dump_json()]) == 0
+    issued = json.loads(capsys.readouterr().out)
+    assert issued["allowed_kinds"] == []
+    assert issued["allowed_writeback_scopes"] == [scope.model_dump(mode="json")]

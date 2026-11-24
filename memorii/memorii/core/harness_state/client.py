@@ -18,6 +18,7 @@ from memorii.core.harness_state.consumer import SpoolRecord
 from memorii.core.harness_state.envelope import HarnessStateEnvelope
 from memorii.core.harness_state.sidecar import SidecarIntakeRequest, SidecarRequest
 from memorii.core.persistence.runtime_contracts import OperationOrigin, RuntimeCommandRequest
+from memorii.core.persistence.writeback_decisions import WritebackDecisionReceipt, WritebackDecisionRequest
 
 
 class RuntimeClientError(RuntimeError):
@@ -55,8 +56,8 @@ class RuntimeStateClient:
             self._post("/v1/runtime/state", request.model_dump_json())
         )
 
-    def prepare_operation(self, command: RuntimeCommandRequest) -> OperationOrigin:
-        """Prepare a new intent. Persist this proof with the command before submitting."""
+    def prepare_operation(self, command: RuntimeCommandRequest | WritebackDecisionRequest) -> OperationOrigin:
+        """Prepare a new intent and retain the proof with the request before submitting."""
         return OperationOrigin.model_validate_json(
             self._post("/v1/operations/prepare", command.model_dump_json())
         )
@@ -66,6 +67,14 @@ class RuntimeStateClient:
         return ConsolidationReadPage.model_validate_json(
             self._post("/v1/consolidation/read", request.model_dump_json())
         )
+
+    def decide_writeback(
+        self, request: WritebackDecisionRequest, operation_origin: OperationOrigin,
+    ) -> WritebackDecisionReceipt:
+        proof = json.dumps(operation_origin.model_dump(mode="json"), ensure_ascii=True)
+        return WritebackDecisionReceipt.model_validate_json(self._post(
+            "/v1/consolidation/decision", request.model_dump_json(), operation_origin=proof,
+        ))
 
     def submit_operation(
         self, command: RuntimeCommandRequest, operation_origin: OperationOrigin
