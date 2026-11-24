@@ -9,7 +9,7 @@ from typing import Annotated, Literal, Self
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from memorii.core.consolidation.runtime_outputs import ConsolidationSourceReference
+from memorii.core.consolidation.runtime_outputs import MAX_CONSOLIDATION_SOURCE_REFERENCES, ConsolidationSourceReference
 from memorii.core.memory_evolution.admission import _index_digest, _index_id, source_admission_source_digest
 from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedIngressContext, OperationFenceBinding
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
@@ -38,7 +38,7 @@ from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibil
 
 _GrantID = Annotated[str, Field(pattern=r"^runtime-source-release:[0-9a-f]{64}:[0-9a-f]{64}$")]
 _Digest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
-_MAX_ACTIVE_PER_TASK = 64
+_MAX_ACTIVE_PER_TASK = MAX_CONSOLIDATION_SOURCE_REFERENCES
 
 
 class RuntimeSourceReleaseGrant(BaseModel):

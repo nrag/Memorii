@@ -1917,7 +1917,7 @@
     "memorii/memorii/core/memory_evolution/revocation_tombstones.py": "5f0c4b6bff0803f46a551697fdf51fc6246dc69727752531a16aa63ff25ac77c",
     "memorii/memorii/core/persistence/contracts.py": "faa50c7841417b97f40b162b5c2b6e20e7cf6d8e94f8c412975f140ba2420e76",
     "memorii/memorii/core/persistence/runtime_checkpoint.py": "6c909db7907bac7e0a4d569b0462d772b48b342adbadf277001d4baee219c33b",
-    "memorii/memorii/core/persistence/runtime_repository.py": "6c6df728631facdf4d0736ce90ffd0151bd431952bcdeed4486ad19f32b07ce4",
+    "memorii/memorii/core/persistence/runtime_repository.py": "fe1dfda98fb655f3a5d0a051947eb6214f52aca3dd6108243c0d7232b1121c11",
     "memorii/memorii/core/semantic_ingestion/structured_fact_read.py": "c09535515f09db15330412e8fa49b19157b4eb6c21961a131adbbe35595513c4",
     "memorii/memorii/core/storage_administration/operator.py": "a59aed0a41853f8ded1102d75e27ecfa382b97743c91c2bb768d64cd021c99d0",
     "memorii/memorii/core/storage_administration/operator_governance.py": "5e8e952899d5b48843de7795632ec6ed3c8aa2685b143cca1e5b7d65e92cf2f4",

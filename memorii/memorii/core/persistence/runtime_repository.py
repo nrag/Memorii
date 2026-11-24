@@ -23,7 +23,7 @@ from typing import TypeVar
 
 from pydantic import BaseModel, TypeAdapter
 
-from memorii.core.consolidation.runtime_outputs import ConsolidationResult
+from memorii.core.consolidation.runtime_outputs import MAX_CONSOLIDATION_SOURCE_REFERENCES, ConsolidationResult
 from memorii.core.persistence.contracts import InstallationControlState, RuntimePublicationState
 from memorii.core.persistence.runtime_contracts import (
     ActionAttemptRecord,
@@ -211,6 +211,18 @@ class RuntimeStateRepository:
             connection, table="runtime_tasks", match=(("task_id", task_id),)
         )
         return None if row is None else TaskRecord.model_validate_json(row["record_json"])
+
+    def task_observation_source_keys_in(
+        self, connection: sqlite3.Connection, task_id: str,
+    ) -> frozenset[tuple[str, str]]:
+        """Bound the unique admitted source/digest pairs needed by task archival."""
+        rows = connection.execute(
+            "SELECT DISTINCT json_extract(record_json, '$.source_admission.source_id') AS source_id,"
+            " json_extract(record_json, '$.source_admission.source_record_digest') AS source_digest"
+            " FROM runtime_command_receipts WHERE json_extract(record_json, '$.source_admission.task_id') = ? LIMIT ?",
+            (task_id, MAX_CONSOLIDATION_SOURCE_REFERENCES + 1),
+        )
+        return frozenset((str(row["source_id"]), str(row["source_digest"])) for row in rows)
 
     def get_command_receipt_in(
         self,

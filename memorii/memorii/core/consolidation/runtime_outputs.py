@@ -15,6 +15,7 @@ _RESULT_DOMAIN = b"memorii.consolidation-result.v1"
 _OUTPUT_DOMAIN = b"memorii.consolidation-output.v1"
 _DELIVERY_DOMAIN = b"memorii.runtime-delivery.v1"
 _MAX_BATCH_BYTES = 10 * 1024 * 1024
+MAX_CONSOLIDATION_SOURCE_REFERENCES = 64
 
 Digest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 Revision = Annotated[int, Field(ge=0, strict=True)]
@@ -59,7 +60,7 @@ def _unique_sources(
 
 SourceReferences = Annotated[
     tuple[ConsolidationSourceReference, ...],
-    Field(max_length=64),
+    Field(max_length=MAX_CONSOLIDATION_SOURCE_REFERENCES),
     AfterValidator(_unique_sources),
 ]
 

@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 
 from memorii.core.consolidation.consolidator import Consolidator
 from memorii.core.consolidation.runtime_outputs import (
+    MAX_CONSOLIDATION_SOURCE_REFERENCES,
     ArchivePackage,
     ConsolidationOmission,
     ConsolidationOrigin,
@@ -243,6 +244,10 @@ class RuntimeCommandService:
                 raise RuntimeCommandError("denied: verified provider admission is unavailable")
             if task.lifecycle != "active" or task.version != request.expected_revision:
                 raise RuntimeCommandError("conflict: observation task or revision is no longer active")
+            observed = repository.task_observation_source_keys_in(connection, task.task_id)
+            key = source_admission.source_id, source_admission.source_record_digest
+            if key not in observed and len(observed) >= MAX_CONSOLIDATION_SOURCE_REFERENCES:
+                raise RuntimeCommandError("resource_exhausted: task observation source limit reached")
             repository.apply_task(connection, task.model_copy(update={"version": task.version + 1}))
         else:
             self._apply_command_effect(connection, repository, request, operation_origin=operation_origin)
@@ -389,13 +394,7 @@ class RuntimeCommandService:
             connection, repository, task_id=task.task_id, principal=task.principal,
             now=datetime.now(UTC), revoked=revoked,
         )
-        observations = connection.execute(
-            "SELECT DISTINCT json_extract(record_json, '$.source_admission.source_id') AS source_id,"
-            " json_extract(record_json, '$.source_admission.source_record_digest') AS source_digest"
-            " FROM runtime_command_receipts WHERE json_extract(record_json, '$.source_admission.task_id') = ? LIMIT 65",
-            (task.task_id,),
-        )
-        required = {(row["source_id"], row["source_digest"]) for row in observations}
+        required = repository.task_observation_source_keys_in(connection, task.task_id)
         eligible = {(ref.source_id, ref.source_digest) for ref in current}
         if not required.issubset(eligible):
             raise RuntimeCheckpointError("denied: admitted source archive closure is unavailable")

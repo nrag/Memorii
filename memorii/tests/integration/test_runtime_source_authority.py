@@ -333,6 +333,12 @@ def _exercise_durable_offer(
             receipt = worker.publish(claim)
             assert receipt is not None and worker.publish(claim) == receipt
             assert protected_text not in receipt.model_dump_json()
+            resume = RuntimeCommandRequest(
+                kind="resume_task", operation_id="resume", task_id=task_id, expected_revision=revision + 1,
+            )
+            runtime.dispatch(resume, operation_origin=runtime.prepare(resume))
+            current_task = RuntimeStateRepository(administration.partition()).get_task(task_id)
+            assert current_task is not None and current_task.lifecycle == "active"
             from memorii.tools.runtime_operator import main as operator_main
 
             assert operator_main([
