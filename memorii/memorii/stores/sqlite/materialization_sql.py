@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 
@@ -20,6 +20,7 @@ from memorii.stores.sqlite.raw_memory_payloads import (
 
 _Layout = tuple[tuple[str, ...], tuple[str, ...]]
 _Value = str | bytes | int | None
+_ROW_DOMAIN = b"memorii.materialization-row.v2\x00"
 
 # Format 7 commits every stored column of each authoritative catalog, including
 # persisted filtering coordinates omitted by the historical ordered fold.
@@ -88,7 +89,7 @@ def _key_bytes(values: tuple[_Value, ...], *, allow_bytes: bool = False) -> byte
 
 
 def _value_digest(row: sqlite3.Row, *, allow_bytes: bool = False) -> bytes:
-    digest = hashlib.sha256(b"memorii.materialization-row.v2\x00")
+    digest = hashlib.sha256(_ROW_DOMAIN)
     for value in row:
         if isinstance(value, str):
             encoded = value.encode("utf-8")
@@ -104,6 +105,32 @@ def _value_digest(row: sqlite3.Row, *, allow_bytes: bool = False) -> bytes:
         else:
             raise sqlite3.DatabaseError("unsupported storage type in materialization catalog")
     return digest.digest()
+
+
+def _catalog_digests(
+    rows: Iterable[sqlite3.Row], key: tuple[str, ...], columns: tuple[str, ...], *, allow_bytes: bool,
+) -> Iterator[tuple[bytes, bytes]]:
+    key_length = len(key)
+    key_prefix = key == columns[:key_length]
+    if key_length == 1 and key_prefix and len(columns) == 2:
+        for row in rows:
+            identity, record = row
+            if isinstance(identity, str) and isinstance(record, str) and len(record) <= 4096:
+                encoded = identity.encode("utf-8")
+                body = record.encode("utf-8")
+                # Reuse the encoded key and avoid per-field hash calls for the
+                # small text pairs in the signed runtime replay indexes.
+                row_digest = hashlib.sha256(b"".join((
+                    _ROW_DOMAIN, b"s", len(encoded).to_bytes(8, "big"), encoded,
+                    b"s", len(body).to_bytes(8, "big"), body,
+                ))).digest()
+                yield b"s" + encoded.replace(b"\x00", b"\x00\xff") + b"\x00\x00", row_digest
+            else:
+                yield _key_bytes((identity,), allow_bytes=allow_bytes), _value_digest(row, allow_bytes=allow_bytes)
+        return
+    for row in rows:
+        coordinates = row[:key_length] if key_prefix else tuple(row[column] for column in key)
+        yield _key_bytes(coordinates, allow_bytes=allow_bytes), _value_digest(row, allow_bytes=allow_bytes)
 
 
 def _validate_layout(connection: sqlite3.Connection, layouts: dict[str, _Layout]) -> None:
@@ -153,11 +180,7 @@ def rebuild_manifest(connection: sqlite3.Connection, catalog_names: frozenset[st
             scan = f" {RAW_CURRENT_BASE_SELECTOR}"
         rows = connection.execute(f"SELECT {', '.join(columns)} FROM main.{catalog}{scan} ORDER BY {order}")
         tree = MaterializationAccumulator.from_sorted_digests(
-            (
-                _key_bytes(tuple(row[column] for column in key), allow_bytes=raw_catalog),
-                _value_digest(row, allow_bytes=raw_catalog),
-            )
-            for row in rows
+            _catalog_digests(rows, key, columns, allow_bytes=raw_catalog),
         )
         trees.append((catalog, tree))
     return MaterializationForest(tuple(trees), RuntimeMaterializationManifest(

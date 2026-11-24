@@ -7,9 +7,9 @@ import sqlite3
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from hashlib import sha256
-from typing import Annotated, Literal, Self
+from typing import Annotated, Literal, Self, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from memorii.core.persistence.contracts import (
     RUNTIME_EVENT_BATCH_SIGNATURE_PURPOSE,
@@ -36,7 +36,6 @@ _MAX_BATCH_BYTES = 10 * 1024 * 1024
 _Digest = Annotated[str, Field(pattern=_HEX)]
 _KeyPart = str | int
 _Bindings = tuple[dict[str, str], dict[str, str], dict[str, str]]
-_ReplayRows = dict[tuple[str, tuple[_KeyPart, ...]], RuntimeMaterializedRow]
 _Catalog = Literal[
     "runtime_tasks", "runtime_execution_nodes", "runtime_execution_edges",
     "runtime_solver_runs", "runtime_solver_nodes", "runtime_solver_edges",
@@ -153,13 +152,20 @@ class _CheckpointMember(_Closed):
     indexed: tuple[_KeyPart, ...]
     owner_record_json: str = Field(min_length=2)
 
-    def row(self) -> RuntimeMaterializedRow:
-        return RuntimeMaterializedRow(self.catalog, self.key, self.indexed, self.owner_record_json)
+    @property
+    def record_json(self) -> str:
+        return self.owner_record_json
 
 
 class _CheckpointBinding(_Closed):
     coordinate: _Digest
     owner_binding_json: str = Field(min_length=2)
+
+
+_ReplayRows = dict[tuple[str, tuple[_KeyPart, ...]], RuntimeMaterializedRow | _CheckpointMember]
+_CheckpointEntry = TypeVar("_CheckpointEntry", _CheckpointMember, _CheckpointBinding)
+_MEMBER_JSON = TypeAdapter(_CheckpointMember)
+_BINDING_JSON = TypeAdapter(_CheckpointBinding)
 
 
 class _CheckpointManifest(_Closed):
@@ -194,10 +200,11 @@ class _ReplayCheckpoint(_Closed):
     signature: str = Field(pattern=r"^[0-9a-f]{128}$")
 
 
-def _member_digest(records: Sequence[_CheckpointMember | _CheckpointBinding]) -> str:
+def _member_digest(records: Sequence[_CheckpointEntry], adapter: TypeAdapter[_CheckpointEntry]) -> str:
     digest = sha256()
+    encode = adapter.dump_json
     for item in records:
-        payload = item.model_dump_json().encode("utf-8")
+        payload = encode(item)
         digest.update(len(payload).to_bytes(8, byteorder="big"))
         digest.update(payload)
     return digest.hexdigest()
@@ -248,10 +255,10 @@ def persist_runtime_replay_checkpoint(
         signer_key_id=signer_key_id,
         signer_key_fingerprint=signer_key_fingerprint,
         member_count=len(members),
-        member_digest=_member_digest(members),
-        event_binding_digest=_member_digest(event),
-        dedupe_binding_digest=_member_digest(dedupe),
-        record_version_binding_digest=_member_digest(versions),
+        member_digest=_member_digest(members, _MEMBER_JSON),
+        event_binding_digest=_member_digest(event, _BINDING_JSON),
+        dedupe_binding_digest=_member_digest(dedupe, _BINDING_JSON),
+        record_version_binding_digest=_member_digest(versions, _BINDING_JSON),
     )
     digest = manifest.digest()
     checkpoint = _ReplayCheckpoint(
@@ -519,13 +526,13 @@ def _checkpoint_start(
     )
     if (
         manifest.member_count != len(checkpoint.members)
-        or manifest.member_digest != _member_digest(checkpoint.members)
-        or manifest.event_binding_digest != _member_digest(event)
-        or manifest.dedupe_binding_digest != _member_digest(dedupe)
-        or manifest.record_version_binding_digest != _member_digest(versions)
+        or manifest.member_digest != _member_digest(checkpoint.members, _MEMBER_JSON)
+        or manifest.event_binding_digest != _member_digest(event, _BINDING_JSON)
+        or manifest.dedupe_binding_digest != _member_digest(dedupe, _BINDING_JSON)
+        or manifest.record_version_binding_digest != _member_digest(versions, _BINDING_JSON)
     ):
         raise RuntimeJournalError("integrity_error: runtime checkpoint members or indexes differ from its manifest")
-    rows = {(member.catalog, member.key): member.row() for member in checkpoint.members}
+    rows: _ReplayRows = {(member.catalog, member.key): member for member in checkpoint.members}
     bindings = (
         {entry.coordinate: entry.owner_binding_json for entry in event},
         {entry.coordinate: entry.owner_binding_json for entry in dedupe},
@@ -627,8 +634,11 @@ def verify_runtime_history(
         raise RuntimeJournalError("integrity_error: runtime revision does not match the signed history")
     if PartitionDataRepository.runtime_replay_bindings(connection) != bindings:
         raise RuntimeJournalError("integrity_error: runtime replay indexes do not match the event history")
-    actual = {
-        (row.catalog, row.key): row for row in PartitionDataRepository.runtime_materialized_rows(connection)
-    }
-    if actual != replayed:
+    # Compare exact rows while consuming the replayed identities. Checkpoint
+    # members can remain typed owner records and the live rows need no second map.
+    for row in PartitionDataRepository.runtime_materialized_rows(connection):
+        expected = replayed.pop((row.catalog, row.key), None)
+        if expected is None or row.indexed != expected.indexed or row.record_json != expected.record_json:
+            raise RuntimeJournalError("integrity_error: runtime materializations do not match replay")
+    if replayed:
         raise RuntimeJournalError("integrity_error: runtime materializations do not match replay")

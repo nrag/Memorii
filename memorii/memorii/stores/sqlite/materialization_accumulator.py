@@ -5,10 +5,12 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 from hashlib import sha256
+from typing import NamedTuple
 
 _DOMAIN = b"memorii.materialization-accumulator.v1\x00"
 _EMPTY_DIGEST = sha256(_DOMAIN + b"empty").digest()
 _DIGEST_LENGTH = len(_EMPTY_DIGEST)
+_NODE_DOMAIN = _DOMAIN + b"node\x00"
 
 
 def _frame(value: bytes) -> bytes:
@@ -26,14 +28,13 @@ def _priority(key: bytes) -> bytes:
     return sha256(_DOMAIN + b"priority\x00" + key).digest()
 
 
-@dataclass(frozen=True, slots=True)
-class _Node:
+class _Node(NamedTuple):
     key: bytes
     value_digest: bytes
     priority: bytes
     left: _Node | None
     right: _Node | None
-    count: int
+    subtree_size: int
     digest: bytes
 
 
@@ -42,17 +43,17 @@ def _root_digest(node: _Node | None) -> bytes:
 
 
 def _count(node: _Node | None) -> int:
-    return 0 if node is None else node.count
+    return 0 if node is None else node.subtree_size
 
 
 def _node(
     key: bytes, value_digest: bytes, priority: bytes, left: _Node | None = None, right: _Node | None = None,
 ) -> _Node:
     count = 1 + _count(left) + _count(right)
-    digest = sha256(
-        _DOMAIN + b"node\x00" + _frame(key) + value_digest
-        + _root_digest(left) + _root_digest(right) + count.to_bytes(8, "big")
-    ).digest()
+    digest = sha256(b"".join((
+        _NODE_DOMAIN, len(key).to_bytes(8, "big"), key, value_digest,
+        _root_digest(left), _root_digest(right), count.to_bytes(8, "big"),
+    ))).digest()
     return _Node(key, value_digest, priority, left, right, count, digest)
 
 
@@ -115,7 +116,9 @@ class MaterializationAccumulator:
             previous_key = key
             priority = _priority(key)
             left = None
-            while spine and (priority, key) < (spine[-1][2], spine[-1][0]):
+            # The current key follows every key on the spine. Equal
+            # priorities therefore keep the same key-based tiebreak.
+            while spine and priority < spine[-1][2]:
                 prior_key, prior_value, prior_priority, prior_left = spine.pop()
                 left = _node(prior_key, prior_value, prior_priority, prior_left, left)
             spine.append((key, value_digest, priority, left))

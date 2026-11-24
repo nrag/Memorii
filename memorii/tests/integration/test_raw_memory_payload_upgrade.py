@@ -232,17 +232,18 @@ def _mutate_rootpage(db: Path, schema_name: str, replacements: tuple[tuple[bytes
         handle.write(page)
 
 
-@pytest.mark.parametrize("page", ["body", "table", "index", "selector_index"])
+@pytest.mark.parametrize("page", ["body", "queued_body", "table", "index", "selector_index"])
 def test_preserved_head_raw_mutation_fails_fresh_acquisition(tmp_path: Path, page: str) -> None:
     root = tmp_path / "installation"
+    text = "signed payload" * (24_000 if page == "queued_body" else 1)
     with StorageAdministrationService(root) as service:
         service.initialize()
-        service.publish_memory_plane_batch((_record("memory:existing", "signed payload"),))
+        service.publish_memory_plane_batch((_record("memory:existing", text),))
         _activate_raw(service, tmp_path / "upgrade")
     with StorageAdministrationService(root) as converted:
         converted.acquire_verified_snapshot()
         db = converted.partition_path()
-    if page == "body":
+    if page in {"body", "queued_body"}:
         with closing(sqlite3.connect(db)) as connection, connection:
             connection.execute("UPDATE memory_payloads SET body=zeroblob(length(body))")
     elif page == "selector_index":

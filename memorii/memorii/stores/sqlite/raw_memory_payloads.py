@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
+from collections import deque
 from collections.abc import Iterator, Sequence
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import contextmanager
 from itertools import zip_longest
 from typing import TYPE_CHECKING
 
@@ -98,6 +101,8 @@ _SCHEMA = {
 }
 _PAYLOAD_DOMAIN = b"memorii.memory-record-payload.v1\x00"
 _CHUNK_BYTES = 256 * 1024
+_MAX_QUEUED_PAYLOAD_BYTES = 4 * 1024 * 1024
+_MAX_PENDING_HASHES = 4
 _RecordInput = tuple[str, str, str, str, str]
 
 
@@ -135,21 +140,36 @@ def _require_index_parity(
         raise sqlite3.DatabaseError(f"raw memory lookup index differs from its base table: {index}")
 
 
-def _verify_body(connection: sqlite3.Connection, row: sqlite3.Row) -> None:
+def _payload_location(row: sqlite3.Row) -> tuple[int, bytes, int]:
     rowid, expected, size, codec, body_type = row
     if (
         not isinstance(expected, bytes) or len(expected) != 32
         or type(size) is not int or size <= 0 or codec != 0 or body_type != "blob"
     ):
         raise sqlite3.DatabaseError("invalid raw memory payload metadata")
+    return rowid, expected, size
+
+
+@contextmanager
+def _open_raw_body(connection: sqlite3.Connection, rowid: int, size: int) -> Iterator[sqlite3.Blob]:
     with connection.blobopen("memory_payloads", "body", rowid, readonly=True) as blob:
         if len(blob) != size:
             raise sqlite3.DatabaseError("raw memory payload length differs")
+        yield blob
+
+
+def _verify_body(connection: sqlite3.Connection, rowid: int, expected: bytes, size: int) -> None:
+    with _open_raw_body(connection, rowid, size) as blob:
         digest = hashlib.sha256(_PAYLOAD_DOMAIN)
         for chunk in iter(lambda: blob.read(_CHUNK_BYTES), b""):
             digest.update(chunk)
         if digest.digest() != expected:
             raise sqlite3.DatabaseError("raw memory payload digest differs")
+
+
+def _verify_buffer(raw: bytes, expected: bytes) -> None:
+    if payload_digest(raw) != expected:
+        raise sqlite3.DatabaseError("raw memory payload digest differs")
 
 
 def verify_payload_at_digest(connection: sqlite3.Connection, digest: bytes) -> None:
@@ -159,7 +179,7 @@ def verify_payload_at_digest(connection: sqlite3.Connection, digest: bytes) -> N
     ).fetchone()
     if row is None:
         raise sqlite3.DatabaseError("missing updated memory payload")
-    _verify_body(connection, row)
+    _verify_body(connection, *_payload_location(row))
 
 
 def _require_reference_closure(connection: sqlite3.Connection) -> None:
@@ -224,11 +244,26 @@ def verify_raw_payloads(connection: sqlite3.Connection) -> None:
             base_selector=RAW_CURRENT_BASE_SELECTOR,
         )
     _require_reference_closure(connection)
-    for row in connection.execute("""
+    rows = connection.execute("""
         SELECT rowid,payload_digest,raw_size,codec,typeof(body)
         FROM main.memory_payloads NOT INDEXED ORDER BY rowid
-    """):
-        _verify_body(connection, row)
+    """)
+    # Keep reads on the verified transaction and hand only immutable bytes to
+    # the hash workers. Pending buffers occupy at most 16 MiB per scan.
+    pending: deque[Future[None]] = deque()
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        for row in rows:
+            rowid, expected, size = _payload_location(row)
+            if not _CHUNK_BYTES <= size <= _MAX_QUEUED_PAYLOAD_BYTES:
+                _verify_body(connection, rowid, expected, size)
+                continue
+            if len(pending) == _MAX_PENDING_HASHES:
+                pending.popleft().result()
+            with _open_raw_body(connection, rowid, size) as blob:
+                raw = blob.read()
+            pending.append(workers.submit(_verify_buffer, raw, expected))
+        for result in pending:
+            result.result()
 
 
 def iter_batch_rows(connection: sqlite3.Connection) -> Iterator[sqlite3.Row]:
