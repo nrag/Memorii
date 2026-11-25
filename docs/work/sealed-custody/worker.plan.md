@@ -24,4 +24,4 @@ Sixteen focused tests passed against the installed macOS artifact with warnings 
 
 ## Next Action
 
-Prototype an independently supervised and authenticated service owner, then prove installed credential rotation and full Tier A framing, cross-process custody and real installation inventory recovery before any production wiring.
+See the [storage owner boundary proof](owner.plan.md) for the bounded Linux UID, readiness, and process-handoff evidence. Credential rotation, full Tier A framing, and real installation inventory recovery remain open before production wiring.
