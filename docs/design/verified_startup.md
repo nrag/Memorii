@@ -2,6 +2,8 @@
 
 **Proposed design.** The installed default remains v7. The first cold-start experiment covers owner-staged v8 named generations in read-only mode. The current acquisition remains the default path for a new process serving a writable generation.
 
+The [production custody proposal](sealed_startup_custody.md) specifies the enrolled storage owner, retained SQLite view, writer handoff and erasure protocol.
+
 ## Why Startup Scans
 
 `open_managed_partition` creates a fresh `StorageAdministrationService` and calls `acquire_verified_snapshot` before returning the memory plane. The constructor verifies the independent control journal. Acquisition holds the publication fence, resolves pending publication, loads the signed finalized tuple and checks the selected SQLite generation. On a cache miss, `_matches_materialization` verifies raw bodies, schema, references and index parity, rebuilds the catalog forest, compares its digest, and verifies checkpoint plus tail against the signed head and live rows. A valid checkpoint skips journal prefix replay. It supplies no current evidence for raw bodies or materialized SQLite tables. [Factory](../../memorii/memorii/core/persistence/factory.py#L283) · [Acquisition](../../memorii/memorii/core/storage_administration/service.py#L988) · [Exact verifier](../../memorii/memorii/core/storage_administration/service.py#L1095)
