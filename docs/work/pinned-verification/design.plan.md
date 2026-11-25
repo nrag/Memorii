@@ -4,7 +4,7 @@
 - Delivery fidelity: Level 2 experiment for the Level 3 capacity gate
 - Baseline: `a5f2e623`, `codex/durable-delivery-implementation`
 - Related: [reference capacity debugging](../reference-capacity-debugging/debugging.plan.md)
-- Status: the single-overlap and sustained-publication experiments are complete. Named-generation manifest reuse is implemented. Production pinning design and release qualification remain open.
+- Status: prior feasibility and manifest reuse are complete. The one-scan fallback experiment is in verification. Production pinning design and release qualification remain open.
 
 ## Objective And Scope
 
@@ -66,6 +66,13 @@ The largest individual writer fence wait fell from 5.19 s to 0.218 ms on balance
 
 The release-path regression in [generation selection](../../../memorii/tests/integration/test_partition_generation_selection.py) fails on the installed baseline because the following publication rebuilds a verified manifest. It passes on the candidate and shows that an external same-head edit still blocks publication without changing signed authority or creating a pending intent. The candidate wheel passed 57 of 58 focused tests with warnings treated as errors, including all four pin tests. The failing `test_third_state_intent_quarantines_and_blocks_publication` raises the same integrity error during recovery on both the baseline and candidate wheels. Ruff and whitespace checks passed.
 
+## One Pinned Scan With Locked Fallback
+
+- `LOCKED-FALLBACK`: run at most one pinned scan. If revalidation detects a different finalized signed publication, close both SQLite views and release all locks before calling the existing fenced acquisition once. Return only the snapshot verified by the successful path. Same-head observer drift and integrity failures deny release without triggering fallback.
+- `FALLBACK-CONTENTION`: compare fenced acquisition and the one-scan fallback against the installed manifest reuse wheel on both retained fixtures. Reuse the 40 managed command offers at 500 ms intervals. Time fresh reader handle construction through verified acquisition. Report first-write and worst offer-to-return latency, writer fence pause, fallback duration, and the ordinal released while the burst is active.
+
+The fallback is test-only. No persisted or public identifiers, schemas, defaults, or recovery rules change.
+
 ## Next Action
 
-Test a single optimistic attempt with a fallback to existing fenced acquisition after a stale pin, and measure the resulting reader completion and writer pause under the same sustained load.
+Run the final fallback probe and its focused tests against the installed manifest reuse candidate.

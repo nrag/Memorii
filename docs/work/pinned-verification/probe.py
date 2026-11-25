@@ -13,6 +13,7 @@ from itertools import islice
 from pathlib import Path
 from threading import Event
 from time import monotonic_ns, sleep
+from typing import Literal
 
 from memorii.core.memory_plane.file_lock import locked_file
 from memorii.core.persistence.contracts import (
@@ -31,6 +32,16 @@ from memorii.stores.sqlite.partition import PartitionDataRepository, Verificatio
 from tests.support.reference_capacity import Distribution, warm_samples
 from tests.support.reference_capacity_fixture import _installed_wheel_digest
 from tests.support.reference_capacity_measure import _fresh_copy, _WarmRuntime
+
+ReaderMode = Literal["baseline", "pinned", "fallback"]
+
+
+class StaleVerificationPin(StorageAdministrationError):
+    """Every allowed pinned attempt lost its authority before release."""
+
+    def __init__(self, *, publication_changed: bool) -> None:
+        super().__init__("current publication changed during all pinned verification attempts")
+        self.publication_changed = publication_changed
 
 
 @dataclass(frozen=True)
@@ -74,9 +85,11 @@ def checked_row(service: StorageAdministrationService, connection: sqlite3.Conne
 
 
 def pinned_acquisition(
-    service: ObservedService, *, before_revalidation: Callable[[], None] | None = None,
+    service: ObservedService, *, before_revalidation: Callable[[], None] | None = None, attempts: int = 3,
 ) -> PartitionVerificationSnapshot:
-    for _ in range(3):
+    publication_changed = False
+    for _ in range(attempts):
+        publication_changed = False
         with ExitStack() as stack:
             with service._publication_fence():
                 pin = authority(service)
@@ -91,7 +104,9 @@ def pinned_acquisition(
                     checked_row(service, data, pin)
                     if not partition.uses_raw_memory_payloads(data):
                         raise StorageAdministrationError("probe requires staged raw payload storage")
-                    if authority(service) != pin or partition.verification_cookie(observer) != cookie:
+                    current = authority(service)
+                    if current != pin or partition.verification_cookie(observer) != cookie:
+                        publication_changed = current.publication != pin.publication
                         service.stale += 1
                         continue
 
@@ -102,7 +117,9 @@ def pinned_acquisition(
             with service._publication_fence(), locked_file(
                 pin.path.with_name(pin.path.name + ".lock"), exclusive=False,
             ):
-                if authority(service) != pin or partition.verification_cookie(observer) != cookie:
+                current = authority(service)
+                if current != pin or partition.verification_cookie(observer) != cookie:
+                    publication_changed = current.publication != pin.publication
                     service.stale += 1
                     continue
                 checked_row(service, observer, pin)
@@ -116,7 +133,21 @@ def pinned_acquisition(
                     tuple_digest=publication.payload_digest(), ordinal=publication.vector.partition_ordinal,
                     manifest_digest=publication.manifest_digest, vector=publication.vector,
                 )
-    raise StorageAdministrationError("current publication changed during all pinned verification attempts")
+    raise StaleVerificationPin(publication_changed=publication_changed)
+
+
+def acquire_with_locked_fallback(service: ObservedService) -> PartitionVerificationSnapshot:
+    try:
+        return pinned_acquisition(service, attempts=1)
+    except StaleVerificationPin as exc:
+        if not exc.publication_changed:
+            raise
+    # The stale attempt has already closed its SQLite views and advisory locks.
+    started = monotonic_ns()
+    try:
+        return service.acquire_verified_snapshot()
+    finally:
+        service.fallback_interval_ns = (started, monotonic_ns())
 
 
 class ObservedService(StorageAdministrationService):
@@ -127,6 +158,7 @@ class ObservedService(StorageAdministrationService):
         self.scan_started: Event | None = None
         self.writer_arrived: Event | None = None
         self.stale = 0
+        self.fallback_interval_ns: tuple[int, int] | None = None
 
     @contextmanager
     def _publication_fence(self) -> Iterator[None]:
@@ -241,14 +273,14 @@ def trial(
 
 
 def sustained_trial(
-    base: Path, work: Path, distribution: Distribution, expected: str, use_pin: bool,
+    base: Path, work: Path, distribution: Distribution, expected: str, mode: ReaderMode,
 ) -> dict[str, object]:
     interval_ns = 500_000_000
     commands = tuple(islice(warm_samples(distribution, "command_commit", contended=True), 40))
     with (
         _fresh_copy(base, work) as root,
-        ObservedService(root) as reader,
         ObservedService(root) as writer,
+        ExitStack() as stack,
     ):
         runtime = _WarmRuntime(writer, distribution, label="background")
         if writer.acquire_verified_snapshot().tuple_digest != expected:
@@ -265,10 +297,13 @@ def sustained_trial(
         writer.fences.clear()
         writer.scans.clear()
         started, arrived = Event(), Event()
-        reader.scan_started = started
-        reader.writer_arrived = writer.writer_arrived = arrived
+        writer.writer_arrived = arrived
         wal = partition.database_path.with_name(partition.database_path.name + "-wal")
         origin = monotonic_ns()
+        reader = stack.enter_context(ObservedService(root))
+        reader_opened = monotonic_ns()
+        reader.scan_started = started
+        reader.writer_arrived = arrived
 
         def write() -> list[dict[str, object]]:
             if not started.wait(30):
@@ -294,12 +329,16 @@ def sustained_trial(
         verified = None
         with ThreadPoolExecutor(1) as executor:
             pending = executor.submit(write)
+            reader_acquire_started = monotonic_ns()
             try:
-                verified = pinned_acquisition(reader) if use_pin else reader.acquire_verified_snapshot()
-            except StorageAdministrationError as exc:
-                if not use_pin or reader.stale != 3 or str(exc) != (
-                    "current publication changed during all pinned verification attempts"
-                ):
+                if mode == "fallback":
+                    verified = acquire_with_locked_fallback(reader)
+                elif mode == "pinned":
+                    verified = pinned_acquisition(reader)
+                else:
+                    verified = reader.acquire_verified_snapshot()
+            except StaleVerificationPin:
+                if mode != "pinned":
                     raise
                 reader_outcome = "retry_exhausted"
             reader_return = monotonic_ns()
@@ -308,6 +347,13 @@ def sustained_trial(
         final = authority(writer).publication
         if final.vector.partition_ordinal != publication.vector.partition_ordinal + len(commands):
             raise RuntimeError("writer did not publish one signed head per command")
+        if mode == "fallback" and (reader.stale != 1 or reader.fallback_interval_ns is None):
+            raise RuntimeError("the write burst did not exercise the locked fallback")
+        if mode == "fallback" and (
+            len(reader.scans) != 2 or verified is None
+            or not publication.vector.partition_ordinal < verified.ordinal < final.vector.partition_ordinal
+        ):
+            raise RuntimeError("fallback did not verify an intervening publication during the burst")
         scans = list(reader.scans)
         fences = list(reader.fences)
         quiet_retry_ns = None
@@ -317,10 +363,17 @@ def sustained_trial(
                 raise RuntimeError("pinned acquisition after the burst did not verify the final tuple")
             quiet_retry_ns = monotonic_ns() - before
         return {
-            "type": "sustained_trial", "distribution": distribution, "mode": "pinned" if use_pin else "baseline",
+            "type": "sustained_trial", "distribution": distribution, "mode": mode,
             "input_tuple": expected, "final_tuple": final.payload_digest(),
             "verified_tuple": None if verified is None else verified.tuple_digest,
+            "verified_ordinal": None if verified is None else verified.ordinal,
+            "input_ordinal": publication.vector.partition_ordinal,
+            "locked_fallback_interval_ns": (
+                [boundary - origin for boundary in reader.fallback_interval_ns]
+                if reader.fallback_interval_ns is not None else None
+            ),
             "reader_outcome": reader_outcome, "reader_return_ns": reader_return - origin,
+            "reader_open_ns": reader_opened - origin, "reader_acquisition_ns": reader_return - reader_acquire_started,
             "quiet_retry_ns": quiet_retry_ns, "stale_attempts": reader.stale,
             "reader_scan_intervals_ns": [(begin - origin, end - origin) for begin, end in scans],
             "reader_fence_wait_hold_ns": fences, "writer_fence_wait_hold_ns": writer.fences,
@@ -339,6 +392,7 @@ def main() -> None:
     experiment = parser.add_mutually_exclusive_group()
     experiment.add_argument("--warm-writer-manifest", action="store_true")
     experiment.add_argument("--sustained", action="store_true")
+    experiment.add_argument("--sustained-fallback", action="store_true")
     args = parser.parse_args()
     wheel_digest = _installed_wheel_digest(args.wheel)
     for distribution in ("balanced", "concentrated"):
@@ -351,8 +405,9 @@ def main() -> None:
             "probe_wheel_sha256": wheel_digest, "distribution": distribution, "input_tuple": expected,
         }), flush=True)
         for use_pin in (False, True) if distribution == "balanced" else (True, False):
-            if args.sustained:
-                result = sustained_trial(args.fixtures / distribution, args.work, distribution, expected, use_pin)
+            if args.sustained or args.sustained_fallback:
+                mode: ReaderMode = ("fallback" if args.sustained_fallback else "pinned") if use_pin else "baseline"
+                result = sustained_trial(args.fixtures / distribution, args.work, distribution, expected, mode)
             else:
                 result = trial(
                     args.fixtures / distribution, args.work, distribution, expected, use_pin,
