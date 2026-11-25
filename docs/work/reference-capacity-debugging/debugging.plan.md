@@ -49,6 +49,8 @@ The targeted source test uses the real managed capture path and two separate han
 
 The independent specification, correctness, and test reviewers confirmed the live-publication mechanism and fail-closed recovery contract. Correctness review separately injected the terminal-intent interruption in both publishers of a staged v8 fixture. Reopening first denied the read and then recovered the exact candidate. The candidate slice has `remaining_validated_p1_p2: []` for this race correction. Full-scale qualification still fails at the frozen prior revision. This fix addresses transient source failures from live publication and retains mandatory exact verification.
 
+An isolated installation of `73b4265acdcd7efadc4283384797c84a6ae0fc1d` verified against wheel SHA-256 `b83e6eddb44779cf2c85f1d7479df0e5cdac6d613a1c165510047ea17c2efe86` and passed all 100 focused tests with warnings treated as errors. The [small installed contention rerun](managed-contention-after-fix.jsonl) recorded zero source errors. It still observed 18 fenced foreground and 19 fenced background rebuilds in the contended command series. This corroborates the separate correctness and lock-amplification mechanisms. No updated release performance claim is made from the small fixture.
+
 ## Next Action
 
 Prototype a verified snapshot flow that pins the signed tuple and WAL view under a short fence, verifies outside it, and revalidates authority and the current tuple before release. Measure bounded retries under a competing writer. Startup still needs a separate reduction in exact payload, catalog, and replay costs.
