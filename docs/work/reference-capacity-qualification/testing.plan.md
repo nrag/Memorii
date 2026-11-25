@@ -2,7 +2,7 @@
 
 - Work type: testing
 - Delivery fidelity: Level 3
-- Status: both Linux runs completed and failed the startup budget. Dedicated macOS is scheduled.
+- Status: all four native workload measurements completed. The v8 release gate failed.
 - Branch: `codex/durable-delivery-implementation`
 - Starting head: `ba1e7baab0626aaa32c36a350876c0c3b952b337`
 - Parent: [reference capacity milestone](../durable-delivery-implementation/milestones/reference-capacity.plan.md)
@@ -38,8 +38,10 @@ The formal driver starts every acquisition sample from a fresh fixture copy in a
 - Format numbers remain persisted schema identities. `--raw-payloads` reuses the existing owner CLI terminology and applies only to these test-driver invocations.
 - The 28 focused fixture, driver, upgrade, and capacity regression tests passed locally and again from an isolated installation of `9d3436378321719a650329bb26165ac65c6d7e60`. The driver matched the installed inventory to wheel SHA-256 `25b040fa8a570ce7247dfcd7e24562c6e6b0bea9ec15e672e83ed64861f83b65`. Scoped Ruff, Pyright, and repository identity checks passed. An independent correctness reviewer found no validated P1/P2 in the format wiring. The formal run was unavailable and remains unverified.
 - The owner reserved this native Mac for a direct run and authorized one disposable PhoenixNAP host for Linux. Both use the same frozen `8e570195` candidate and wheel. The [Linux balanced report](linux/8e570195/README.md) records 11.52 s startup acquisition p95 against the 5 s budget. The remaining dedicated measurements still apply even though the Linux balanced release gate failed.
-- The [complete Linux evidence](linux/8e570195/README.md) records a 11.54 s concentrated startup p95 and two contended source capture errors. Both Linux fixtures retained the exact source and replay counts. The browser requires action-time confirmation to permanently delete the disposable host and release its IPv4 allocation.
+- The [complete Linux evidence](linux/8e570195/README.md) records an 11.54 s concentrated startup p95 and two contended source capture errors. Both Linux fixtures retained the exact source and replay counts. After action-time confirmation on November 25, the provider inventories showed the disposable host and its billed IPv4 allocation were gone.
+- The [native macOS evidence](macos/8e570195/README.md) records 9.61 s balanced and 9.66 s concentrated startup p95, plus three balanced contended source-capture errors with the same pending-publication recovery signal as Linux. The two original reports survived an overnight launcher publication failure and were collected manually.
+- On both platforms and distributions, checkpoint resume, exclusive backup pause, and sequential state read and command commit passed. Startup acquisition took 9.61 to 11.54 s p95. Contended command commit took 32.42 to 44.85 s p95. The small backup pause measures only publication fences. The earlier custom Mac cold diagnostic used a different fixture preparation and measurement procedure. These runs establish the full acquisition miss without isolating its component-level cause.
 
 ## Blockers And Next Action
 
-After action-time confirmation, deprovision the disposable Linux host and billed IPv4 allocation. The native macOS run is scheduled on the owner-reserved workstation. Keep v7 as default while the release gate is open.
+Profile complete startup acquisition on a frozen fixture constructed by the qualification driver. Keep v7 as default while the release gate is open. The concurrent pending-publication recovery errors also require investigation before v8 qualification can pass.
