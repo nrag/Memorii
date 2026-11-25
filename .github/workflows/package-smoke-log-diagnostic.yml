@@ -1,0 +1,30 @@
+name: Package Smoke Log Diagnostic
+
+on:
+  push:
+    branches: [codex/inspect-package-smoke-log]
+
+permissions:
+  actions: read
+
+jobs:
+  inspect:
+    name: Read package smoke failure tail
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Download and summarize existing job log
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/nrag/Memorii/actions/jobs/139462347803/logs > "$RUNNER_TEMP/package-smoke.log"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          path = Path(os.environ["RUNNER_TEMP"]) / "package-smoke.log"
+          lines = path.read_text().splitlines()
+          print(f"Existing log: {len(lines)} lines, {path.stat().st_size} bytes")
+          print("Failure tail:")
+          for line in lines[-100:]:
+              print(line[:2000])
+          PY
