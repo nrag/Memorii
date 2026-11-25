@@ -3,7 +3,7 @@
 - Work ID: canonical-evidence-validation
 - Work type: debugging
 - Delivery fidelity: Level 2, bounded CI and test-fixture maintenance
-- Status: under-review
+- Status: blocked (recurring workflow paused; weekly replacement pending required CI)
 - Coordinator: Codex
 - Created: 2026-11-25
 - Last updated: 2026-11-25
@@ -30,8 +30,9 @@ repository test corpus, and unrelated workflow optimization are deferred.
 
 Included: the named workflow, its five tests and directly shared construction
 helpers, current development documentation, and this debugging record. A
-syntax-only solver conditional cleanup is included after the first hosted PR
-run exposed a pre-existing Ruff error that blocks the required aggregate.
+syntax-only solver conditional cleanup was tried as a required-CI unblocker,
+then reverted because it invalidated frozen release-candidate source evidence.
+The final correction contains no production source changes.
 Excluded: runtime semantic changes, suppressing failures, removing assertions,
 unrelated workflows, billing-account configuration, and new hosted infrastructure.
 
@@ -90,14 +91,24 @@ checks pass. The first hosted correction also passes both exact suites and
 collection guards in a 6-minute 9-second job, including a cold lean install.
 The 15-minute timeout therefore has measured hosted setup and execution headroom.
 
-Independent final diff review is complete without blocking findings. PR #125
-is open. Its corrected canonical-evidence job and `Benchmark Contracts` pass.
-The first PR Gates run reports one Ruff SIM102 error in the unchanged solver
-verifier. The exact full Ruff command reproduces the identical error on the
-clean baseline with Ruff 0.17.6. The minimal conditional cleanup passes full
-Ruff, all four existing verifier tests, and Pyright locally. Remaining required
-GitHub checks and default-branch rollout are pending. The default branch is
-protected; required statuses are `Unit Tests` and `Benchmark Contracts`.
+Independent final diff review is complete without blocking findings in the
+canonical-evidence correction. PR #125 is open. Its corrected workflow passed
+twice on GitHub, most recently in 5m52s. `Benchmark Contracts` passes, but
+required repository-wide CI blocks merge. Full Ruff reproduces SIM102 on clean
+baseline with Ruff 0.17.6. Unit shards report a missing `python3.12` executable
+on Ubuntu 26.04 runners configured only with Python 3.11. This hosted failure
+is observed, not excluded through a full clean-base shard reproduction.
+
+The attempted solver syntax cleanup passed local Ruff, verifier tests, and
+Pyright but violated a frozen release-candidate source hash in Package Smoke.
+It is reverted exactly to the pinned baseline bytes; release evidence is not
+silently regenerated. Broader CI environment/toolchain repair and any required
+release-evidence recertification are outside this bounded fixture correction.
+
+Immediate containment is applied: GitHub workflow `351716976` reports
+`disabled_manually`, independently verified after the API operation on
+2026-11-25 at 19:56 UTC. The former four-hour workflow therefore stays off.
+Merge and re-enable only after required CI is repaired and green.
 
 ## Hypothesis ledger and experiments
 
@@ -136,7 +147,7 @@ the public repository's already-free standard runner compute cost.
 | `memorii/tests/unit/core/test_provider_service.py` and `memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_coordinator_v3.py` | Existing signed monitoring authority -> provider constructor -> active status -> built-in graph path | Clean-base failures reproduced; corrected five tests and nine sibling cases pass | locally verified |
 | `memorii/tests/unit/core/semantic_ingestion/test_canonical_evidence_mode_parity.py` | Same production composition -> explicit mode -> public outcome/replay/durable projection | Enabled/disabled snapshot checks and retained outcome, idempotence, projection assertions pass | locally verified |
 | `docs/development/static_tooling.md` and historical canonical-closure implementation plan | Current executable workflow and historical cadence supersession | Read against final YAML | verified |
-| `memorii/memorii/core/solver/verifier.py` | Same solver decision and missing-evidence checks; final nested conditional combined without changing fallthrough | Exact clean-base Ruff failure; full Ruff, four verifier tests, and Pyright pass after cleanup | locally verified |
+| `memorii/memorii/core/solver/verifier.py` | Frozen release-candidate source bytes | Temporary syntax cleanup reverted; SHA-256 exactly matches baseline and `candidate.json` | unchanged in final diff |
 | WorkPlan | Debugging evidence only | Reconcile actual diff and evidence | active |
 
 Behavioral identities (canonical-evidence workflow, helpers, modes, test names)
@@ -160,14 +171,17 @@ correctness investigation maps this chain before fixture edits.
 | Workflow configuration and shell syntax | Cadence, cost bounds, selection | YAML and `bash -n` passed; one job, Monday 07:23 UTC, 15-minute initial cap, read-only contents permission |
 | Ruff changed Python files; identity hygiene | Repository conventions | passed, exit 0 |
 | Actual GitHub workflow, run `45685424785` | Runner/setup/expression behavior | passed: 2 parity tests in 113.61s, 3 admission tests in 165.69s; both count guards; job 6m09s including installation |
-| Full `ruff check memorii tests` with Ruff 0.17.6 | Required Static Analysis unblocker | exact baseline failure SIM102 at solver/verifier.py:52; cleanup passes |
-| Solver verifier tests with warnings as errors | Syntax-only cleanup | 4 passed in 0.61s |
+| Full `ruff check memorii tests` with Ruff 0.17.6 | Required Static Analysis blocker | exact baseline failure SIM102 at solver/verifier.py:52; attempted cleanup reverted to preserve frozen source proof |
+| Solver verifier tests with warnings as errors | Temporary syntax-only cleanup | 4 passed in 0.61s before cleanup was reverted |
 | `pyright --pythonpath <venv-python>` | Existing configured type-check scope | 0 errors, 0 warnings, 0 informations |
+| Actual GitHub workflow, run `45687065023` | Final weekly workflow/fixture bytes | passed again in 5m52s on PR head `38c1ed9`, merge revision `a73537b`; subsequent cleanup changes only this record and restores unrelated solver bytes |
+| GitHub workflow state | Immediate containment | independently read `disabled_manually` for workflow `351716976`; updated 2026-11-25T19:56:17Z |
 
 The four original assertion failures are resolved locally and on GitHub.
-The first PR's pre-existing lint failure is reproduced, with a locally passing
-cleanup prepared for hosted verification. No other failure is excluded without
-identical clean-base reproduction.
+The clean-base lint failure and hosted missing-interpreter failures still block
+normal merge. No other failure is excluded without identical clean-base
+reproduction. The release-proof failure caused by the attempted lint cleanup
+is resolved by restoring the exact original file; no pinned evidence is changed.
 
 ## Delegation and review log
 
@@ -224,25 +238,45 @@ identical clean-base reproduction.
   `and` preserves all outcomes and the spec's unresolved-evidence validation.
   The sole writer applied that bounded cleanup. Full Ruff and four existing
   verifier tests pass; configured Pyright also passes. No rule is suppressed.
+- 2026-11-25: the unchanged canonical-evidence correction passed again at
+  `https://github.com/nrag/Memorii/actions/runs/45687065023`, executed revision
+  `a73537bc909718c10cd41239760bec6fe3b82484`, in 352 seconds. Required PR Gates
+  additionally reports missing `python3.12` in unit compiler tests. Package
+  Smoke reports `proof_candidate_member_changed:memorii/memorii/core/solver/verifier.py`.
+  A bounded diagnostic on a separate, unmerged branch retrieved the large logs;
+  no full workflow was manually rerun. The solver cleanup is reverted exactly
+  to SHA-256 `e29e93b4a6293e814e5f0123c7fcca5fec4a0b93a89b95522f0b52c53d081e55`.
+- 2026-11-25: an isolated two-minute containment job called GitHub's disable API
+  for only the named scheduled workflow. Its immediate state assertion failed
+  after the mutation, but a separate public REST read confirmed the resulting
+  state is `disabled_manually`, updated at 19:56:17 UTC. No other schedule or
+  repository protection was changed. The temporary diagnostic workflow is
+  removed from its branch after evidence collection.
 
 ## Blockers and limits
 
-Local ICU build prerequisite is resolved. No manual GitHub reruns have been
-triggered. Pushing the required lint correction will trigger the repository's
-existing PR gates; avoid further documentation-only pushes or optional reruns.
+Local ICU build prerequisite is resolved. No manual full GitHub reruns have
+been triggered. The final scope cleanup uses `[skip ci]` to avoid repeating
+known-blocked repository-wide checks. It does not satisfy, waive, or bypass a
+merge gate: the PR remains blocked. The scheduled workflow is disabled, and its
+replacement bytes have already passed twice. Required CI repair must receive
+fresh hosted verification before merge and re-enablement.
 Billing attribution cannot be established through repository tools alone.
 
 ## Next action
 
-Publish the bounded lint correction and observe required GitHub checks, then
-merge through normal protection if they pass. The PR description records final
-hosted verification and rollout after this committed evidence snapshot.
+Leave the recurring workflow paused and the reviewed weekly correction in
+PR #125. Resolve the repository-wide Python/toolchain and frozen release-proof
+maintenance requirements separately; then run required gates, merge normally,
+and re-enable the weekly workflow. The PR description records the final head
+and containment evidence after this committed snapshot.
 
 ## Outcome
 
 Root cause and canonical-evidence regression proof are complete locally and on
-GitHub. The required-gate lint correction is locally verified. Default-branch
-rollout remains pending; the old schedule remains active until merge.
+GitHub. Recurring failing execution is stopped through verified disablement.
+The economical weekly replacement is prepared and tested, but normal merge and
+re-enablement are blocked by the repository-wide CI issues above.
 
 ## Candidate review record
 
@@ -264,9 +298,9 @@ ci_event: pull_request
 ci_executed_sha: 0572f614a08232077c5ef75e057fbf1ebbaadf07
 ci_executed_ref: refs/pull/125/merge
 remaining_validated_p1_p2: []
-remaining_blocks_approval: []
+remaining_blocks_approval: [required-repository-ci-not-green]
 remaining_changes_required: []
-local_ci_parity: exact test commands, collection guards, and lean installation passed locally and on GitHub for the initial correction; syntax-only lint follow-up pending CI
+local_ci_parity: exact canonical-evidence test commands, collection guards, and lean installation passed locally and twice on GitHub; final unrelated solver revert and evidence update intentionally do not rerun known-blocked full CI
 acceptance_gate_inventory: [Canonical-Evidence Validation, Unit Tests, Benchmark Contracts]
 github_run_urls: [https://github.com/nrag/Memorii/actions/runs/45635391628, https://github.com/nrag/Memorii/actions/runs/45685424785, https://github.com/nrag/Memorii/actions/runs/45685424588]
 pr_head_sha: 1c546b9dcf295f3589c9205b65e931652ed7bb63
@@ -275,9 +309,9 @@ merge_base_sha: 885c7db7ad8bba1aa0dd7d88c8f162d26c3bed0d
 required_checks_green: false
 ```
 
-This records the initial correction's hosted proof and the locally verified
-lint follow-up. The final follow-up SHA and required-check/rollout status are
-recorded in PR #125 after submission; this snapshot does not claim rollout.
+This records the canonical-evidence correction's hosted proof and the reverted
+lint experiment. The final cleanup SHA and required-check status are recorded
+in PR #125; this snapshot claims verified containment, not weekly rollout.
 
 ## Exact sibling verification
 
