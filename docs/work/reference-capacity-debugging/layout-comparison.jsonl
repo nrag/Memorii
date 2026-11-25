@@ -1,0 +1,17 @@
+{"revision": "8e57019533f1d28497253da370765561168ed8f0", "tuple_digest": "f6162e54477420a0b78b9d3f24f601a93ff406abfd11e4e8e7978aeddc6d7f53", "type": "identity", "wheel_sha256": "db4fc4db38c6ace39dbbfdc27bbf5ae6621f04386bf587214abc1d33d48cda8e"}
+{"database_bytes": 5655961600, "layout": "original", "type": "layout"}
+{"resident_pages": 0, "type": "residency_before"}
+{"checkpoint_selected": true, "elapsed_ns": 11784570875, "manifest_ns": 9811057500, "raw_payload_verification_ns": 5470506542, "replay_ns": 1943234417, "tuple_digest": "f6162e54477420a0b78b9d3f24f601a93ff406abfd11e4e8e7978aeddc6d7f53", "type": "acquisition"}
+{"advice_ns": 834265959, "parity:memory_current_records_domain_lookup": 24438042, "parity:memory_current_records_insertion_order": 36494875, "parity:memory_current_records_source_kind_lookup": 23684708, "parity:memory_current_records_status_lookup": 22304709, "parity:memory_current_records_task_id": 22700709, "parity:memory_payloads_digest": 412843791, "references_ns": 77596417, "type": "raw_breakdown"}
+{"database_bytes": 5649113088, "layout": "compacted", "type": "layout"}
+{"resident_pages": 0, "type": "residency_before"}
+{"checkpoint_selected": true, "elapsed_ns": 8180296084, "manifest_ns": 6371256375, "raw_payload_verification_ns": 3607114584, "replay_ns": 1780209000, "tuple_digest": "f6162e54477420a0b78b9d3f24f601a93ff406abfd11e4e8e7978aeddc6d7f53", "type": "acquisition"}
+{"advice_ns": 826738209, "parity:memory_current_records_domain_lookup": 16514958, "parity:memory_current_records_insertion_order": 18725000, "parity:memory_current_records_source_kind_lookup": 16262166, "parity:memory_current_records_status_lookup": 17631459, "parity:memory_current_records_task_id": 15521792, "parity:memory_payloads_digest": 70987500, "references_ns": 60871958, "type": "raw_breakdown"}
+{"database_bytes": 5655961600, "layout": "original", "type": "layout"}
+{"resident_pages": 0, "type": "residency_before"}
+{"checkpoint_selected": true, "elapsed_ns": 9506392875, "manifest_ns": 7731147250, "raw_payload_verification_ns": 4805128791, "replay_ns": 1746462834, "tuple_digest": "f6162e54477420a0b78b9d3f24f601a93ff406abfd11e4e8e7978aeddc6d7f53", "type": "acquisition"}
+{"advice_ns": 869366375, "parity:memory_current_records_domain_lookup": 19207125, "parity:memory_current_records_insertion_order": 22835000, "parity:memory_current_records_source_kind_lookup": 18260083, "parity:memory_current_records_status_lookup": 19188333, "parity:memory_current_records_task_id": 18287375, "parity:memory_payloads_digest": 86131708, "references_ns": 58625375, "type": "raw_breakdown"}
+{"database_bytes": 5649113088, "layout": "compacted", "type": "layout"}
+{"resident_pages": 0, "type": "residency_before"}
+{"checkpoint_selected": true, "elapsed_ns": 8274759459, "manifest_ns": 6477779209, "raw_payload_verification_ns": 3569795375, "replay_ns": 1765994875, "tuple_digest": "f6162e54477420a0b78b9d3f24f601a93ff406abfd11e4e8e7978aeddc6d7f53", "type": "acquisition"}
+{"advice_ns": 821539667, "parity:memory_current_records_domain_lookup": 16514375, "parity:memory_current_records_insertion_order": 18402917, "parity:memory_current_records_source_kind_lookup": 20697167, "parity:memory_current_records_status_lookup": 16376084, "parity:memory_current_records_task_id": 15395708, "parity:memory_payloads_digest": 68601083, "references_ns": 55829416, "type": "raw_breakdown"}

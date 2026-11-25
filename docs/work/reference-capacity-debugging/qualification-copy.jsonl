@@ -1,0 +1,9 @@
+{"wheel_sha256": "db4fc4db38c6ace39dbbfdc27bbf5ae6621f04386bf587214abc1d33d48cda8e", "revision": "8e57019533f1d28497253da370765561168ed8f0", "copy": "qualification default copytree"}
+{"distribution": "balanced", "sample": 0, "expected_tuple": "f6162e54477420a0b78b9d3f24f601a93ff406abfd11e4e8e7978aeddc6d7f53"}
+{"checkpoint_selected": true, "elapsed_ns": 9088710875, "manifest_ns": 7272330209, "raw_payload_verification_ns": 4668025166, "replay_ns": 1784908583, "tuple_digest": "f6162e54477420a0b78b9d3f24f601a93ff406abfd11e4e8e7978aeddc6d7f53", "type": "acquisition"}
+{"distribution": "balanced", "sample": 1, "expected_tuple": "f6162e54477420a0b78b9d3f24f601a93ff406abfd11e4e8e7978aeddc6d7f53"}
+{"checkpoint_selected": true, "elapsed_ns": 9910491458, "manifest_ns": 7958960166, "raw_payload_verification_ns": 4673977000, "replay_ns": 1919978667, "tuple_digest": "f6162e54477420a0b78b9d3f24f601a93ff406abfd11e4e8e7978aeddc6d7f53", "type": "acquisition"}
+{"distribution": "concentrated", "sample": 0, "expected_tuple": "57974491a444ae6ab43be2901f4f8d64132ad7ea20e2cd5d8b3f2e27f4f58352"}
+{"checkpoint_selected": true, "elapsed_ns": 9059740167, "manifest_ns": 7145879542, "raw_payload_verification_ns": 4465386292, "replay_ns": 1880584083, "tuple_digest": "57974491a444ae6ab43be2901f4f8d64132ad7ea20e2cd5d8b3f2e27f4f58352", "type": "acquisition"}
+{"distribution": "concentrated", "sample": 1, "expected_tuple": "57974491a444ae6ab43be2901f4f8d64132ad7ea20e2cd5d8b3f2e27f4f58352"}
+{"checkpoint_selected": true, "elapsed_ns": 9129582125, "manifest_ns": 7126528792, "raw_payload_verification_ns": 4613428209, "replay_ns": 1971372042, "tuple_digest": "57974491a444ae6ab43be2901f4f8d64132ad7ea20e2cd5d8b3f2e27f4f58352", "type": "acquisition"}
