@@ -48,7 +48,7 @@ def _write_selector(
 
 
 def _select_generation(service: StorageAdministrationService, *, generation_id: str = "selected") -> Path:
-    """Exercise the reader boundary with an owner-signed empty finalized generation."""
+    """Exercise the reader boundary with an owner-signed finalized generation."""
     previous = service._control.read_publication_state(service._repository_id())
     assert previous is not None
     destination = service.installation_root / "partition" / "generations" / generation_id / "partition.sqlite3"
@@ -102,6 +102,39 @@ def test_selected_generation_fences_retained_readers_and_writers(tmp_path: Path)
             pytest.raises(InstallationIntegrityError, match="generation"),
         ):
             fallback.acquire_verified_snapshot()
+
+
+def test_named_acquisition_reuses_manifest_for_write_until_external_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = CanonicalMemoryRecord(
+        memory_id="source", domain=MemoryDomain.TRANSCRIPT, text="initial",
+        source_kind="fixture", status=CommitStatus.COMMITTED,
+    )
+    with StorageAdministrationService(tmp_path) as owner:
+        owner.initialize()
+        owner.publish_memory_plane_batch((source,))
+        _select_generation(owner)
+    with StorageAdministrationService(tmp_path) as selected:
+        acquired = selected.acquire_verified_snapshot()
+        partition = selected.partition()
+
+        def reject_scan(_connection: sqlite3.Connection) -> None:
+            pytest.fail("publication rebuilt an already verified manifest")
+
+        with monkeypatch.context() as guarded:
+            guarded.setattr(partition, "rebuild_manifest_accumulator", reject_scan)
+            selected.publish_memory_plane_batch((source.model_copy(update={"text": "updated"}),))
+        published = selected.acquire_verified_snapshot()
+        assert published.ordinal == acquired.ordinal + 1
+        with closing(sqlite3.connect(partition.database_path)) as external, external:
+            external.execute("UPDATE memory_current_records SET source_kind = 'foreign' WHERE memory_id = 'source'")
+        with pytest.raises(InstallationIntegrityError, match="materializations are not verified"):
+            selected.publish_memory_plane_batch((source.model_copy(update={"text": "rejected"}),))
+        finalized = selected._control.read_publication_state(selected._repository_id())
+        assert finalized is not None
+        assert finalized.payload_digest() == published.tuple_digest
+        assert selected._control.read_pending_intent(selected._repository_id()) is None
 
 
 def test_selector_loss_cannot_release_an_older_copy_of_the_same_generation(tmp_path: Path) -> None:

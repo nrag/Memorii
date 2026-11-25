@@ -269,7 +269,7 @@ class StorageAdministrationService:
                     return
                 cookie = partition.verification_cookie(connection)
                 if self._verified_tuples.get(active_digest) != cookie:
-                    if not self._matches_materialization(connection, active):
+                    if not self._matches_materialization(connection, active, partition=partition, cookie=cookie):
                         raise InstallationIntegrityError("selected partition materializations are not verified")
                     self._verified_tuples = {active_digest: cookie}
 
