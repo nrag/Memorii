@@ -4,7 +4,7 @@
 - Delivery fidelity: Level 2 experiment for the Level 3 capacity gate
 - Baseline: `a5f2e623`, `codex/durable-delivery-implementation`
 - Related: [reference capacity debugging](../reference-capacity-debugging/debugging.plan.md)
-- Status: experimenting
+- Status: feasibility experiment complete. Production design and release qualification remain open.
 
 ## Objective And Scope
 
@@ -35,6 +35,17 @@ The writer called normal `acquire_verified_snapshot()` before timing. The named-
 
 Each pinned trial discarded one stale scan and verified the writer's new signed head. The [signer-checked samples](snapshot-warmup.jsonl) used probe SHA-256 `eec98ec772196a1f1f5b3bfa45f25b777f1ab19a983d5ef7faa94aba6cb4ef10`. The [earlier comparison](snapshot-warmup-initial.jsonl) showed the same fence and retry pattern before the cached-signer guard was added and used probe SHA-256 `cba8e88d3d6e063cdd30445634b36e1f948a836a29faa77511eaa40650b7ac10`. These trials do not distinguish I/O pressure from CPU or other overlapping work.
 
+## Verified Writer Manifest Warmup
+
+Before timing, both arms populated the writer's manifest accumulator through the existing write-side exact verification and confirmed the signed fixture head was unchanged. Neither writer rebuilt its manifest during the timed command. The writer returned while the pinned reader was still in its first scan, about 6.25 s before scan completion for balanced and 6.20 s for concentrated. Each pinned reader discarded one stale scan and verified the new head.
+
+| Exact fixture | Reader total baseline / pinned | Reader fence hold baseline / pinned | Writer lock wait baseline / pinned | Writer total baseline / pinned |
+| --- | ---: | ---: | ---: | ---: |
+| Balanced | 6.27 / 14.03 s | 6.27 s / 9.53 ms | 6.27 s / 0.200 ms | 6.29 s / 63.6 ms |
+| Concentrated | 6.13 / 14.17 s | 6.13 s / 11.12 ms | 6.13 s / 0.170 ms | 6.15 s / 52.4 ms |
+
+The [manifest-warmed samples](primed-writer-overlap.jsonl) used probe SHA-256 `d7b5209330101073c501c6ff8ed2e43bb33f84c5ada989354cc483c029c3a14d`. All four probe tests passed with warnings treated as errors against the installed wheel. This is one controlled pair per distribution with a deliberately primed writer, so the result establishes that the reader no longer blocks that writer through a full verification. Measuring steady-state progress, retries under sustained publication, WAL growth, and cold-start improvement requires production integration and further runs. The Level 3 qualification remains open.
+
 ## Next Action
 
-Run the test-only pinned verifier and baseline against the signed retained macOS fixture copies.
+Prototype retaining the exact verified manifest at successful named-generation acquisition, then pair it with pinned verification to measure bounded progress for readers and writers under sustained publication.

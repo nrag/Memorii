@@ -53,4 +53,4 @@ An isolated installation of `73b4265acdcd7efadc4283384797c84a6ae0fc1d` verified 
 
 ## Next Action
 
-Prototype a verified snapshot flow that pins the signed tuple and WAL view under a short fence, verifies outside it, and revalidates authority and the current tuple before release. Measure bounded retries under a competing writer. Startup still needs a separate reduction in exact payload, catalog, and replay costs.
+Use the [pinned verification experiment](../pinned-verification/design.plan.md) to evaluate avoiding redundant manifest rebuilds and measuring bounded progress under sustained publication. Startup still needs a separate reduction in exact payload, catalog, and replay costs.
