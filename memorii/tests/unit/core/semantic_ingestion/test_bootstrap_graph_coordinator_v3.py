@@ -57,6 +57,7 @@ from tests.fixtures.semantic_ingestion.bootstrap_graph_v3_fixture import (
     build_minimal_bootstrap_graph_plan_compilation_v3,
     build_persisted_bootstrap_graph_replay_fixture,
 )
+from tests.integration.test_observation_ledger_activation import _signed_monitoring_authority
 from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
     TEST_NOW,
     DeterministicTestHostBootstrapMaterialVerifier,
@@ -920,12 +921,14 @@ def _interrupt_after_handoff(
     assert index.content["state"] == "found"
 
 
-def _production_recovery_service(*, plane=None):
+def _production_recovery_service(*, plane=None, canonical_evidence_enabled=None):
     builder, _calls = _v3_normalization_host_builder(proposal=_recovery_proposal())
     service = _build_production_scoped_provider_service(
         source_normalization_host_bundle_builder=builder,
         memory_plane=plane,
         now_provider=lambda: TEST_NOW,
+        canonical_evidence_enabled=canonical_evidence_enabled,
+        verified_capability_monitoring_authorities=(_signed_monitoring_authority(),),
     )
     return service
 
