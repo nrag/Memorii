@@ -4,14 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
-import subprocess
-import sys
 from collections import deque
 from collections.abc import Iterator, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from itertools import zip_longest
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -232,41 +229,8 @@ def _require_reference_closure(connection: sqlite3.Connection) -> None:
         raise sqlite3.DatabaseError("raw memory payloads include missing or unreferenced rows")
 
 
-def _bounded_payload_rows(connection: sqlite3.Connection) -> sqlite3.Cursor:
-    # Check the actual SQLite BLOB length before materializing a body. The
-    # stored size is still untrusted at this point in acquisition.
-    return connection.execute("""
-        SELECT rowid,payload_digest,raw_size,codec,typeof(body),
-               CASE WHEN typeof(body) = 'blob' THEN
-                   CASE WHEN length(body) BETWEEN 1 AND ? AND length(body) = raw_size THEN body END
-               END
-        FROM main.memory_payloads NOT INDEXED ORDER BY rowid
-    """, (_MAX_QUEUED_PAYLOAD_BYTES,))
-
-
-def _advise_raw_read_ahead(connection: sqlite3.Connection) -> None:
-    if sys.platform != "darwin":
-        return
-    database = next((row[2] for row in connection.execute("PRAGMA database_list") if row[1] == "main"), "")
-    if not database:
-        return
-    # Closing another descriptor for the inode in this process can release
-    # SQLite's process-owned POSIX locks. The helper owns its descriptor.
-    try:
-        helper = Path(__file__).with_name("darwin_read_ahead.py").absolute()
-        subprocess.run(
-            [sys.executable, "-I", "-S", str(helper), database],
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            timeout=2, check=True,
-        )
-    except (OSError, subprocess.SubprocessError):
-        # Advice is optional. The SQLite snapshot supplies authenticated bytes.
-        return
-
-
 def verify_raw_payloads(connection: sqlite3.Connection) -> None:
     """Check each raw body once and bind base-table metadata to its lookup order."""
-    _advise_raw_read_ahead(connection)
     _require_index_parity(
         connection,
         "SELECT payload_digest,rowid FROM main.memory_payloads {selector} ORDER BY payload_digest",
@@ -280,9 +244,12 @@ def verify_raw_payloads(connection: sqlite3.Connection) -> None:
             base_selector=RAW_CURRENT_BASE_SELECTOR,
         )
     _require_reference_closure(connection)
-    rows = _bounded_payload_rows(connection)
-    # Keep reads on the verified transaction and drain the queue before fetching
-    # another body. Bounded Python buffers occupy at most 16 MiB per scan.
+    rows = connection.execute("""
+        SELECT rowid,payload_digest,raw_size,codec,typeof(body)
+        FROM main.memory_payloads NOT INDEXED ORDER BY rowid
+    """)
+    # Drain the queue before opening another body. Only the SQLite owner
+    # reads BLOBs, and full-body Python buffers are bounded to 16 MiB.
     pending: deque[Future[None]] = deque()
     with ThreadPoolExecutor(max_workers=2) as workers:
         while True:
@@ -292,12 +259,14 @@ def verify_raw_payloads(connection: sqlite3.Connection) -> None:
             if row is None:
                 break
             rowid, expected, size = _payload_location(row)
-            raw = row[5]
-            if raw is None:
+            if size > _MAX_QUEUED_PAYLOAD_BYTES:
                 _verify_body(connection, rowid, expected, size)
-            elif not isinstance(raw, bytes) or len(raw) != size:
+                continue
+            with _open_raw_body(connection, rowid, size) as blob:
+                raw = blob.read(size)
+            if len(raw) != size:
                 raise sqlite3.DatabaseError("raw memory payload length differs")
-            elif size < _CHUNK_BYTES:
+            if size < _CHUNK_BYTES:
                 _verify_buffer(raw, expected)
             else:
                 pending.append(workers.submit(_verify_buffer, raw, expected))

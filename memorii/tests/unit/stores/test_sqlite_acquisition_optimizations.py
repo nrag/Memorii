@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-import fcntl
-import os
 import sqlite3
-import subprocess
-import sys
 from collections.abc import Sequence
 from contextlib import closing
 from hashlib import sha256
@@ -20,7 +16,7 @@ from memorii.core.persistence.runtime_journal import (
     _CheckpointMember,
     _member_digest,
 )
-from memorii.stores.sqlite import darwin_read_ahead, raw_memory_payloads
+from memorii.stores.sqlite import raw_memory_payloads
 from memorii.stores.sqlite.materialization_sql import _catalog_digests, _key_bytes, _value_digest
 
 
@@ -104,14 +100,14 @@ def _insert_raw_payload(
     )
 
 
-@pytest.mark.parametrize("size", [32, raw_memory_payloads._CHUNK_BYTES])
-def test_projected_raw_payloads_verify_original_bytes_without_reopening(
+@pytest.mark.parametrize("size", [32, raw_memory_payloads._CHUNK_BYTES, raw_memory_payloads._MAX_QUEUED_PAYLOAD_BYTES])
+def test_bounded_raw_payloads_verify_original_bytes(
     size: int, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def reject_streaming(*_args: object) -> None:
-        pytest.fail("an in-range SQLite BLOB should use the bounded projection")
+        pytest.fail("an in-range SQLite BLOB should use a bounded full-body read")
 
-    monkeypatch.setattr(raw_memory_payloads, "_open_raw_body", reject_streaming)
+    monkeypatch.setattr(raw_memory_payloads, "_verify_body", reject_streaming)
     with closing(sqlite3.connect(":memory:")) as connection:
         _insert_raw_payload(connection, b"z" * size)
         raw_memory_payloads.verify_raw_payloads(connection)
@@ -122,87 +118,36 @@ def test_projected_raw_payloads_verify_original_bytes_without_reopening(
             raw_memory_payloads.verify_raw_payloads(connection)
 
 
-def test_oversized_raw_payload_cannot_enter_projection_with_understated_size() -> None:
+def test_oversized_raw_payload_rejects_understated_size_before_hashing(monkeypatch: pytest.MonkeyPatch) -> None:
     body = b"z" * (raw_memory_payloads._MAX_QUEUED_PAYLOAD_BYTES + 1)
+
+    def reject_hashing(*_args: object) -> None:
+        pytest.fail("an invalid BLOB length reached hashing")
+
+    monkeypatch.setattr(raw_memory_payloads, "_verify_buffer", reject_hashing)
     with closing(sqlite3.connect(":memory:")) as connection:
         connection.execute("PRAGMA ignore_check_constraints=ON")
         _insert_raw_payload(connection, body, declared_size=16)
-        rows = raw_memory_payloads._bounded_payload_rows(connection)
-        row = rows.fetchone()
-        assert row is not None and row[5] is None
-        rows.close()
         with pytest.raises(sqlite3.DatabaseError, match="raw memory payload length differs"):
             raw_memory_payloads.verify_raw_payloads(connection)
 
 
-def test_darwin_read_ahead_advises_only_bounded_ranges(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_direct_raw_reads_stay_on_the_established_wal_snapshot(tmp_path: Path) -> None:
     database = tmp_path / "partition.sqlite3"
-    database.write_bytes(b"x" * 2_000)
-    monkeypatch.setattr(darwin_read_ahead, "_READ_AHEAD_SPAN", 300)
-    monkeypatch.setattr(darwin_read_ahead, "_READ_AHEAD_LIMIT", 1_000)
-    ranges: list[tuple[int, int]] = []
-
-    def capture(descriptor: int, operation: int, payload: bytes) -> bytes:
-        assert operation == darwin_read_ahead._READ_ADVICE
-        assert os.fstat(descriptor).st_ino == database.stat().st_ino
-        ranges.append(darwin_read_ahead._READ_RANGE.unpack(payload))
-        return payload
-
-    monkeypatch.setattr(fcntl, "fcntl", capture)
-    darwin_read_ahead._advise(str(database))
-    assert ranges == [(0, 300), (300, 300), (600, 300), (900, 100)]
-
-
-def test_darwin_read_ahead_failure_still_checks_payload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(sys, "platform", "darwin")
-    calls = 0
-
-    def fail_advice(command: list[str], **options: object) -> None:
-        nonlocal calls
-        calls += 1
-        assert command[-1] == str(tmp_path / "partition.sqlite3")
-        assert options["timeout"] == 2
-        raise subprocess.TimeoutExpired(command, timeout=2)
-
-    monkeypatch.setattr(subprocess, "run", fail_advice)
-    with closing(sqlite3.connect(tmp_path / "partition.sqlite3")) as connection:
-        _insert_raw_payload(connection, b"payload")
-        raw_memory_payloads.verify_raw_payloads(connection)
-        with connection.blobopen("memory_payloads", "body", 1) as blob:
+    body = b"z" * raw_memory_payloads._CHUNK_BYTES
+    with closing(sqlite3.connect(database)) as reader, closing(sqlite3.connect(database)) as writer:
+        reader.execute("PRAGMA journal_mode=WAL").fetchone()
+        _insert_raw_payload(reader, body)
+        reader.commit()
+        reader.execute("BEGIN")
+        assert reader.execute("SELECT raw_size FROM memory_payloads").fetchone()[0] == len(body)
+        with writer, writer.blobopen("memory_payloads", "body", 1) as blob:
+            blob.seek(len(body) - 1)
             blob.write(b"x")
+        raw_memory_payloads.verify_raw_payloads(reader)
+        reader.execute("ROLLBACK")
         with pytest.raises(sqlite3.DatabaseError, match="raw memory payload digest differs"):
-            raw_memory_payloads.verify_raw_payloads(connection)
-    assert calls == 2
-
-
-@pytest.mark.skipif(sys.platform != "darwin", reason="requires Darwin SQLite POSIX locks and read advice")
-def test_darwin_read_ahead_preserves_sqlite_read_lock(tmp_path: Path) -> None:
-    database = tmp_path / "partition.sqlite3"
-    probe = """
-import errno
-import fcntl
-import os
-import sys
-
-with open(sys.argv[1], 'r+b') as database:
-    try:
-        # SQLite Unix VFS SHARED_SIZE and SHARED_FIRST bytes.
-        fcntl.lockf(database, fcntl.LOCK_EX | fcntl.LOCK_NB, 510, 1073741826, os.SEEK_SET)
-    except OSError as error:
-        if error.errno in (errno.EACCES, errno.EAGAIN):
-            sys.exit(1)
-        raise
-"""
-    command = [sys.executable, "-I", "-S", "-c", probe, str(database)]
-    with closing(sqlite3.connect(database)) as connection:
-        connection.execute("PRAGMA journal_mode=WAL").fetchone()
-        connection.execute("CREATE TABLE probe (value INTEGER)")
-        connection.execute("BEGIN")
-        connection.execute("SELECT value FROM probe").fetchall()
-        assert subprocess.run(command, timeout=5, check=False).returncode == 1
-        raw_memory_payloads._advise_raw_read_ahead(connection)
-        assert subprocess.run(command, timeout=5, check=False).returncode == 1
-    assert subprocess.run(command, timeout=5, check=False).returncode == 0
+            raw_memory_payloads.verify_raw_payloads(reader)
 
 
 def test_large_raw_payload_stream_still_rejects_a_changed_final_byte(monkeypatch: pytest.MonkeyPatch) -> None:
