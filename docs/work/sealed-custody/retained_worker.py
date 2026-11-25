@@ -30,7 +30,10 @@ class DrainBusy(RuntimeError):
 class RetainedWorker:
     """A single SQLite owner thread and trusted concurrent response tasks."""
 
-    def __init__(self, root: Path, image: Path, expected_root: str, extension: Path) -> None:
+    def __init__(
+        self, root: Path, image: Path, expected_root: str, extension: Path,
+        *, verify_view: Callable[[sqlite3.Connection], None] | None = None,
+    ) -> None:
         self.root = root
         self._publication = root / ".publication.lock"
         self._lifetime = root / "control" / ".backup-lifetime.lock"
@@ -52,6 +55,8 @@ class RetainedWorker:
             with ExitStack() as pending:
                 pending.enter_context(locked_file(self._lifetime, exclusive=False))
                 reader = pending.enter_context(retained_reader(image, expected_root, extension))
+                if verify_view is not None:
+                    reader.release(verify_view)
                 self._stack = pending.pop_all()
                 return reader
 
@@ -73,12 +78,15 @@ class RetainedWorker:
     def serve(
         self, connection: socket.socket, grant: str, epoch: int,
         read: Callable[[sqlite3.Connection], bytes], *, before_send: Callable[[], None] | None = None,
-        on_backpressure: Callable[[], None] | None = None,
+        on_backpressure: Callable[[int], None] | None = None,
+        release_guard: Callable[[], None] | None = None,
     ) -> int:
         with connection:
             connection.setblocking(False)
             with locked_file(self._publication, exclusive=True):
                 self._authorize(grant, epoch)
+                if release_guard is not None:
+                    release_guard()
                 self._active += 1
                 self._idle.clear()
             try:
@@ -93,13 +101,15 @@ class RetainedWorker:
                     chunk = result[offset:offset + _SOCKET_CHUNK]
                     with locked_file(self._publication, exclusive=True):
                         self._authorize(grant, epoch)
+                        if release_guard is not None:
+                            release_guard()
                         sent = self._send(connection.fileno(), chunk, len(chunk))
                         error = ctypes.get_errno() if sent < 0 else 0
                     if sent > 0:
                         offset += sent
                     elif error in (errno.EAGAIN, errno.EWOULDBLOCK):
                         if on_backpressure is not None:
-                            on_backpressure()
+                            on_backpressure(offset)
                         if not select.select([], [connection], [], max(0, deadline - monotonic()))[1]:
                             raise ReleaseDenied("socket write timed out")
                     elif error == errno.EACCES:
@@ -116,12 +126,15 @@ class RetainedWorker:
                     if self._active == 0:
                         self._idle.set()
 
+    def stop_admissions(self) -> None:
+        with locked_file(self._publication, exclusive=True):
+            self._admitting = False
+
     def drain(self, *, timeout: float) -> None:
         with self._drain_lock:
             if self._closed:
                 return
-            with locked_file(self._publication, exclusive=True):
-                self._admitting = False
+            self.stop_admissions()
             if not self._idle.wait(timeout):
                 raise DrainBusy("sealed responses still hold custody")
             self._executor.submit(self._stack.close).result()

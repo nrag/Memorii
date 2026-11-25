@@ -100,11 +100,17 @@ def test_slow_socket_releases_fence_and_revocation_stops_unsent_bytes(
     entered, resume = Event(), Event()
     sender, client = socket.socketpair()
     sender.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
+    parked_offsets = []
+
+    def park(offset: int) -> None:
+        parked_offsets.append(offset)
+        _park(entered, resume)
+
     try:
         with client, ThreadPoolExecutor(1) as requests:
             pending = requests.submit(
                 worker.serve, sender, "grant", 1, lambda db: _read_blob(db, 2),
-                on_backpressure=lambda: _park(entered, resume),
+                on_backpressure=park,
             )
             try:
                 assert entered.wait(5)
@@ -115,6 +121,7 @@ def test_slow_socket_releases_fence_and_revocation_stops_unsent_bytes(
             with pytest.raises(GrantRegistryError, match="stale_grant"):
                 pending.result(timeout=5)
             assert 0 < len(received) < len(_COLD)
+            assert parked_offsets == [len(received)]
             assert _COLD.startswith(received)
     finally:
         worker.drain(timeout=5)

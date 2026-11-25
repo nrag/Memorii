@@ -39,4 +39,4 @@ This run reused the local Homebrew header copies for compilation against the sub
 
 ## Next Action
 
-Extend the controlled owner endpoint with current signed publication, credential and grant checks at release. Test credential rotation and owner loss while a response is in flight, then apply the production handoff and erasure protocols.
+See [Signed Authority At Socket Release](release.plan.md) for the controlled signed publication, credential and grant checks, including in-flight liveness loss. Real installation handoff and erasure remain open.
