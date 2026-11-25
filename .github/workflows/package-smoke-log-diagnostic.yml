@@ -1,60 +1,31 @@
-name: Pause Failing Schedule And Inspect CI
+name: Stop Superseded PR Validation
 
 on:
   push:
     branches: [codex/inspect-package-smoke-log]
 
 permissions:
-  actions: read
+  actions: write
 
 jobs:
-  pause:
-    name: Pause the failing canonical-evidence schedule
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    permissions:
-      actions: write
-    steps:
-      - name: Disable only the named workflow and verify its state
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          workflow=canonical-evidence-parity-scheduled.yml
-          path=$(gh api "repos/nrag/Memorii/actions/workflows/$workflow" --jq .path)
-          test "$path" = ".github/workflows/canonical-evidence-parity-scheduled.yml"
-          gh api --method PUT "repos/nrag/Memorii/actions/workflows/$workflow/disable"
-          state=$(gh api "repos/nrag/Memorii/actions/workflows/$workflow" --jq .state)
-          test "$state" = disabled_manually
-          printf 'Verified workflow state: %s\n' "$state"
-
-  inspect:
-    name: Summarize existing failed jobs
+  stop:
+    name: Stop the superseded blocked PR run
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Download and summarize existing logs
+      - name: Cancel only the superseded candidate run
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for job in 139462347803 139462347907 139462347943; do
-            curl --fail --location --silent --show-error --max-time 30 \
-              --header "Authorization: Bearer $GH_TOKEN" \
-              "https://api.github.com/repos/nrag/Memorii/actions/jobs/$job/logs" \
-              --output "$RUNNER_TEMP/job-$job.log"
-          done
-          python3 - <<'PY'
-          import os
-          import re
-          from pathlib import Path
-          for path in sorted(Path(os.environ["RUNNER_TEMP"]).glob("job-*.log")):
-              raw = path.read_text()
-              text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", raw)
-              text = "".join(c for c in text if c in "\n\t" or ord(c) >= 32)
-              lines = text.splitlines()
-              print(f"=== {path.name}: {len(lines)} lines ===")
-              errors = [line for line in lines if re.search(r"FAILED |ERROR |Error:|Exception:|Traceback|No space left", line)]
-              print("Failure signatures:")
-              print("\n".join(line[:1000] for line in errors[-25:])[-5000:])
-              print("Final log tail:")
-              print(text[-5000:])
-          PY
+          run=45687065202
+          head=$(gh api "repos/nrag/Memorii/actions/runs/$run" --jq .head_sha)
+          test "$head" = 38c1ed980cb4e221ac8b81c4841f8fc61639202c
+          state=$(gh api "repos/nrag/Memorii/actions/runs/$run" --jq .status)
+          if [ "$state" != completed ]; then
+            gh api --method POST "repos/nrag/Memorii/actions/runs/$run/cancel"
+            printf 'Cancellation requested for superseded run %s\n' "$run"
+          else
+            printf 'Superseded run %s already completed\n' "$run"
+          fi
+          gh api repos/nrag/Memorii/actions/workflows/canonical-evidence-parity-scheduled.yml \
+            --jq '{id: .id, path: .path, state: .state}'
