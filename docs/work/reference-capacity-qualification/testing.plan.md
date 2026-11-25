@@ -2,7 +2,7 @@
 
 - Work type: testing
 - Delivery fidelity: Level 3
-- Status: running through the direct dedicated-host path. Balanced Linux failed the startup budget.
+- Status: both Linux runs completed and failed the startup budget. Dedicated macOS is scheduled.
 - Branch: `codex/durable-delivery-implementation`
 - Starting head: `ba1e7baab0626aaa32c36a350876c0c3b952b337`
 - Parent: [reference capacity milestone](../durable-delivery-implementation/milestones/reference-capacity.plan.md)
@@ -38,7 +38,8 @@ The formal driver starts every acquisition sample from a fresh fixture copy in a
 - Format numbers remain persisted schema identities. `--raw-payloads` reuses the existing owner CLI terminology and applies only to these test-driver invocations.
 - The 28 focused fixture, driver, upgrade, and capacity regression tests passed locally and again from an isolated installation of `9d3436378321719a650329bb26165ac65c6d7e60`. The driver matched the installed inventory to wheel SHA-256 `25b040fa8a570ce7247dfcd7e24562c6e6b0bea9ec15e672e83ed64861f83b65`. Scoped Ruff, Pyright, and repository identity checks passed. An independent correctness reviewer found no validated P1/P2 in the format wiring. The formal run was unavailable and remains unverified.
 - The owner reserved this native Mac for a direct run and authorized one disposable PhoenixNAP host for Linux. Both use the same frozen `8e570195` candidate and wheel. The [Linux balanced report](linux/8e570195/README.md) records 11.52 s startup acquisition p95 against the 5 s budget. The remaining dedicated measurements still apply even though the Linux balanced release gate failed.
+- The [complete Linux evidence](linux/8e570195/README.md) records a 11.54 s concentrated startup p95 and two contended source capture errors. Both Linux fixtures retained the exact source and replay counts. The browser requires action-time confirmation to permanently delete the disposable host and release its IPv4 allocation.
 
 ## Blockers And Next Action
 
-Finish the direct concentrated Linux run, retain its report, and deprovision the disposable host and IP. The separate native macOS run is scheduled on the owner-reserved workstation. Keep v7 as default while the release gate is open.
+After action-time confirmation, deprovision the disposable Linux host and billed IPv4 allocation. The native macOS run is scheduled on the owner-reserved workstation. Keep v7 as default while the release gate is open.
