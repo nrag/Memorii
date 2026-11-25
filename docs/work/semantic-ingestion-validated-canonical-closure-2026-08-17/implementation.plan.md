@@ -279,6 +279,8 @@ fast unit suite.
   cadence (`.github/workflows/canonical-evidence-parity-scheduled.yml`); its
   executed-CI evidence stays unclaimed until the branch reaches the default
   branch.
+  **Superseded cadence:** the current workflow runs weekly; see
+  `docs/development/static_tooling.md` for its current commands and timeout.
 
 ## Evidence Maturity Ledger
 

@@ -18,7 +18,6 @@ from tests.unit.core.semantic_ingestion.test_bootstrap_graph_coordinator_v3 impo
     _delivery,
     _interrupt_after_handoff,
     _production_recovery_service,
-    _scenario_recovery_service,
 )
 
 
@@ -40,7 +39,9 @@ def test_redelivery_recovery_outcomes_are_identical_across_enabled_and_disabled_
         record_store=JsonlMemoryPlaneStore(tmp_path / "disabled")
     )
     enabled_service = _production_recovery_service(plane=enabled_plane)
-    disabled_service = _scenario_recovery_service(plane=disabled_plane)
+    disabled_service = _production_recovery_service(
+        plane=disabled_plane, canonical_evidence_enabled=False
+    )
     _interrupt_after_handoff(monkeypatch, enabled_service, "recovery-mode-parity")
     _interrupt_after_handoff(monkeypatch, disabled_service, "recovery-mode-parity")
 
@@ -51,6 +52,8 @@ def test_redelivery_recovery_outcomes_are_identical_across_enabled_and_disabled_
         == disabled_recovered.blocked_reasons["semantic_ingestion"]
         == "source_only"
     )
+    assert enabled_service._canonical_closure_dispatcher.snapshots[-1].mode == "enabled"
+    assert disabled_service._canonical_closure_dispatcher.snapshots[-1].mode == "disabled_full_path"
     enabled_again = _delivery(enabled_service, "recovery-mode-parity")
     disabled_again = _delivery(disabled_service, "recovery-mode-parity")
     assert enabled_again == enabled_recovered
@@ -81,14 +84,19 @@ def test_direct_delivery_outcomes_are_identical_across_enabled_and_disabled_mode
         record_store=JsonlMemoryPlaneStore(tmp_path / "direct-disabled")
     )
     enabled_service = _production_recovery_service(plane=enabled_plane)
-    disabled_service = _scenario_recovery_service(plane=disabled_plane)
+    disabled_service = _production_recovery_service(
+        plane=disabled_plane, canonical_evidence_enabled=False
+    )
 
     enabled_result = _delivery(enabled_service, "direct-mode-parity")
     disabled_result = _delivery(disabled_service, "direct-mode-parity")
     assert (
         enabled_result.blocked_reasons["semantic_ingestion"]
         == disabled_result.blocked_reasons["semantic_ingestion"]
+        == "source_only"
     )
+    assert enabled_service._canonical_closure_dispatcher.snapshots[-1].mode == "enabled"
+    assert disabled_service._canonical_closure_dispatcher.snapshots[-1].mode == "disabled_full_path"
     enabled_idempotent = _delivery(enabled_service, "direct-mode-parity")
     disabled_idempotent = _delivery(disabled_service, "direct-mode-parity")
     assert enabled_idempotent == enabled_result

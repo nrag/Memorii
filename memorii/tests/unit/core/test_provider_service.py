@@ -79,6 +79,7 @@ class _FailFirstTurnExtractor(EnglishRuleMemoryExtractor):
 def _build_production_scoped_provider_service(
     *, source_normalization_host_bundle_builder=None, bootstrap_graph_host_bundle_builder=None,
     memory_plane: MemoryPlaneService | None = None, now_provider=None,
+    canonical_evidence_enabled=None, verified_capability_monitoring_authorities=(),
 ) -> ProviderMemoryService:
     scenario_capability = build_scenario_test_host_capability()
     scenario_material = scenario_capability.bootstrap_material_presentation.material
@@ -101,6 +102,8 @@ def _build_production_scoped_provider_service(
     return ProviderMemoryService(
         memory_plane=memory_plane,
         now_provider=now_provider,
+        canonical_evidence_enabled=canonical_evidence_enabled,
+        verified_capability_monitoring_authorities=verified_capability_monitoring_authorities,
         host_bootstrap_capability=BuiltInLocalHostSemanticIngestionCapability(
             bootstrap_material_presentation=present_authenticated_host_bootstrap_material(
                 production_material

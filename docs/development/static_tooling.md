@@ -69,6 +69,22 @@ python -m pip install -e '.[dev]'
 
 The `dev` extra installs the local test runner, live LLM dependency, Ruff, and Pyright. Production and benchmark semantics do not depend on these tools.
 
+## Canonical-evidence scheduled validation
+
+The scheduled canonical-evidence workflow runs weekly on Monday at 07:23 UTC
+and supports manual dispatch. Pull requests targeting `main` also run it when
+they change the workflow, `memorii/pyproject.toml`, or its directly relevant
+fixture and proof files listed in the workflow path filter. One Ubuntu job
+installs `.[dev]`, retains the two
+mode-parity tests and three production admission-limit tests, and has a
+15-minute timeout. It verifies each collection count and runs each suite with
+warnings treated as errors. From `memorii/`, run the suites locally with:
+
+```bash
+python -W error -m pytest tests/unit/core/semantic_ingestion/test_canonical_evidence_mode_parity.py -p no:cacheprovider
+python -W error -m pytest tests/unit/core/semantic_ingestion/test_canonical_evidence_production_limits.py -p no:cacheprovider
+```
+
 ## Commands
 
 Run unit tests:
