@@ -9,12 +9,16 @@ from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, closing, contextmanager
 from dataclasses import asdict, dataclass
+from itertools import islice
 from pathlib import Path
 from threading import Event
-from time import monotonic_ns
+from time import monotonic_ns, sleep
 
 from memorii.core.memory_plane.file_lock import locked_file
-from memorii.core.persistence.contracts import InstallationControlState, RuntimePublicationState
+from memorii.core.persistence.contracts import (
+    InstallationControlState,
+    RuntimePublicationState,
+)
 from memorii.core.persistence.key_owner import LocalSigningKeyOwner
 from memorii.core.storage_administration.operator_backup import _open_backup_snapshot
 from memorii.core.storage_administration.service import (
@@ -236,6 +240,95 @@ def trial(
         }
 
 
+def sustained_trial(
+    base: Path, work: Path, distribution: Distribution, expected: str, use_pin: bool,
+) -> dict[str, object]:
+    interval_ns = 500_000_000
+    commands = tuple(islice(warm_samples(distribution, "command_commit", contended=True), 40))
+    with (
+        _fresh_copy(base, work) as root,
+        ObservedService(root) as reader,
+        ObservedService(root) as writer,
+    ):
+        runtime = _WarmRuntime(writer, distribution, label="background")
+        if writer.acquire_verified_snapshot().tuple_digest != expected:
+            raise RuntimeError("fixture does not match qualification")
+        runtime.prepare_commands(commands[0])
+        publication = authority(writer).publication
+        if publication.payload_digest() != expected:
+            raise RuntimeError("writer setup changed the signed input tuple")
+        partition = writer.partition()
+        with writer._publication_fence(), partition.transaction(write=False) as connection:
+            if not partition.has_verified_manifest_base(connection, publication.manifest_digest):
+                raise RuntimeError("ordinary acquisition did not retain the verified manifest")
+
+        writer.fences.clear()
+        writer.scans.clear()
+        started, arrived = Event(), Event()
+        reader.scan_started = started
+        reader.writer_arrived = writer.writer_arrived = arrived
+        wal = partition.database_path.with_name(partition.database_path.name + "-wal")
+        origin = monotonic_ns()
+
+        def write() -> list[dict[str, object]]:
+            if not started.wait(30):
+                raise TimeoutError("reader never started exact verification")
+            first_offer = monotonic_ns()
+            observations = []
+            for index, command in enumerate(commands):
+                offered = first_offer + index * interval_ns
+                sleep(max(0, (offered - monotonic_ns()) / 1_000_000_000))
+                dispatched = monotonic_ns()
+                sample = runtime.process(command)
+                returned = monotonic_ns()
+                if sample.error is not None:
+                    raise RuntimeError(sample.error)
+                observations.append({
+                    "offered_ns": offered - origin, "dispatched_ns": dispatched - origin,
+                    "returned_ns": returned - origin, "sample": asdict(sample),
+                    "wal_bytes": wal.stat().st_size,
+                })
+            return observations
+
+        reader_outcome = "verified"
+        verified = None
+        with ThreadPoolExecutor(1) as executor:
+            pending = executor.submit(write)
+            try:
+                verified = pinned_acquisition(reader) if use_pin else reader.acquire_verified_snapshot()
+            except StorageAdministrationError as exc:
+                if not use_pin or reader.stale != 3 or str(exc) != (
+                    "current publication changed during all pinned verification attempts"
+                ):
+                    raise
+                reader_outcome = "retry_exhausted"
+            reader_return = monotonic_ns()
+            observations = pending.result()
+
+        final = authority(writer).publication
+        if final.vector.partition_ordinal != publication.vector.partition_ordinal + len(commands):
+            raise RuntimeError("writer did not publish one signed head per command")
+        scans = list(reader.scans)
+        fences = list(reader.fences)
+        quiet_retry_ns = None
+        if verified is None:
+            before = monotonic_ns()
+            if pinned_acquisition(reader).tuple_digest != final.payload_digest():
+                raise RuntimeError("pinned acquisition after the burst did not verify the final tuple")
+            quiet_retry_ns = monotonic_ns() - before
+        return {
+            "type": "sustained_trial", "distribution": distribution, "mode": "pinned" if use_pin else "baseline",
+            "input_tuple": expected, "final_tuple": final.payload_digest(),
+            "verified_tuple": None if verified is None else verified.tuple_digest,
+            "reader_outcome": reader_outcome, "reader_return_ns": reader_return - origin,
+            "quiet_retry_ns": quiet_retry_ns, "stale_attempts": reader.stale,
+            "reader_scan_intervals_ns": [(begin - origin, end - origin) for begin, end in scans],
+            "reader_fence_wait_hold_ns": fences, "writer_fence_wait_hold_ns": writer.fences,
+            "writer_scans_ns": [end - begin for begin, end in writer.scans],
+            "writer_offer_interval_ns": interval_ns, "writer_samples": observations,
+        }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fixtures", type=Path, required=True)
@@ -243,7 +336,9 @@ def main() -> None:
     parser.add_argument("--wheel", type=Path, required=True)
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--distribution", choices=("balanced", "concentrated"))
-    parser.add_argument("--warm-writer-manifest", action="store_true")
+    experiment = parser.add_mutually_exclusive_group()
+    experiment.add_argument("--warm-writer-manifest", action="store_true")
+    experiment.add_argument("--sustained", action="store_true")
     args = parser.parse_args()
     wheel_digest = _installed_wheel_digest(args.wheel)
     for distribution in ("balanced", "concentrated"):
@@ -256,10 +351,13 @@ def main() -> None:
             "probe_wheel_sha256": wheel_digest, "distribution": distribution, "input_tuple": expected,
         }), flush=True)
         for use_pin in (False, True) if distribution == "balanced" else (True, False):
-            result = trial(
-                args.fixtures / distribution, args.work, distribution, expected, use_pin,
-                warm_writer_manifest=args.warm_writer_manifest,
-            )
+            if args.sustained:
+                result = sustained_trial(args.fixtures / distribution, args.work, distribution, expected, use_pin)
+            else:
+                result = trial(
+                    args.fixtures / distribution, args.work, distribution, expected, use_pin,
+                    warm_writer_manifest=args.warm_writer_manifest,
+                )
             print(json.dumps(result, sort_keys=True), flush=True)
 
 

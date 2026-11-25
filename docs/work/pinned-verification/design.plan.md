@@ -4,7 +4,7 @@
 - Delivery fidelity: Level 2 experiment for the Level 3 capacity gate
 - Baseline: `a5f2e623`, `codex/durable-delivery-implementation`
 - Related: [reference capacity debugging](../reference-capacity-debugging/debugging.plan.md)
-- Status: feasibility experiment complete. Production design and release qualification remain open.
+- Status: the single-overlap and sustained-publication experiments are complete. Named-generation manifest reuse is implemented. Production pinning design and release qualification remain open.
 
 ## Objective And Scope
 
@@ -46,6 +46,26 @@ Before timing, both arms populated the writer's manifest accumulator through the
 
 The [manifest-warmed samples](primed-writer-overlap.jsonl) used probe SHA-256 `d7b5209330101073c501c6ff8ed2e43bb33f84c5ada989354cc483c029c3a14d`. All four probe tests passed with warnings treated as errors against the installed wheel. This is one controlled pair per distribution with a deliberately primed writer, so the result establishes that the reader no longer blocks that writer through a full verification. Measuring steady-state progress, retries under sustained publication, WAL growth, and cold-start improvement requires production integration and further runs. The Level 3 qualification remains open.
 
+## Manifest Reuse And Sustained Publication
+
+- `MANIFEST-REUSE`: ordinary acquisition of a named generation retains the manifest forest only after the existing exact materialization and replay verifier confirms the signed state and the same managed connection's verification cookie. The following write reuses the base only with a matching cookie and manifest digest. A same-head external data change must force exact verification and refuse write custody.
+- `SUSTAINED-PROGRESS`: compare ordinary and pinned reader acquisition against the same verified manifest reuse candidate. Use both retained fixture heads and offer 40 real managed commands to a single writer, one every 500 ms starting when the reader enters its first exact scan. Measure queue delay, command completion, fence custody, scan count, bounded reader retries and WAL bytes sampled at command completion. A denied reader must consume at most three attempts and acquire the final signed tuple in a separately timed quiet retry.
+
+The candidate reuses the existing connection-local cache on the guarded named-generation path. The previously verified publication digest is still scoped by the same SQLite cookie. There are no new durable identifiers, format changes, cache transfer, or new production pinning path. The named-generation guard now keeps the exact accumulator on handles that acquire without writing. This increases their retained memory and calls for process-level memory measurement before Level 3 approval.
+
+The [sustained-publication measurements](sustained-publication.jsonl) used the same installed candidate wheel for both arms, SHA-256 `97ca205ebd9623cb8489f899093a3701e8f82a0c7ddfeb44a5c36ff70f851550`, and probe SHA-256 `ae36a355e2d36c0fad3914fb571298e00035709a042ff01c2b32c82614294236`. Both workload distributions started on their exact retained signed qualification heads on the native Mac. Writer setup used ordinary acquisition and verified its existing cache without a separate priming scan. In every arm all 40 distinct managed writes succeeded, advanced the signed ordinal by 40, and required zero writer manifest rebuilds. Pinned revalidation ran without the artificial wait for the writer used in the single-overlap experiment.
+
+| Fixture | Reader | First write from offer | Writes finished before reader returned | Reader outcome and elapsed | Largest sampled WAL |
+| --- | --- | ---: | ---: | --- | ---: |
+| Balanced | Ordinary | 5.21 s | 0 | Verified in 5.19 s | 4,190,072 bytes |
+| Balanced | Pinned | 43.6 ms | 28 | Three stale scans, exhausted in 13.95 s | 4,882,232 bytes |
+| Concentrated | Ordinary | 4.67 s | 0 | Verified in 4.65 s | 4,140,632 bytes |
+| Concentrated | Pinned | 39.6 ms | 29 | Three stale scans, exhausted in 14.44 s | 5,084,112 bytes |
+
+The largest individual writer fence wait fell from 5.19 s to 0.218 ms on balanced and from 4.65 s to 0.223 ms on concentrated. The two pinned readers released no snapshot when their attempts exhausted. After the writer finished, new acquisitions verified the final signed head in 4.60 s and 5.05 s, respectively. These are one paired observation per distribution under a finite write burst. WAL samples are taken at command completion. The experiment does not establish a WAL growth limit, process memory cost, tail latency, or a cold-start qualification result.
+
+The release-path regression in [generation selection](../../../memorii/tests/integration/test_partition_generation_selection.py) fails on the installed baseline because the following publication rebuilds a verified manifest. It passes on the candidate and shows that an external same-head edit still blocks publication without changing signed authority or creating a pending intent. The candidate wheel passed 57 of 58 focused tests with warnings treated as errors, including all four pin tests. The failing `test_third_state_intent_quarantines_and_blocks_publication` raises the same integrity error during recovery on both the baseline and candidate wheels. Ruff and whitespace checks passed.
+
 ## Next Action
 
-Prototype retaining the exact verified manifest at successful named-generation acquisition, then pair it with pinned verification to measure bounded progress for readers and writers under sustained publication.
+Test a single optimistic attempt with a fallback to existing fenced acquisition after a stale pin, and measure the resulting reader completion and writer pause under the same sustained load.

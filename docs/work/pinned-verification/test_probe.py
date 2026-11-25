@@ -7,12 +7,17 @@ from contextlib import closing
 from pathlib import Path
 
 import pytest
-from probe import ObservedService, pinned_acquisition
-
 from memorii.core.persistence.contracts import RuntimePublicationState
-from memorii.core.persistence.runtime_repository import RuntimeStateRepository, publish_runtime_change
-from memorii.core.storage_administration.service import InstallationIntegrityError, StorageAdministrationError
+from memorii.core.persistence.runtime_repository import (
+    RuntimeStateRepository,
+    publish_runtime_change,
+)
+from memorii.core.storage_administration.service import (
+    InstallationIntegrityError,
+    StorageAdministrationError,
+)
 from memorii.stores.sqlite.partition import PartitionDataRepository, VerificationCookie
+from probe import ObservedService, pinned_acquisition
 from tests.support.reference_capacity import TaskAllocation
 from tests.support.reference_capacity_fixture import _prepare
 
