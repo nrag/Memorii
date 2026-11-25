@@ -4,7 +4,7 @@
 - Delivery fidelity: Level 2 experiment for the Level 3 capacity gate
 - Baseline: `a5f2e623`, `codex/durable-delivery-implementation`
 - Related: [reference capacity debugging](../reference-capacity-debugging/debugging.plan.md)
-- Status: prior feasibility and manifest reuse are complete. The one-scan fallback experiment is in verification. Production pinning design and release qualification remain open.
+- Status: the one-scan fallback experiment and named-generation manifest reuse are complete. Production pinning design and release qualification remain open.
 
 ## Objective And Scope
 
@@ -73,6 +73,19 @@ The release-path regression in [generation selection](../../../memorii/tests/int
 
 The fallback is test-only. No persisted or public identifiers, schemas, defaults, or recovery rules change.
 
+The [fresh-handle startup measurements](sustained-locked-fallback.jsonl) use the same signed fixture heads and installed manifest reuse wheel as the sustained-publication comparison. The final probe is at `238f1ea4`, SHA-256 `690bc90bc3fea63059c43ba6bfc4ff5676cf6f37f30cf09d140de1a99dcb3a69`. Startup includes control journal validation during service construction and ends when the exact verified snapshot returns. The writer is already warm and starts at the reader's first full scan. Each distribution has one contemporaneous baseline and one fallback observation on the native Mac. These measure startup under an active writer in the existing process with no OS page-cache eviction.
+
+| Fixture | Reader | Startup | First write from offer | Worst write from offer | Longest writer fence wait | Writes completed before reader ready |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Balanced | Ordinary | 9.99 s | 8.93 s | 8.93 s | 8.91 s | 0 |
+| Balanced | One scan then fallback | 16.03 s | 39 ms | 7.79 s | 7.77 s | 14 |
+| Concentrated | Ordinary | 9.77 s | 8.55 s | 8.55 s | 8.53 s | 0 |
+| Concentrated | One scan then fallback | 13.68 s | 40 ms | 5.59 s | 5.56 s | 14 |
+
+Both fallback runs discarded one stale scan, released its WAL views, and verified the signed publication at input ordinal plus 14 before the burst finished. The locked step itself took 7.94 s on balanced and 5.81 s on concentrated. All 40 commands succeeded in each arm, with zero writer manifest rebuilds. The fallback let early writes finish and allowed the reader to verify despite the continuing burst. A full verification pause still occurred, and startup increased by 6.04 s and 3.91 s versus the paired baselines. Neither distribution met the 5 s startup budget in these diagnostic runs.
+
+Eighteen focused tests passed with warnings treated as errors against the installed candidate. The fallback-specific cases cover unchanged head, signed head advancement with released views, preserved-head SQL mutation, and corruption on the current pin. Ruff and whitespace checks passed.
+
 ## Next Action
 
-Run the final fallback probe and its focused tests against the installed manifest reuse candidate.
+Reduce the exact raw verification cost before reconsidering production pinning. The fallback remains test-only.
