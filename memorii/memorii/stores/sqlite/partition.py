@@ -944,11 +944,15 @@ class PartitionDataRepository:
             yield int(row[0]), str(row[1])
 
     @staticmethod
+    def runtime_replay_binding_rows(connection: sqlite3.Connection) -> Iterator[Iterator[tuple[str, str]]]:
+        for catalog, key, payload in _RUNTIME_EVENT_INDEX_CATALOGS:
+            rows = connection.execute(f"SELECT {key}, {payload} FROM {catalog}")
+            rows.row_factory = None
+            yield ((str(row[0]), str(row[1])) for row in rows)
+
+    @staticmethod
     def runtime_replay_bindings(connection: sqlite3.Connection) -> tuple[dict[str, str], ...]:
-        return tuple(
-            {str(row[0]): str(row[1]) for row in connection.execute(f"SELECT {key}, {payload} FROM {catalog}")}
-            for catalog, key, payload in _RUNTIME_EVENT_INDEX_CATALOGS
-        )
+        return tuple(dict(rows) for rows in PartitionDataRepository.runtime_replay_binding_rows(connection))
 
     @staticmethod
     def insert_runtime_event_batch(

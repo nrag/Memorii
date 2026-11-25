@@ -7,9 +7,11 @@ import sqlite3
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from itertools import zip_longest
 
 from memorii.core.persistence.contracts import MaterializationCatalogEntry, RuntimeMaterializationManifest
 from memorii.stores.sqlite.materialization_accumulator import MaterializationAccumulator
+from memorii.stores.sqlite.partition import _RUNTIME_EVENT_INDEX_CATALOGS
 from memorii.stores.sqlite.raw_memory_payloads import (
     RAW_CURRENT_BASE_SELECTOR,
     RAW_MEMORY_LAYOUTS,
@@ -63,6 +65,7 @@ _LAYOUTS: dict[str, _Layout] = {
 
 _CAPTURE_TABLE = "manifest_changed_keys"
 _RAW_LAYOUTS: dict[str, _Layout] = dict(sorted((_LAYOUTS | RAW_MEMORY_LAYOUTS).items()))
+_REPLAY_BINDING_CATALOGS = frozenset(catalog for catalog, _, _ in _RUNTIME_EVENT_INDEX_CATALOGS)
 
 
 def _layouts_for_catalogs(catalog_names: frozenset[str]) -> dict[str, _Layout]:
@@ -172,6 +175,22 @@ class MaterializationForest:
     manifest: RuntimeMaterializationManifest
 
 
+def _replay_binding_rows(
+    connection: sqlite3.Connection, catalog: str, key: str,
+) -> Iterator[tuple[_Value, _Value]]:
+    """Sort the base walk and separately authenticate the primary lookup coordinates."""
+    order = f"{key} COLLATE BINARY"
+    base = connection.execute(f"SELECT {key}, binding_json, rowid FROM main.{catalog} NOT INDEXED ORDER BY {order}")
+    index = connection.execute(
+        f"SELECT {key}, rowid FROM main.{catalog} INDEXED BY sqlite_autoindex_{catalog}_1 ORDER BY {order}",
+    )
+    base.row_factory = index.row_factory = None
+    for row, indexed in zip_longest(base, index):
+        if row is None or indexed is None or row[0] != indexed[0] or row[2] != indexed[1]:
+            raise sqlite3.DatabaseError(f"runtime replay binding index differs from its base table: {catalog}")
+        yield row[0], row[1]
+
+
 def rebuild_manifest(connection: sqlite3.Connection, catalog_names: frozenset[str]) -> MaterializationForest:
     layouts = _layouts_for_catalogs(catalog_names)
     _validate_layout(connection, layouts)
@@ -184,8 +203,12 @@ def rebuild_manifest(connection: sqlite3.Connection, catalog_names: frozenset[st
         scan = " NOT INDEXED" if raw_catalog else ""
         if raw_catalog and catalog == "memory_current_records":
             scan = f" {RAW_CURRENT_BASE_SELECTOR}"
-        rows = connection.execute(f"SELECT {', '.join(columns)} FROM main.{catalog}{scan} ORDER BY {order}")
-        rows.row_factory = None
+        if layouts is _RAW_LAYOUTS and catalog in _REPLAY_BINDING_CATALOGS:
+            rows = _replay_binding_rows(connection, catalog, key[0])
+        else:
+            cursor = connection.execute(f"SELECT {', '.join(columns)} FROM main.{catalog}{scan} ORDER BY {order}")
+            cursor.row_factory = None
+            rows = cursor
         tree = MaterializationAccumulator.from_sorted_digests(
             _catalog_digests(rows, key, columns, allow_bytes=raw_catalog),
         )

@@ -10,6 +10,7 @@ from hashlib import sha256
 from typing import Annotated, Literal, Self, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
+from pydantic.dataclasses import dataclass as validated_dataclass
 
 from memorii.core.persistence.contracts import (
     RUNTIME_EVENT_BATCH_SIGNATURE_PURPOSE,
@@ -157,7 +158,8 @@ class _CheckpointMember(_Closed):
         return self.owner_record_json
 
 
-class _CheckpointBinding(_Closed):
+@validated_dataclass(config=_Closed.model_config, slots=True)
+class _CheckpointBinding:
     coordinate: _Digest
     owner_binding_json: str = Field(min_length=2)
 
@@ -395,20 +397,18 @@ def _to_event(change: RuntimeRowChange, previous: RuntimePublicationState, revis
     )
 
 
-def _bind_events(signed: _SignedBatch, bindings: _Bindings) -> None:
-    for event in signed.batch.events:
-        full_state = _FullCatalogState.model_validate_json(json.dumps(event.entity))
-        binding = _Binding(
-            event_id=event.event_id,
-            event_digest=event.event_digest,
-            batch_sequence=signed.batch.sequence,
-        ).model_dump_json()
-        for index, coordinate in zip(bindings, (
-            event.event_id, event.dedupe_key, _version_id(event.record_id, full_state.version),
-        ), strict=True):
-            if coordinate in index:
-                raise RuntimeJournalError("memory_integrity_conflict: duplicate runtime history binding")
-            index[coordinate] = binding
+def _bind_event(event: RuntimeEventEnvelope, version: int, sequence: int, bindings: _Bindings) -> None:
+    binding = _Binding(
+        event_id=event.event_id,
+        event_digest=event.event_digest,
+        batch_sequence=sequence,
+    ).model_dump_json()
+    for index, coordinate in zip(bindings, (
+        event.event_id, event.dedupe_key, _version_id(event.record_id, version),
+    ), strict=True):
+        if coordinate in index:
+            raise RuntimeJournalError("memory_integrity_conflict: duplicate runtime history binding")
+        index[coordinate] = binding
 
 
 def append_runtime_changes(
@@ -442,7 +442,9 @@ def append_runtime_changes(
     if len(record_json.encode("utf-8")) > _MAX_BATCH_BYTES:
         raise RuntimeJournalError("runtime event batch exceeds the durable size limit")
     bindings: _Bindings = ({}, {}, {})
-    _bind_events(signed, bindings)
+    for event in signed.batch.events:
+        full_state = _FullCatalogState.model_validate_json(json.dumps(event.entity))
+        _bind_event(event, full_state.version, signed.batch.sequence, bindings)
     try:
         PartitionDataRepository.insert_runtime_event_batch(
             connection, sequence=sequence, record_json=record_json, bindings=bindings,
@@ -600,9 +602,9 @@ def verify_runtime_history(
             if batch_position != interval.through_position:
                 raise RuntimeJournalError("integrity_error: runtime event batch differs from its signed ancestor")
             interval = next(remaining_ancestry, None)
-        _bind_events(signed, bindings)
         for event in signed.batch.events:
             full_state = _FullCatalogState.model_validate_json(json.dumps(event.entity))
+            _bind_event(event, full_state.version, signed.batch.sequence, bindings)
             row = full_state.row()
             identity = (row.catalog, row.key)
             prior = replayed.get(identity)
@@ -632,8 +634,12 @@ def verify_runtime_history(
         raise RuntimeJournalError("integrity_error: runtime history does not match the signed head")
     if revision != PartitionDataRepository.read_runtime_revision(connection):
         raise RuntimeJournalError("integrity_error: runtime revision does not match the signed history")
-    if PartitionDataRepository.runtime_replay_bindings(connection) != bindings:
-        raise RuntimeJournalError("integrity_error: runtime replay indexes do not match the event history")
+    for live, expected in zip(PartitionDataRepository.runtime_replay_binding_rows(connection), bindings, strict=True):
+        for coordinate, payload in live:
+            if expected.pop(coordinate, None) != payload:
+                raise RuntimeJournalError("integrity_error: runtime replay indexes do not match the event history")
+        if expected:
+            raise RuntimeJournalError("integrity_error: runtime replay indexes do not match the event history")
     # Compare exact rows while consuming the replayed identities. Checkpoint
     # members can remain typed owner records and the live rows need no second map.
     for row in PartitionDataRepository.runtime_materialized_rows(connection):

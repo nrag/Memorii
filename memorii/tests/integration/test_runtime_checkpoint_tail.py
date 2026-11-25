@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -108,16 +109,17 @@ def test_selected_checkpoint_skips_its_prefix_and_releases_the_same_tail_state(
         expected = service.acquire_verified_snapshot()
 
     replayed: list[int] = []
-    original = runtime_journal._bind_events
+    original = runtime_journal._SignedBatch.model_validate_json
 
-    def track_batch(signed: runtime_journal._SignedBatch, bindings: runtime_journal._Bindings) -> None:
+    def track_batch(payload: str) -> runtime_journal._SignedBatch:
+        signed = original(payload)
         replayed.append(signed.batch.sequence)
-        original(signed, bindings)
+        return signed
 
-    monkeypatch.setattr(runtime_journal, "_bind_events", track_batch)
+    monkeypatch.setattr(runtime_journal._SignedBatch, "model_validate_json", track_batch)
     with StorageAdministrationService(root) as reopened:
         assert reopened.acquire_verified_snapshot() == expected
-        assert replayed == [4]
+        assert replayed == [3, 4]  # Authenticate the checkpoint anchor, then replay the tail.
         with (
             reopened.verified_operation_context() as (state, publication),
             reopened.partition().transaction(write=False) as connection,
@@ -129,7 +131,7 @@ def test_selected_checkpoint_skips_its_prefix_and_releases_the_same_tail_state(
                     reopened._signer_key_id, purpose, digest, signature,
                 ),
             )
-        assert replayed == [4, 1, 2, 3, 4]
+        assert replayed == [3, 4, 1, 2, 3, 4]
 
         ports = HermesRuntimeStatePorts(reopened)
         ports.bind_task(RuntimeTaskBinding(installation_task_id=task_id, granted_to_principal="host"))
@@ -147,7 +149,7 @@ def test_selected_checkpoint_skips_its_prefix_and_releases_the_same_tail_state(
         assert [item.label for item in ports.read_bound_state(
             principal="host", cursor=resumed.continuation_cursor,
         ).frontier] == ["hypothesis:16"]
-        assert replayed == [4, 1, 2, 3, 4, 4]
+        assert replayed == [3, 4, 1, 2, 3, 4, 3, 4]
         assert reopened.acquire_verified_snapshot() == expected
 
         credentials = SidecarCredentialStore(root / "control" / "credentials")
@@ -209,7 +211,7 @@ def test_selected_checkpoint_skips_its_prefix_and_releases_the_same_tail_state(
         assert b"Tail goal" not in raw
 
 
-@pytest.mark.parametrize("damage", ["member", "index", "anchor", "tail"])
+@pytest.mark.parametrize("damage", ["member", "index", "malformed_binding", "anchor", "tail"])
 def test_checkpoint_or_tail_corruption_refuses_managed_release(tmp_path: Path, damage: str) -> None:
     root = tmp_path / "installation"
     with StorageAdministrationService(root) as service:
@@ -218,15 +220,17 @@ def test_checkpoint_or_tail_corruption_refuses_managed_release(tmp_path: Path, d
         path = service.partition_path()
 
     with sqlite3.connect(path) as connection:
-        if damage in {"member", "index"}:
+        if damage in {"member", "index", "malformed_binding"}:
             row = connection.execute(
                 "SELECT record_json FROM runtime_replay_checkpoints WHERE checkpoint_digest = ?", (digest,),
             ).fetchone()
             snapshot = json.loads(row[0])
             if damage == "member":
                 snapshot["members"][0]["owner_record_json"] = "{}"
-            else:
+            elif damage == "index":
                 snapshot["dedupe_bindings"].pop()
+            else:
+                snapshot["dedupe_bindings"][0]["unexpected"] = True
             connection.execute(
                 "UPDATE runtime_replay_checkpoints SET record_json = ? WHERE checkpoint_digest = ?",
                 (json.dumps(snapshot), digest),
@@ -239,6 +243,47 @@ def test_checkpoint_or_tail_corruption_refuses_managed_release(tmp_path: Path, d
         ports.bind_task(RuntimeTaskBinding(installation_task_id=task_id, granted_to_principal="host"))
         with pytest.raises(HarnessStateError, match="integrity_error"):
             ports.read_bound_state(principal="host")
+
+
+@pytest.mark.parametrize("damage", ["missing", "extra", "duplicate", "payload"])
+def test_replay_checks_live_binding_rows_independently_of_the_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, damage: str,
+) -> None:
+    with StorageAdministrationService(tmp_path / "installation") as service:
+        service.initialize()
+        _checkpointed_graph(service)
+        partition = service.partition()
+        original = partition.runtime_replay_binding_rows
+
+        def changed(connection: sqlite3.Connection) -> Iterator[Iterator[tuple[str, str]]]:
+            indexes = original(connection)
+            first = next(indexes)
+            coordinate, payload = next(first)
+            match damage:
+                case "missing":
+                    yield first
+                case "extra":
+                    yield iter([("foreign-coordinate", payload), (coordinate, payload), *first])
+                case "duplicate":
+                    yield iter([(coordinate, payload), (coordinate, payload), *first])
+                case "payload":
+                    yield iter([(coordinate, "{}"), *first])
+            yield from indexes
+
+        with (
+            service.verified_operation_context() as (_, publication),
+            partition.transaction(write=False) as connection,
+        ):
+            monkeypatch.setattr(type(partition), "runtime_replay_binding_rows", staticmethod(changed))
+            with pytest.raises(runtime_journal.RuntimeJournalError, match="runtime replay indexes do not match"):
+                runtime_journal.verify_runtime_history(
+                    connection, finalized=publication,
+                    verify=lambda purpose, digest, signature: service._signing.verify(
+                        service._signer_key_id, purpose, digest, signature,
+                    ),
+                    checkpoint_signer_key_id=service._signer_key_id,
+                    checkpoint_signer_fingerprint=service._signing.public_key_fingerprint(service._signer_key_id),
+                )
 
 
 def test_interrupted_finalization_reopens_exact_checkpoint_publication(

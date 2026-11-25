@@ -12,6 +12,8 @@ import pytest
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.store import PersistedBatch
 from memorii.core.persistence.factory import open_managed_partition
+from memorii.core.persistence.runtime_api import RuntimeCommandService
+from memorii.core.persistence.runtime_contracts import RuntimeCommandRequest
 from memorii.core.storage_administration import operator_backup
 from memorii.core.storage_administration.generation_selection import PARTITION_GENERATION_SELECTOR
 from memorii.core.storage_administration.operator import (
@@ -260,6 +262,32 @@ def test_preserved_head_raw_mutation_fails_fresh_acquisition(tmp_path: Path, pag
         if page == "table":
             replacements += ((body, alternate),)
         _mutate_rootpage(db, schema_name, replacements)
+    with StorageAdministrationService(root) as reopened, pytest.raises(InstallationIntegrityError):
+        reopened.acquire_verified_snapshot()
+
+
+@pytest.mark.parametrize(("catalog", "key"), [
+    ("runtime_event_id_bindings", "event_id"),
+    ("runtime_dedupe_bindings", "dedupe_key"),
+    ("runtime_record_version_bindings", "record_version_id"),
+])
+def test_independent_replay_index_mutation_refuses_raw_reopen(tmp_path: Path, catalog: str, key: str) -> None:
+    root = tmp_path / "installation"
+    with StorageAdministrationService(root) as service:
+        service.initialize()
+        RuntimeCommandService(service, client_namespace="host").dispatch(RuntimeCommandRequest(
+            kind="start_task", operation_id="start", goal="Retain the signed replay indexes",
+        ))
+        _activate_raw(service, tmp_path / "upgrade")
+    with StorageAdministrationService(root) as converted:
+        converted.acquire_verified_snapshot()
+        db = converted.partition_path()
+    with closing(sqlite3.connect(db)) as connection:
+        original = connection.execute(f"SELECT {key} FROM {catalog} NOT INDEXED ORDER BY rowid LIMIT 1").fetchone()
+    assert original is not None
+    coordinate = original[0].encode("ascii")
+    forged = coordinate[:-1] + (b"1" if coordinate[-1:] == b"0" else b"0")
+    _mutate_rootpage(db, f"sqlite_autoindex_{catalog}_1", ((coordinate, forged),))
     with StorageAdministrationService(root) as reopened, pytest.raises(InstallationIntegrityError):
         reopened.acquire_verified_snapshot()
 

@@ -18,6 +18,7 @@ from memorii.core.persistence.runtime_journal import (
 )
 from memorii.stores.sqlite import raw_memory_payloads
 from memorii.stores.sqlite.materialization_sql import _catalog_digests, _key_bytes, _value_digest
+from pydantic import BaseModel, ValidationError
 
 
 def test_catalog_projection_matches_incremental_digest_framing() -> None:
@@ -51,7 +52,7 @@ def test_catalog_projection_matches_incremental_digest_framing() -> None:
         )) == reordered
 
 
-def _previous_checkpoint_digest(records: Sequence[_CheckpointMember | _CheckpointBinding]) -> str:
+def _previous_checkpoint_digest(records: Sequence[BaseModel]) -> str:
     digest = sha256()
     for item in records:
         payload = item.model_dump_json().encode("utf-8")
@@ -61,6 +62,10 @@ def _previous_checkpoint_digest(records: Sequence[_CheckpointMember | _Checkpoin
 
 
 def test_checkpoint_byte_serialization_preserves_the_signed_member_digest() -> None:
+    class OriginalBinding(BaseModel):
+        coordinate: str
+        owner_binding_json: str
+
     members = (
         _CheckpointMember(
             catalog="runtime_execution_nodes", key=("task:\u00e9\x00\U0001f4a1", "node:one"),
@@ -76,7 +81,19 @@ def test_checkpoint_byte_serialization_preserves_the_signed_member_digest() -> N
         _CheckpointBinding(coordinate="2" * 64, owner_binding_json='{"sequence":1}'),
     )
     assert _member_digest(members, _MEMBER_JSON) == _previous_checkpoint_digest(members)
-    assert _member_digest(bindings, _BINDING_JSON) == _previous_checkpoint_digest(bindings)
+    original = tuple(OriginalBinding(coordinate=b.coordinate, owner_binding_json=b.owner_binding_json) for b in bindings)
+    assert _member_digest(bindings, _BINDING_JSON) == _previous_checkpoint_digest(original)
+
+
+def test_compact_checkpoint_binding_still_rejects_malformed_records() -> None:
+    coordinate = "1" * 64
+    for wire in (
+        '{"coordinate":"invalid","owner_binding_json":"{}"}',
+        f'{{"coordinate":"{coordinate}","owner_binding_json":1}}',
+        f'{{"coordinate":"{coordinate}","owner_binding_json":"{{}}","extra":true}}',
+    ):
+        with pytest.raises(ValidationError):
+            _BINDING_JSON.validate_json(wire)
 
 
 def _insert_raw_payload(
