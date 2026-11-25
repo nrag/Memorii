@@ -822,16 +822,17 @@ def publish_runtime_change(
             )
             cookie = partition.verification_cookie(connection)
             handle.commit()
-        administration._finalize_publication(candidate)
-        administration._control.write_intent(
-            intent.model_copy(update={"phase": "finalized"}),
-            administration._journal_entry(
-                operation="publication_finalized",
-                before_digest=finalized.payload_digest(),
-                after_digest=candidate.payload_digest(),
-            ),
-        )
-        if forest is not None:
-            partition.cache_manifest_accumulator(cookie, forest)
-        administration._verified_tuples = {candidate.payload_digest(): cookie}
+            # Keep the partition lock through control publication, after the SQLite commit.
+            administration._finalize_publication(candidate)
+            administration._control.write_intent(
+                intent.model_copy(update={"phase": "finalized"}),
+                administration._journal_entry(
+                    operation="publication_finalized",
+                    before_digest=finalized.payload_digest(),
+                    after_digest=candidate.payload_digest(),
+                ),
+            )
+            if forest is not None:
+                partition.cache_manifest_accumulator(cookie, forest)
+            administration._verified_tuples = {candidate.payload_digest(): cookie}
         return runtime_revision

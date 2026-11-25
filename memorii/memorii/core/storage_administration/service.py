@@ -850,18 +850,19 @@ class StorageAdministrationService:
                 )
                 cookie = partition.verification_cookie(connection)
                 handle.commit()
-            self._finalize_publication(candidate)
-            self._control.write_intent(
-                intent.model_copy(update={"phase": "finalized"}),
-                self._journal_entry(
-                    operation="publication_finalized",
-                    before_digest=finalized.payload_digest(),
-                    after_digest=candidate.payload_digest(),
-                ),
-            )
-            if forest is not None:
-                partition.cache_manifest_accumulator(cookie, forest)
-            self._verified_tuples = {candidate.payload_digest(): cookie}
+                # Partition readers must wait for the matching control state and terminal intent.
+                self._finalize_publication(candidate)
+                self._control.write_intent(
+                    intent.model_copy(update={"phase": "finalized"}),
+                    self._journal_entry(
+                        operation="publication_finalized",
+                        before_digest=finalized.payload_digest(),
+                        after_digest=candidate.payload_digest(),
+                    ),
+                )
+                if forest is not None:
+                    partition.cache_manifest_accumulator(cookie, forest)
+                self._verified_tuples = {candidate.payload_digest(): cookie}
             return PublicationOutcome(
                 ordinal=candidate.vector.partition_ordinal,
                 write_revision=candidate.vector.memory_write_revision,

@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from memorii.core.memory_plane.file_lock import locked_file
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
+from memorii.core.persistence.contracts import InstallationControlJournalEntry, RuntimePublicationIntent
 from memorii.core.persistence.key_owner import PARTITION_GENERATION_SIGNATURE_PURPOSE
 from memorii.core.storage_administration.generation_selection import (
     PARTITION_GENERATION_SELECTOR,
@@ -140,9 +141,9 @@ def test_invalid_generation_selection_fails_closed(tmp_path: Path, failure: str)
         assert not (tmp_path / "partition" / "generations").exists()
 
 
-@pytest.mark.parametrize("commit_data", [False, True])
+@pytest.mark.parametrize("publication_cut", ["prepared", "data_committed", "control_committed"])
 def test_named_generation_does_not_release_data_before_pending_intent_recovery(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, commit_data: bool,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, publication_cut: str,
 ) -> None:
     with StorageAdministrationService(tmp_path) as service:
         service.initialize()
@@ -153,20 +154,24 @@ def test_named_generation_does_not_release_data_before_pending_intent_recovery(
 
         original_intent_write = owner._control.write_intent
 
-        def lose_response_after_prepare(*args) -> None:
-            original_intent_write(*args)
-            lose_response()
+        def interrupt_intent_write(intent: RuntimePublicationIntent, entry: InstallationControlJournalEntry) -> None:
+            if publication_cut == "control_committed" and intent.phase == "finalized":
+                lose_response()
+            original_intent_write(intent, entry)
+            if publication_cut == "prepared" and intent.phase == "prepared":
+                lose_response()
 
         with monkeypatch.context() as scoped:
-            if commit_data:
+            if publication_cut == "data_committed":
                 scoped.setattr(owner, "_finalize_publication", lose_response)
             else:
-                scoped.setattr(owner._control, "write_intent", lose_response_after_prepare)
+                scoped.setattr(owner._control, "write_intent", interrupt_intent_write)
             with pytest.raises(RuntimeError, match="publication interrupted"):
                 owner.publish_memory_plane_batch((CanonicalMemoryRecord(
                     memory_id="pending-source", domain=MemoryDomain.TRANSCRIPT, text="pending",
                     source_kind="fixture", status=CommitStatus.COMMITTED,
                 ),))
+    commit_data = publication_cut != "prepared"
     with StorageAdministrationService(tmp_path) as recovered:
         with pytest.raises(InstallationIntegrityError, match="pending publication recovery"):
             recovered.memory_plane_store().get_record("pending-source")

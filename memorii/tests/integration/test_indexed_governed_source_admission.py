@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Event, get_ident
+from typing import BinaryIO
 from unittest.mock import patch
 
 import pytest
+from memorii.core.memory_plane import file_lock
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.store import (
     IndexedGovernedWritePolicy,
@@ -15,17 +19,115 @@ from memorii.core.memory_plane.store import (
     RecordDigestPrecondition,
     record_digest,
 )
+from memorii.core.persistence.contracts import (
+    InstallationControlJournalEntry,
+    RuntimePublicationIntent,
+    RuntimePublicationState,
+)
 from memorii.core.persistence.runtime_contracts import RuntimeCommandReceipt
+from memorii.core.persistence.runtime_repository import RuntimeStateRepository, publish_runtime_change
 from memorii.core.storage_administration.service import StorageAdministrationService
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
-from tests.support.reference_capacity import TaskAllocation
-from tests.support.reference_capacity_fixture import _execution_changes, _publish_changes
+from tests.support.reference_capacity import FIXTURE_START, SourceInput, TaskAllocation
+from tests.support.reference_capacity_fixture import _execution_changes, _prepare, _publish_changes
 from tests.support.reference_capacity_sources import ReferenceSourceCapture
 
 _TASK = TaskAllocation(
     distribution="balanced", index=0, execution_nodes=2, solver_nodes=4,
     first_solver_node=0, first_source=0, sources=2,
 )
+
+
+@pytest.mark.parametrize("writer_kind", ["runtime", "memory_plane"])
+@pytest.mark.parametrize("publication_cut", ["prepared", "data_committed", "control_committed"])
+def test_managed_source_read_waits_for_live_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, writer_kind: str, publication_cut: str,
+) -> None:
+    fcntl = pytest.importorskip("fcntl")
+    root = tmp_path / "installation"
+    _prepare(root, "balanced", (_TASK,), raw_payloads=True)
+    source = SourceInput(coordinate="concurrent-capture", task_id=_TASK.task_id, timestamp=FIXTURE_START)
+    paused, attempted, release = Event(), Event(), Event()
+    reader_thread = None
+    entered_while_pending = False
+    with StorageAdministrationService(root) as writer, StorageAdministrationService(root) as reader:
+        capture = ReferenceSourceCapture(reader)
+        repository = RuntimeStateRepository(writer.partition())
+        task = repository.get_task(_TASK.task_id)
+        assert task is not None
+        updated = task.model_copy(update={"version": task.version + 1})
+        path = writer.partition_path()
+        lock_path = path.with_name(f"{path.name}.lock")
+        original_intent = writer._control.write_intent
+        original_finalize = writer._finalize_publication
+        original_acquire = file_lock._acquire
+
+        def pause() -> None:
+            paused.set()
+            assert release.wait(timeout=10)
+
+        def write_intent(intent: RuntimePublicationIntent, entry: InstallationControlJournalEntry) -> None:
+            if publication_cut == "control_committed" and intent.phase == "finalized":
+                pause()
+            original_intent(intent, entry)
+            if publication_cut == "prepared" and intent.phase == "prepared":
+                pause()
+
+        def finalize(candidate: RuntimePublicationState) -> None:
+            if publication_cut == "data_committed":
+                pause()
+            original_finalize(candidate)
+
+        def acquire(handle: BinaryIO, *, exclusive: bool) -> None:
+            nonlocal entered_while_pending
+            if get_ident() == reader_thread and handle.name == str(lock_path) and not attempted.is_set():
+                assert not exclusive
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_SH | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    attempted.set()
+                else:
+                    entered_while_pending = True
+                    attempted.set()
+                    return
+            original_acquire(handle, exclusive=exclusive)
+
+        def publish() -> None:
+            if writer_kind == "runtime":
+                publish_runtime_change(writer, lambda connection, repo: repo.apply_task(connection, updated))
+            else:
+                writer.publish_memory_plane_batch((CanonicalMemoryRecord(
+                    memory_id="background-source", domain=MemoryDomain.TRANSCRIPT, text="background",
+                    source_kind="fixture", status=CommitStatus.COMMITTED,
+                ),))
+
+        def retain_source() -> CanonicalMemoryRecord:
+            nonlocal reader_thread
+            reader_thread = get_ident()
+            return capture.retain(source, "foreground source")
+
+        monkeypatch.setattr(writer._control, "write_intent", write_intent)
+        monkeypatch.setattr(writer, "_finalize_publication", finalize)
+        monkeypatch.setattr(file_lock, "_acquire", acquire)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            publish_future = executor.submit(publish)
+            try:
+                assert paused.wait(timeout=10)
+                read_future = executor.submit(retain_source)
+                assert attempted.wait(timeout=10)
+                if entered_while_pending:
+                    read_future.result(timeout=5)
+                    pytest.fail("managed capture entered the partition during a live publication")
+            finally:
+                release.set()
+            publish_future.result(timeout=10)
+            retained = read_future.result(timeout=10)
+        assert retained.text == "foreground source"
+        snapshot = reader.acquire_verified_snapshot()
+
+    with StorageAdministrationService(root) as reopened:
+        assert reopened.acquire_verified_snapshot() == snapshot
+        assert reopened.memory_plane_store().get_record(retained.memory_id) == retained
 
 
 def test_managed_source_admission_uses_indexed_reads_and_recovers_exact_receipt(
