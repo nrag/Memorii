@@ -29,7 +29,9 @@ repository test corpus, and unrelated workflow optimization are deferred.
 ## Scope, constraints, and sources
 
 Included: the named workflow, its five tests and directly shared construction
-helpers, current development documentation, and this debugging record.
+helpers, current development documentation, and this debugging record. A
+syntax-only solver conditional cleanup is included after the first hosted PR
+run exposed a pre-existing Ruff error that blocks the required aggregate.
 Excluded: runtime semantic changes, suppressing failures, removing assertions,
 unrelated workflows, billing-account configuration, and new hosted infrastructure.
 
@@ -67,8 +69,8 @@ ML extra to verify that Torch, spaCy, Stanza, and model downloads are unnecessar
 
 ## Current state and open questions
 
-Verified: these files are excluded from ordinary unit shards and have this
-schedule as their sole automated owner. The governing design requires their
+Verified at baseline: these files are excluded from ordinary unit shards and
+had this schedule as their sole automated owner. The governing design requires their
 invariants but does not require four-hour execution. Repository visibility is
 public and runners are standard `ubuntu-latest`; current GitHub billing docs
 state that public standard-runner compute is free. Account billing is unavailable,
@@ -78,18 +80,24 @@ Verified code evidence: the production fixture lacks verified capability
 monitoring authority; the built-in graph path requires active capability status.
 The scenario fixture supplies a different graph provider and does not explicitly
 disable canonical evidence, although default enablement now applies to both.
-Working hypothesis: stale fixture wiring, not an invalid production validator.
+Confirmed cause: stale fixture wiring, not an invalid production validator.
 
 Verified locally: all five corrected tests pass in the lean environment, with
 2 parity tests in 203.44 seconds and 3 admission tests in 279.49 seconds.
 Nine directly affected sibling tests pass in 71.39 seconds. Both exact
 collection guards, changed-file Ruff, identity hygiene, YAML and shell syntax
-checks pass. The measured suite total supports a 15-minute job timeout with
-setup headroom; CI runner timing remains to be observed.
+checks pass. The first hosted correction also passes both exact suites and
+collection guards in a 6-minute 9-second job, including a cold lean install.
+The 15-minute timeout therefore has measured hosted setup and execution headroom.
 
-Open: independent final diff review and GitHub execution. The default branch is protected;
-its required statuses are `Unit Tests` and `Benchmark Contracts`. No external
-decision is currently needed for the proposed correction.
+Independent final diff review is complete without blocking findings. PR #125
+is open. Its corrected canonical-evidence job and `Benchmark Contracts` pass.
+The first PR Gates run reports one Ruff SIM102 error in the unchanged solver
+verifier. The exact full Ruff command reproduces the identical error on the
+clean baseline with Ruff 0.17.6. The minimal conditional cleanup passes full
+Ruff, all four existing verifier tests, and Pyright locally. Remaining required
+GitHub checks and default-branch rollout are pending. The default branch is
+protected; required statuses are `Unit Tests` and `Benchmark Contracts`.
 
 ## Hypothesis ledger and experiments
 
@@ -128,6 +136,7 @@ the public repository's already-free standard runner compute cost.
 | `memorii/tests/unit/core/test_provider_service.py` and `memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_coordinator_v3.py` | Existing signed monitoring authority -> provider constructor -> active status -> built-in graph path | Clean-base failures reproduced; corrected five tests and nine sibling cases pass | locally verified |
 | `memorii/tests/unit/core/semantic_ingestion/test_canonical_evidence_mode_parity.py` | Same production composition -> explicit mode -> public outcome/replay/durable projection | Enabled/disabled snapshot checks and retained outcome, idempotence, projection assertions pass | locally verified |
 | `docs/development/static_tooling.md` and historical canonical-closure implementation plan | Current executable workflow and historical cadence supersession | Read against final YAML | verified |
+| `memorii/memorii/core/solver/verifier.py` | Same solver decision and missing-evidence checks; final nested conditional combined without changing fallthrough | Exact clean-base Ruff failure; full Ruff, four verifier tests, and Pyright pass after cleanup | locally verified |
 | WorkPlan | Debugging evidence only | Reconcile actual diff and evidence | active |
 
 Behavioral identities (canonical-evidence workflow, helpers, modes, test names)
@@ -150,10 +159,15 @@ correctness investigation maps this chain before fixture edits.
 | Direct fixture consumers and mode selection checks | Shared-helper effects | 9 passed in 71.39s; exact selected nodes below |
 | Workflow configuration and shell syntax | Cadence, cost bounds, selection | YAML and `bash -n` passed; one job, Monday 07:23 UTC, 15-minute initial cap, read-only contents permission |
 | Ruff changed Python files; identity hygiene | Repository conventions | passed, exit 0 |
-| Actual GitHub workflow | Runner/setup/expression behavior | pending; do not claim from local success |
+| Actual GitHub workflow, run `45685424785` | Runner/setup/expression behavior | passed: 2 parity tests in 113.61s, 3 admission tests in 165.69s; both count guards; job 6m09s including installation |
+| Full `ruff check memorii tests` with Ruff 0.17.6 | Required Static Analysis unblocker | exact baseline failure SIM102 at solver/verifier.py:52; cleanup passes |
+| Solver verifier tests with warnings as errors | Syntax-only cleanup | 4 passed in 0.61s |
+| `pyright --pythonpath <venv-python>` | Existing configured type-check scope | 0 errors, 0 warnings, 0 informations |
 
-Known failures: the four GitHub assertions described above remain in scope.
-No failure is excluded as unrelated without identical clean-base reproduction.
+The four original assertion failures are resolved locally and on GitHub.
+The first PR's pre-existing lint failure is reproduced, with a locally passing
+cleanup prepared for hosted verification. No other failure is excluded without
+identical clean-base reproduction.
 
 ## Delegation and review log
 
@@ -195,19 +209,40 @@ No failure is excluded as unrelated without identical clean-base reproduction.
 - 2026-11-25: direct pause is unavailable through the GitHub connector. The
   local browser connection is unavailable and cloud GitHub is signed out.
   No schedule was paused or remote run triggered; proceed through the PR path.
+- 2026-11-25: published PR `https://github.com/nrag/Memorii/pull/125`, first
+  head `1c546b9dcf295f3589c9205b65e931652ed7bb63`, based on `885c7db`.
+  The corrected workflow passed at actual pull-request merge revision
+  `0572f614a08232077c5ef75e057fbf1ebbaadf07`, ref `refs/pull/125/merge`:
+  `https://github.com/nrag/Memorii/actions/runs/45685424785`.
+  Python 3.12.16 on Ubuntu completed the job in 369 seconds; lean installation
+  took 61 seconds. Both warning-as-error suites and exact collection guards pass.
+- 2026-11-25: PR Gates run `45685424588` failed its Static Analysis job
+  `139456639726` on Ruff SIM102 in the unchanged solver verifier. The independent
+  reviewer ran the exact command on clean baseline `885c7db` using the same
+  Ruff 0.17.6 and reproduced the sole identical error. The coordinator confirmed
+  the final nested conditional has no following branch, so combining it with
+  `and` preserves all outcomes and the spec's unresolved-evidence validation.
+  The sole writer applied that bounded cleanup. Full Ruff and four existing
+  verifier tests pass; configured Pyright also passes. No rule is suppressed.
 
 ## Blockers and limits
 
-Local ICU build prerequisite is resolved. No GitHub reruns have been triggered.
+Local ICU build prerequisite is resolved. No manual GitHub reruns have been
+triggered. Pushing the required lint correction will trigger the repository's
+existing PR gates; avoid further documentation-only pushes or optional reruns.
 Billing attribution cannot be established through repository tools alone.
 
 ## Next action
 
-Publish the reviewed correction as a pull request and observe its GitHub checks.
+Publish the bounded lint correction and observe required GitHub checks, then
+merge through normal protection if they pass. The PR description records final
+hosted verification and rollout after this committed evidence snapshot.
 
 ## Outcome
 
-Local root cause and regression proof are complete. GitHub rollout is pending.
+Root cause and canonical-evidence regression proof are complete locally and on
+GitHub. The required-gate lint correction is locally verified. Default-branch
+rollout remains pending; the old schedule remains active until merge.
 
 ## Candidate review record
 
@@ -225,22 +260,24 @@ passed_local_jobs: [mode-parity, production-admission, affected-fixture-consumer
 known_local_failures: []
 failure_exclusions: []
 workflow_identities: [.github/workflows/canonical-evidence-parity-scheduled.yml]
-ci_event: pending pull_request
-ci_executed_sha: pending
-ci_executed_ref: pending
+ci_event: pull_request
+ci_executed_sha: 0572f614a08232077c5ef75e057fbf1ebbaadf07
+ci_executed_ref: refs/pull/125/merge
 remaining_validated_p1_p2: []
 remaining_blocks_approval: []
 remaining_changes_required: []
-local_ci_parity: exact test commands and lean installation passed; hosted actions unverified
+local_ci_parity: exact test commands, collection guards, and lean installation passed locally and on GitHub for the initial correction; syntax-only lint follow-up pending CI
 acceptance_gate_inventory: [Canonical-Evidence Validation, Unit Tests, Benchmark Contracts]
-github_run_urls: [https://github.com/nrag/Memorii/actions/runs/45635391628]
-pr_head_sha: pending
+github_run_urls: [https://github.com/nrag/Memorii/actions/runs/45635391628, https://github.com/nrag/Memorii/actions/runs/45685424785, https://github.com/nrag/Memorii/actions/runs/45685424588]
+pr_head_sha: 1c546b9dcf295f3589c9205b65e931652ed7bb63
 pr_base_sha: 885c7db7ad8bba1aa0dd7d88c8f162d26c3bed0d
 merge_base_sha: 885c7db7ad8bba1aa0dd7d88c8f162d26c3bed0d
-required_checks_green: pending
+required_checks_green: false
 ```
 
-This is a local candidate record, not a claim of GitHub enforcement or rollout.
+This records the initial correction's hosted proof and the locally verified
+lint follow-up. The final follow-up SHA and required-check/rollout status are
+recorded in PR #125 after submission; this snapshot does not claim rollout.
 
 ## Exact sibling verification
 
