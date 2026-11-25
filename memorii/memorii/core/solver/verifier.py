@@ -49,8 +49,9 @@ class SolverDecisionVerifier:
                 reasons.append("needs_test_missing_missing_evidence")
             if next_test_action is None:
                 reasons.append("needs_test_missing_next_test")
-        elif decision == SolverDecision.INSUFFICIENT_EVIDENCE and not missing_evidence:
-            reasons.append("insufficient_evidence_missing_missing_evidence")
+        elif decision == SolverDecision.INSUFFICIENT_EVIDENCE:
+            if not missing_evidence:
+                reasons.append("insufficient_evidence_missing_missing_evidence")
 
         if reasons:
             return VerificationOutcome(
