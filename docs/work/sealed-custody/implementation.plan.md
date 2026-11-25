@@ -26,4 +26,4 @@ Independent review confirmed the current hash, descriptor, and fail-closed assum
 
 ## Next Action
 
-Design the next bounded proof of supervisor ownership and grant-ordered release, then test retained-view drain, writable handoff and erasure against that owner. Keep the production feature disabled.
+See the [retained worker and erasure prototypes](worker.plan.md) for the bounded grant-ordered release, drain, writable handoff and signer-loss evidence. Keep the production feature disabled.
