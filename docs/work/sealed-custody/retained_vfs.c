@@ -1,9 +1,11 @@
-/* Disposable, single-threaded proof of descriptor-backed SQLite reads. */
+/* Disposable prototype: one SQLite owner and concurrent guarded socket writes. */
 #include <errno.h>
 #include <fcntl.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <pthread.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -19,6 +21,7 @@ SQLITE_EXTENSION_INIT1
 
 static const unsigned char block_domain[] = "memorii.sealed-image-block.v2";
 static sqlite3_vfs retained_vfs;
+static pthread_mutex_t release_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 typedef struct {
     sqlite3_file base;
@@ -45,9 +48,30 @@ static void put_u64(unsigned char *dst, uint64_t value) {
 }
 
 static int reject_read(void *output, int amount, int error) {
-    if (amount > 0) memset(output, 0, (size_t)amount);
+    pthread_mutex_lock(&release_mutex);
     lease.failed = 1;
+    pthread_mutex_unlock(&release_mutex);
+    if (amount > 0) memset(output, 0, (size_t)amount);
     return error;
+}
+
+/* The caller holds the broker's publication fence. Never block on the socket. */
+ssize_t fixture_send_retained(int fd, const void *data, size_t length) {
+    pthread_mutex_lock(&release_mutex);
+    ssize_t written = -1;
+    if (!lease.opened || lease.failed) {
+        errno = EACCES;
+    } else {
+        int flags = MSG_DONTWAIT;
+#ifdef MSG_NOSIGNAL
+        flags |= MSG_NOSIGNAL;
+#endif
+        written = send(fd, data, length, flags);
+    }
+    int saved_errno = errno;
+    pthread_mutex_unlock(&release_mutex);
+    errno = saved_errno;
+    return written;
 }
 
 static int read_block(int fd, sqlite3_int64 start, unsigned char *data, size_t size) {
@@ -105,9 +129,11 @@ static int retained_read(sqlite3_file *file, void *output, int amount, sqlite3_i
 
 static int retained_close(sqlite3_file *file) {
     RetainedFile *image = (RetainedFile *)file;
+    pthread_mutex_lock(&release_mutex);
+    lease.opened = 0;
+    pthread_mutex_unlock(&release_mutex);
     int rc = close(image->fd);
     image->fd = -1;
-    lease.opened = 0;
     sqlite3_free(lease.digests);
     lease.digests = NULL;
     return rc == 0 ? SQLITE_OK : SQLITE_IOERR_CLOSE;
@@ -193,7 +219,9 @@ static int retained_open(sqlite3_vfs *vfs, const char *name, sqlite3_file *file,
     }
     image->fd = lease.pending_fd;
     lease.pending_fd = -1;
+    pthread_mutex_lock(&release_mutex);
     lease.opened = 1;
+    pthread_mutex_unlock(&release_mutex);
     image->base.pMethods = &methods;
     if (out) *out = SQLITE_OPEN_READONLY;
     return SQLITE_OK;
@@ -255,7 +283,9 @@ static void pin(sqlite3_context *ctx, int argc, sqlite3_value **args) {
     lease.digests = digests;
     lease.pending_fd = duplicate;
     lease.size = size;
+    pthread_mutex_lock(&release_mutex);
     lease.failed = 0;
+    pthread_mutex_unlock(&release_mutex);
     lease.blocks = lease.reads = 0;
     sqlite3_snprintf(sizeof(lease.path), lease.path, "%s%s", TOKEN_PREFIX, token);
     sqlite3_result_text(ctx, lease.path, -1, SQLITE_TRANSIENT);

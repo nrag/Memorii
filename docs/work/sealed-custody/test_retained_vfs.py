@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import sqlite3
-import subprocess
 from contextlib import closing
 from pathlib import Path
 
@@ -14,21 +13,6 @@ from retained_vfs_probe import ReleaseDenied, block_table, retained_reader
 _HOT = b"already-authenticated-response"
 _MARKER = b"physical-mutation-marker"
 _COLD = b"x" * 425_000 + _MARKER
-_SOURCE = Path(__file__).with_name("retained_vfs.c")
-
-
-@pytest.fixture(scope="session")
-def extension(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    root = tmp_path_factory.mktemp("retained-extension")
-    library = root / "retainedvfs.dylib"
-    sqlite = Path(os.environ.get("SQLITE_PREFIX", "/opt/homebrew/opt/sqlite"))
-    crypto = Path(os.environ.get("OPENSSL_PREFIX", "/opt/homebrew/opt/openssl@3"))
-    subprocess.run([
-        "xcrun", "clang", "-std=c11", "-dynamiclib", "-Wall", "-Wextra", "-Werror",
-        f"-I{sqlite / 'include'}", f"-I{crypto / 'include'}", str(_SOURCE),
-        f"-L{crypto / 'lib'}", "-lcrypto", "-o", str(library),
-    ], check=True)
-    return library
 
 
 def _root(path: Path) -> str:
