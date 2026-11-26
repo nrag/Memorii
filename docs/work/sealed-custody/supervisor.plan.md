@@ -5,6 +5,7 @@
 - Baseline: `a041d4d0` of `codex/durable-delivery-implementation`
 - Contract: [Sealed startup custody](../../design/sealed_startup_custody.md)
 - Predecessor: [Signed authority at socket release](release.plan.md)
+- Status: isolated recovery and native macOS prototype recheck complete. Installed production recovery and native qualification remain open.
 
 Exercise supervisor process death with the same signed publication, authenticated
 retained view, OS-authenticated client and socket release guard as the predecessor
@@ -68,6 +69,66 @@ cleans running supervisor groups on unexpected failure, and records both
 supervisor and worker process identities. Evidence maturity is locally verified
 for the isolated path. No installed runtime entrypoint consumes this ledger.
 
+## Native macOS Evidence
+
+The [cold VFS samples](supervisor-native-macos.jsonl) use the preserved v8
+main images from the prior native capacity workloads. The originals were
+untouched. Each sample read a separate uncached SSD copy with zero resident
+main-file pages. The VFS authenticated every byte against the precomputed
+fixture root before it opened SQLite, then authenticated the SQLite blocks
+used by a covering-index lookup and a 1.25 MB BLOB read. The native extension
+was freshly compiled against the same SQLite 3.54.1 ABI.
+
+| Workload | Image bytes | VFS open through first authenticated reads |
+| --- | ---: | ---: |
+| Balanced | 5,655,961,600 | 2.19-3.27 s |
+| Concentrated | 5,660,487,680 | 2.18-2.20 s |
+
+These samples cover cold file residency with process reuse. The timed region
+includes whole-image hashing, VFS initialization and native reads. Fixture
+copying, process launch, control authority and socket release have separate
+costs. Two samples per workload size establish diagnostic timings.
+
+Reproduce on native macOS with the [private extension build](conftest.py),
+the installed reference wheel environment and:
+
+```bash
+python -B -W error docs/work/sealed-custody/reference_vfs_reads.py \
+  --fixtures "$fixtures" --roots docs/work/sealed-custody/block-hash-macos.jsonl \
+  --extension "$extension" --cold-work "$scratch" --samples 2
+```
+
+The [fresh-process startup recheck](supervisor-sealed-startup-macos.jsonl)
+used the same installed wheel and signed fixture identities as the
+[earlier sealed startup experiment](../verified-startup/implementation.plan.md).
+Each timed subprocess opened a separate zero-residency copy. This experiment
+uses the frozen-image startup prototype and measures one matched pair per
+distribution. It runs separately from the retained VFS and socket experiment.
+
+| Workload | Ordinary acquisition | Sealed acquisition | Sealed service open through ready |
+| --- | ---: | ---: | ---: |
+| Balanced | 8.63 s | 3.37 s | 4.60 s |
+| Concentrated | 9.01 s | 3.54 s | 4.80 s |
+
+Both sealed acquisitions met the five-second acquisition target and made zero
+logical scan calls during startup. Both fresh raw-body mutations blocked
+readiness at the same signed publication. The earlier concentrated
+service-inclusive samples took 5.12-5.26 seconds, so these measurements leave
+the full service-start distribution open. All 16 focused native macOS custody
+tests passed with warnings treated as errors.
+
+## Remaining Qualification
+
+Production qualification requires a packaged, host-enrolled supervisor and
+VFS with independently pinned witness authority, reboot and actor-loss
+recovery, and production transition/erasure wiring. The governing design
+still requires approval of the Tier B byte-equivalence amendment before
+sealed startup can be routed in that artifact. Run the installed artifact's
+full balanced and concentrated matrix on dedicated native macOS and Linux
+SSD runners after those gates. The previous dedicated Linux host was deleted.
+The offline Linux container proves the crash path and cannot supply the native
+SSD measurements. This branch keeps the installed v7 default.
+
 ## Next Action
 
-Record the native exact-fixture measurements and remaining qualification gates.
+Obtain approval of the governing Tier B amendment for an installed supervisor and VFS qualification candidate.
