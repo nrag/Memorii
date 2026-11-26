@@ -54,6 +54,7 @@ def _read_body(connection: sqlite3.Connection, rowid: int) -> bytes:
 def _worker(
     root: Path, extension: Path, image_root: str, task: str, rowid: int,
     listener_fd: int, supervisor_fd: int, resume_fd: int, case: str,
+    expected_publication: str | None = None, owner_lock_fd: int | None = None,
 ) -> None:
 
     from memorii.core.harness_state.grant_registry import GrantRegistryError
@@ -67,13 +68,20 @@ def _worker(
         expires_at=datetime.now(UTC) + timedelta(minutes=2),
     )
     pressure = case.endswith("under_pressure")
+    ownership = (
+        locked_file(root / ".owner.lock", exclusive=True)
+        if owner_lock_fd is None else os.fdopen(owner_lock_fd, "rb")
+    )
     with (
-        locked_file(root / ".owner.lock", exclusive=True),
+        ownership,
         socket.socket(fileno=listener_fd) as listener,
         os.fdopen(supervisor_fd, "rb", buffering=0) as supervisor,
         os.fdopen(resume_fd, "rb", buffering=0) as resume,
     ):
         authority = ReleaseAuthority(root, _PRINCIPAL)
+        publication = authority.coordinate[1].payload_digest()
+        if expected_publication is not None and publication != expected_publication:
+            raise ReleaseDenied("recovered publication differs from the witnessed publication")
         worker = RetainedWorker(root, authority.image, image_root, extension, verify_view=authority.verify_view)
         stop = Event()
 
@@ -96,7 +104,7 @@ def _worker(
         with ThreadPoolExecutor(1) as watcher:
             observing = watcher.submit(monitor)
             try:
-                _emit("ready", uid=os.geteuid(), pid=os.getpid(), publication=authority.coordinate[1].payload_digest())
+                _emit("ready", uid=os.geteuid(), pid=os.getpid(), publication=publication)
                 listener.settimeout(10)
                 for request in range(2 if case.startswith("rotate") else 1):
                     connection, _ = listener.accept()
@@ -132,9 +140,11 @@ def _worker(
                             _emit("response_sent", request=request, bytes=outcome)
             finally:
                 stop.set()
-                observing.result(timeout=5)
-                worker.drain(timeout=5)
-                _emit("retained_view_closed")
+                try:
+                    observing.result(timeout=5)
+                finally:
+                    worker.drain(timeout=5)
+                    _emit("retained_view_closed")
 
 
 def _client(endpoint: Path, slow: bool) -> None:
@@ -408,8 +418,12 @@ def main() -> int:
                     raise RuntimeError("unknown release case")
                 _run_case(root / case, extension, case)
     elif action == "worker":
-        root, extension, image_root, task, rowid, listener, live, resume, case = args
-        _worker(Path(root), Path(extension), image_root, task, int(rowid), int(listener), int(live), int(resume), case)
+        root, extension, image_root, task, rowid, listener, live, resume, case, *handoff = args
+        expected, ownership = (handoff[0] or None, int(handoff[1])) if handoff else (None, None)
+        _worker(
+            Path(root), Path(extension), image_root, task, int(rowid), int(listener), int(live), int(resume), case,
+            expected, ownership,
+        )
     elif action == "client":
         _client(Path(args[0]), args[1] == "1")
     elif action == "mutate":
