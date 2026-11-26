@@ -69,13 +69,20 @@ def test_cold_samples_use_child_and_report_reopen_genesis_and_backup_pause(capac
             assert sample["genesis_replay_ns"] > 0
 
 
-def test_failed_or_unavailable_samples_cannot_pass_p95_budget() -> None:
-    slow = [Measurement(str(index), 100_000_000) for index in range(9)]
-    slow.append(Measurement("slow", 5_100_000_000))
-    report = _summarize("startup_acquisition", slow)
-    assert report["status"] == "failed"
+@pytest.mark.parametrize(
+    ("last_ns", "status"),
+    [(9_999_999_999, "passed"), (10_000_000_000, "passed"), (10_000_000_001, "failed")],
+)
+def test_startup_acquisition_budget_includes_the_tenth_sample(last_ns: int, status: str) -> None:
+    samples = [Measurement(str(index), 100_000_000) for index in range(9)]
+    samples.append(Measurement("slowest", last_ns))
+    report = _summarize("startup_acquisition", samples)
+    assert (report["budget_ms"], report["status"]) == (10_000, status)
     quantiles = report["quantiles"]
-    assert isinstance(quantiles, dict) and quantiles["p95_ms"] == 5100
+    assert isinstance(quantiles, dict) and quantiles["p95_ms"] == last_ns / 1_000_000
+
+
+def test_failed_or_unavailable_samples_cannot_pass_p95_budget() -> None:
     failed = _summarize("state_read", [Measurement("failure", None, "busy"), Measurement("pass", 10)])
     assert (failed["attempted"], failed["errors"], failed["status"]) == (2, 1, "failed")
     assert _summarize("command_commit", [], unavailable="endpoint missing")["status"] == "unavailable"

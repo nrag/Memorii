@@ -68,7 +68,7 @@ from tests.support.reference_capacity_sources import REFERENCE_PRINCIPAL, Refere
 _P95_LIMIT_MS = {
     "state_read": 250,
     "command_commit": 500,
-    "startup_acquisition": 5_000,
+    "startup_acquisition": 10_000,
     "checkpoint_resume": 5_000,
     "backup_pause": 5_000,
 }

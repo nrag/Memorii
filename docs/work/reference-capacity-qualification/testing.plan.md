@@ -2,7 +2,7 @@
 
 - Work type: testing
 - Delivery fidelity: Level 3
-- Status: all four native workload measurements completed. The v8 release gate failed.
+- Status: all four historical native workload measurements completed. The updated acquisition budget has been applied to the historical samples for diagnosis. Current-candidate v8 qualification remains open.
 - Branch: `codex/durable-delivery-implementation`
 - Starting head: `ba1e7baab0626aaa32c36a350876c0c3b952b337`
 - Parent: [reference capacity milestone](../durable-delivery-implementation/milestones/reference-capacity.plan.md)
@@ -13,7 +13,7 @@ Qualify an exact installed wheel for owner-staged v8 on dedicated native Linux a
 
 ## Scope And Invariants
 
-The GitHub workflow and test-only fixture and measurement drivers own this evidence. Keep product defaults, budgets, counts, formats, and authorized storage owners unchanged. Stage v8 through an exact-current backup, restore plan, preview, and owner-authorized cutover before creating source receipts or checkpoint state. Include the cutover event in the verified mandatory count, then fill to exactly 100,000 events with the last 1,000 in single-event batches. Make the measurement driver reject the wrong format before timing. Retain v7 diagnostic coverage. Dedicated idle attestation must report actual hardware and scheduling conditions. A shared Mac or a Docker guest provides diagnostic evidence only.
+The GitHub workflow and test-only fixture and measurement drivers own this evidence. Apply the governing capacity budgets. Keep product defaults, counts, formats, and authorized storage owners unchanged. Stage v8 through an exact-current backup, restore plan, preview, and owner-authorized cutover before creating source receipts or checkpoint state. Include the cutover event in the verified mandatory count, then fill to exactly 100,000 events with the last 1,000 in single-event batches. Make the measurement driver reject the wrong format before timing. Retain v7 diagnostic coverage. Dedicated idle attestation must report actual hardware and scheduling conditions. A shared Mac or a Docker guest provides diagnostic evidence only.
 
 ## Test Portfolio And Failure Matrix
 
@@ -43,6 +43,40 @@ The formal driver starts every acquisition sample from a fresh fixture copy in a
 - On both platforms and distributions, checkpoint resume, exclusive backup pause, and sequential state read and command commit passed. Startup acquisition took 9.61 to 11.54 s p95. Contended command commit took 32.42 to 44.85 s p95. The small backup pause measures only publication fences. The earlier custom Mac cold diagnostic used a different fixture preparation and measurement procedure. These runs establish the full acquisition miss without isolating its component-level cause.
 - The [exact-fixture debugging results](../reference-capacity-debugging/debugging.plan.md) isolate startup components and repeated full verification under contention. The ordinary publication race has a deterministic correction. This does not close the performance gate, and all four qualification cells remain bound to the original candidate.
 
+## Ten-Second Acquisition Reassessment
+
+On November 25, 2026 the release owner approved a 10 s verified acquisition
+p95 budget at the same workload and sample count. The timed region still
+starts at the verified snapshot request. Tier A/Tier B checks, backup pause
+and checkpoint resume budgets, error accounting, and fixture sizes are
+unchanged. The updated driver re-scored the ten original acquisition samples
+per workload after checking each report hash. The archived reports retain
+their original budget, statuses, and exact revision.
+
+| Native workload | Archived acquisition p95 | At 10 s | Other failed series in that report |
+| --- | ---: | --- | --- |
+| Linux balanced | 11.52 s | Fail | None |
+| Linux concentrated | 11.54 s | Fail | Two contended source capture errors |
+| macOS balanced | 9.61 s | Pass | Three contended source capture errors |
+| macOS concentrated | 9.66 s | Pass | None |
+
+The [later native macOS startup recheck](../sealed-custody/supervisor-sealed-startup-macos.jsonl)
+includes ordinary, exact-v8 acquisition of 8.63 s balanced and 9.01 s
+concentrated, one sample each. Treat that as diagnostic support for qualifying
+ordinary v8 under the revised budget. The historical publication error has a
+deterministic fix and needs confirmation in the complete contended series on
+the new candidate. Sealed startup has its own approval and qualification path.
+
+Default promotion also requires a real fresh-v8 initialization and lifecycle
+proof. The current initializer writes the v7 schema, and the v8 raw catalogs
+are installed through the explicit staging route. Preserve the legacy-to-v7
+staging target and archive compatibility when implementing fresh v8. Verify
+first publication, reopen, backup, restore and owner-authorized existing-v7
+cutover, including its documented rollback behavior. See the
+[raw-format migration contract](../../design/sqlite_memory_payload_storage.md).
+
 ## Blockers And Next Action
 
-Use the exact-fixture findings to resolve startup and fence latency before rerunning the full matrix on a reviewed candidate. Keep v7 as default while the release gate is open.
+Run ordinary v8 at one frozen candidate revision across both workloads on
+dedicated native Linux and macOS SSDs with the revised driver. Keep v7 as the
+default pending staged qualification and fresh-v8 initialization proof.
