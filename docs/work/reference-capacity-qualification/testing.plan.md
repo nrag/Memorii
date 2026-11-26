@@ -2,7 +2,7 @@
 
 - Work type: testing
 - Delivery fidelity: Level 3
-- Status: all four historical native workload measurements completed. The updated acquisition budget has been applied to the historical samples for diagnosis. Current-candidate v8 qualification remains open.
+- Status: the dedicated ordinary-v8 Linux rerun completed both workloads under the revised driver. Both missed the 10 s acquisition gate. Native macOS evidence for the same candidate remains open.
 - Branch: `codex/durable-delivery-implementation`
 - Starting head: `ba1e7baab0626aaa32c36a350876c0c3b952b337`
 - Parent: [reference capacity milestone](../durable-delivery-implementation/milestones/reference-capacity.plan.md)
@@ -77,6 +77,12 @@ cutover, including its documented rollback behavior. See the
 
 ## Blockers And Next Action
 
-Run ordinary v8 at one frozen candidate revision across both workloads on
-dedicated native Linux and macOS SSDs with the revised driver. Keep v7 as the
-default pending staged qualification and fresh-v8 initialization proof.
+The [dedicated Linux rerun](linux/f5786d12/README.md) on `f5786d12` recorded
+10.89 s balanced and 10.97 s concentrated startup acquisition p95. Every
+other budgeted series passed. All series recorded zero errors and retries,
+including contended source capture. Acquisition remains the Linux gate.
+
+Profile the exact ordinary-v8 Linux acquisition path to close the remaining
+0.97 s gap without changing integrity checks. Qualify the repaired candidate
+on both platforms before promotion. v7 remains the default pending staged
+qualification and fresh-v8 initialization proof.
