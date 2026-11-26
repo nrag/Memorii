@@ -71,13 +71,13 @@ def test_cold_samples_use_child_and_report_reopen_genesis_and_backup_pause(capac
 
 @pytest.mark.parametrize(
     ("last_ns", "status"),
-    [(9_999_999_999, "passed"), (10_000_000_000, "passed"), (10_000_000_001, "failed")],
+    [(10_999_999_999, "passed"), (11_000_000_000, "passed"), (11_000_000_001, "failed")],
 )
 def test_startup_acquisition_budget_includes_the_tenth_sample(last_ns: int, status: str) -> None:
     samples = [Measurement(str(index), 100_000_000) for index in range(9)]
     samples.append(Measurement("slowest", last_ns))
     report = _summarize("startup_acquisition", samples)
-    assert (report["budget_ms"], report["status"]) == (10_000, status)
+    assert (report["budget_ms"], report["status"]) == (11_000, status)
     quantiles = report["quantiles"]
     assert isinstance(quantiles, dict) and quantiles["p95_ms"] == last_ns / 1_000_000
 

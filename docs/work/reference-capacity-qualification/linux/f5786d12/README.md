@@ -21,10 +21,14 @@ source capture p95 was 21.92 s balanced and 21.97 s concentrated, with zero
 capture errors. Contended command commit p95 was 22.39 s and 22.57 s. The
 contended series have no latency budgets.
 
+On November 26, the owner accepted an 11 s acquisition p95 budget for the
+release. Both recorded acquisition series meet that budget. The table and
+JSON retain the original 10 s qualification decision.
+
 Compared with the original Linux measurements, acquisition improved from
 11.52 s and 11.54 s. The rerun used the same CPU model and a larger memory
 and storage configuration, so comparison describes the observed runs and
-cannot isolate the effect of code changes. Startup still misses the approved
+cannot isolate the effect of code changes. Startup missed the original 10 s
 limit by 0.89 s balanced and 0.97 s concentrated.
 
 Both fixture audits matched the reports' signed tuple, checkpoint, graph and

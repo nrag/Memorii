@@ -2,7 +2,7 @@
 
 - Work type: testing
 - Delivery fidelity: Level 3
-- Status: the dedicated ordinary-v8 Linux rerun completed both workloads under the revised driver. Both missed the 10 s acquisition gate. Native macOS evidence for the same candidate remains open.
+- Status: both dedicated ordinary-v8 Linux workloads meet the owner's revised 11 s budget. Exact-candidate native macOS qualification remains open.
 - Branch: `codex/durable-delivery-implementation`
 - Starting head: `ba1e7baab0626aaa32c36a350876c0c3b952b337`
 - Parent: [reference capacity milestone](../durable-delivery-implementation/milestones/reference-capacity.plan.md)
@@ -75,14 +75,36 @@ first publication, reopen, backup, restore and owner-authorized existing-v7
 cutover, including its documented rollback behavior. See the
 [raw-format migration contract](../../design/sqlite_memory_payload_storage.md).
 
-## Blockers And Next Action
+## Owner Sign-off At Eleven Seconds
 
 The [dedicated Linux rerun](linux/f5786d12/README.md) on `f5786d12` recorded
-10.89 s balanced and 10.97 s concentrated startup acquisition p95. Every
-other budgeted series passed. All series recorded zero errors and retries,
-including contended source capture. Acquisition remains the Linux gate.
+10.89 s balanced and 10.97 s concentrated startup acquisition p95. On
+November 26, 2026 the release owner accepted 11 s p95 at the existing workload
+and deferred further startup optimization until after release. The updated
+driver re-scored the ten original acquisition samples per workload after
+verifying the original report hashes. Both meet the revised limit. All other
+budgeted series passed and every series recorded zero errors and retries,
+including contended source capture. The concentrated p95 clears the new
+limit by 26 ms. The original signed evidence coordinates, report budgets and
+verdicts are preserved.
 
-Profile the exact ordinary-v8 Linux acquisition path to close the remaining
-0.97 s gap without changing integrity checks. Qualify the repaired candidate
-on both platforms before promotion. v7 remains the default pending staged
-qualification and fresh-v8 initialization proof.
+The same wheel passed 63 installed-wheel smoke checks on native macOS,
+including staged fixture generation, migration recovery, and operator
+controls. The revised reference driver passed 14 focused checks, including
+the exact acquisition-budget boundary.
+
+The release scope is ordinary v8 through owner-authorized staged upgrade.
+Keep v7 as the installation default. Tier A and Tier B integrity, workload
+sizes, sample counts and other budgets remain unchanged. Sealed startup and
+further startup optimization are deferred. Fresh-v8 initialization and
+default promotion have their own gates.
+
+## Next Action
+
+Qualify both dedicated native macOS workloads with the immutable Linux-tested
+`f5786d12` wheel and driver. Adjudicate acquisition against the approved
+11 s policy transparently, keeping the original tool output and candidate
+identity. The older Mac reports used a different wheel. Reusing the
+Linux-tested artifact avoids repeating the Linux measurements for a
+threshold-only change. The parent release conformance packet owns installed
+owner and harness journeys, exact artifact verification and release review.
