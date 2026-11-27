@@ -38,16 +38,15 @@ def _initialized_root(tmp_path: Path) -> Path:
 
 def test_open_managed_partition_serves_verified_partition(tmp_path: Path) -> None:
     root = _initialized_root(tmp_path)
-    administration, _memory_plane = open_managed_partition(root)
+    administration, memory_plane = open_managed_partition(root)
     try:
-        store = SqliteMemoryPlaneStore(administration.partition())
-        store.stage_record(_record("mem:one"))
-        assert store.revision() == 1
-        administration.publish_memory_plane_batch(
-            (_record("mem:published"),), store=store
-        )
+        memory_plane.stage_record(_record("mem:one"))
+        assert memory_plane.read_snapshot()[0] == 1
+        memory_plane.write_records((_record("mem:published"),))
         snapshot = administration.acquire_verified_snapshot()
         assert snapshot.vector.memory_data_revision == 2
+        assert memory_plane.get_record("mem:one") == _record("mem:one")
+        assert memory_plane.get_record("mem:published") == _record("mem:published")
     finally:
         administration.close()
 

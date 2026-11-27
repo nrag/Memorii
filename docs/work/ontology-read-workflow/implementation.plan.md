@@ -552,6 +552,16 @@ coordinate. Its name now describes the latency budget without changing
 the assertion. The Package Smoke workflow pin was refreshed and all
 1,955 pins matched.
 
+The unit prerequisites and legacy fixtures were pushed at `b90153de`.
+[PR Gates run 46081796388](https://github.com/nrag/Memorii/actions/runs/46081796388)
+is the current hosted acceptance run for PR #126.
+
+The first Unit Test Shard 2 run found a managed factory test that wrote
+directly to the underlying SQLite store. Signed publication correctly
+refused the unsigned materialization. The test now writes through the
+managed factory's published memory plane and verifies both records and
+the signed data revision. All eight factory cases passed locally.
+
 No unresolved approved-design choice. All Level 2 acceptance witnesses
 have local verification. Milestone closure requires current GitHub
 results, including all applicable unit shards and the timing aggregate.
@@ -563,6 +573,5 @@ Reconcile the current GitHub gate results before milestone closure.
 
 ## Outcome and Retrospective
 
-Both host bindings are implemented and the first end-to-end workflow
-passes on the managed local store. The milestone remains open for the
-remaining acceptance and gate evidence.
+Both host bindings are implemented and the Level 2 end-to-end workflows
+passed locally. The milestone remains open until the hosted gates finish.
