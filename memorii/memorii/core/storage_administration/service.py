@@ -19,7 +19,7 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, NoReturn
 
 from pydantic import ValidationError
 
@@ -80,6 +80,14 @@ class InstallationQuarantinedError(StorageAdministrationError):
 
 class InstallationIntegrityError(StorageAdministrationError):
     """Verification failed; no task-derived output may be released."""
+
+
+class _RecoveryPublicationMismatch(InstallationIntegrityError):
+    """The selected partition disagrees with the exact intent under recovery."""
+
+    def __init__(self, message: str, tuple_digest: str | None) -> None:
+        super().__init__(message)
+        self.tuple_digest = tuple_digest
 
 
 class InitializationNotPossibleError(StorageAdministrationError):
@@ -233,6 +241,13 @@ class StorageAdministrationService:
             path, selected = self._active_partition_selection()
             identity = self._partition_file_identity(path) if path.exists() else None
 
+            def reject_publication(repository_id: str, row: sqlite3.Row | None, message: str) -> NoReturn:
+                recovering = getattr(self._partition_recovery, "intent", None)
+                if recovering is not None and recovering == self._control.read_pending_intent(repository_id):
+                    digest = None if row is None else str(row["tuple_digest"])
+                    raise _RecoveryPublicationMismatch(message, digest)
+                raise InstallationIntegrityError(message)
+
             def require_current_generation(connection: sqlite3.Connection) -> None:
                 active_path, active = self._active_partition_selection()
                 if path != active_path or self._partition_file_identity(path) != identity:
@@ -247,7 +262,9 @@ class StorageAdministrationService:
                     return
                 row = partition.read_publication_row(connection)
                 if row is None or row["generation_id"] != active.data_generation_id:
-                    raise InstallationIntegrityError("partition generation does not match finalized control authority")
+                    reject_publication(
+                        active.repository_id, row, "partition generation does not match finalized control authority",
+                    )
                 active_digest = active.payload_digest()
                 correct_tuple = row["tuple_digest"] == active_digest
                 if named_selection or not correct_tuple:
@@ -263,14 +280,18 @@ class StorageAdministrationService:
                         or row["tuple_digest"] != pending.candidate_state.payload_digest()
                         or not self._matches_signed_publication(row, pending.candidate_state)
                     ):
-                        raise InstallationIntegrityError("selected partition does not match the finalized publication")
+                        reject_publication(
+                            active.repository_id, row, "selected partition does not match the finalized publication",
+                        )
                     return
                 if not named_selection:
                     return
                 cookie = partition.verification_cookie(connection)
                 if self._verified_tuples.get(active_digest) != cookie:
                     if not self._matches_materialization(connection, active, partition=partition, cookie=cookie):
-                        raise InstallationIntegrityError("selected partition materializations are not verified")
+                        reject_publication(
+                            active.repository_id, row, "selected partition materializations are not verified",
+                        )
                     self._verified_tuples = {active_digest: cookie}
 
             partition = PartitionDataRepository(
@@ -886,17 +907,24 @@ class StorageAdministrationService:
             with partition.transaction(write=False) as connection:
                 row = partition.read_publication_row(connection)
                 data_digest = None if row is None else str(row["tuple_digest"])
-                if (
-                    data_digest == candidate_digest
-                    and partition.supports_runtime_history(connection)
-                    and (
-                        row is None
-                        or not self._matches_signed_publication(row, intent.candidate_state)
-                        or not self._matches_materialization(connection, intent.candidate_state)
+                if data_digest in (
+                    candidate_digest, intent.expected_old_discriminator,
+                ) and partition.supports_runtime_history(connection):
+                    expected = (
+                        intent.candidate_state if data_digest == candidate_digest
+                        else self._control.read_publication_state(repository_id)
                     )
-                ):
-                    self._quarantine(intent)
-                    return Resolution(disposition="quarantined", tuple_digest=data_digest)
+                    if (
+                        row is None or expected is None
+                        or expected.payload_digest() != data_digest
+                        or not self._matches_signed_publication(row, expected)
+                        or not self._matches_materialization(connection, expected)
+                    ):
+                        self._quarantine(intent)
+                        return Resolution(disposition="quarantined", tuple_digest=data_digest)
+        except _RecoveryPublicationMismatch as exc:
+            self._quarantine(intent)
+            return Resolution(disposition="quarantined", tuple_digest=exc.tuple_digest)
         finally:
             self._partition_recovery.intent = None
         if intent.operation_binding == "migrate" and data_digest is None:

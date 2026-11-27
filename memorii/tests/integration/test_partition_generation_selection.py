@@ -18,6 +18,7 @@ from memorii.core.storage_administration.generation_selection import (
 )
 from memorii.core.storage_administration.service import (
     InstallationIntegrityError,
+    InstallationQuarantinedError,
     StorageAdministrationError,
     StorageAdministrationService,
 )
@@ -174,14 +175,22 @@ def test_invalid_generation_selection_fails_closed(tmp_path: Path, failure: str)
         assert not (tmp_path / "partition" / "generations").exists()
 
 
-@pytest.mark.parametrize("publication_cut", ["prepared", "data_committed", "control_committed"])
+@pytest.mark.parametrize("publication_cut", ["prepared", "prepared_corrupt", "data_committed", "control_committed"])
 def test_named_generation_does_not_release_data_before_pending_intent_recovery(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, publication_cut: str,
 ) -> None:
+    corrupt = publication_cut == "prepared_corrupt"
     with StorageAdministrationService(tmp_path) as service:
         service.initialize()
-        _select_generation(service)
+        if corrupt:
+            service.publish_memory_plane_batch((CanonicalMemoryRecord(
+                memory_id="existing-source", domain=MemoryDomain.TRANSCRIPT, text="existing",
+                source_kind="fixture", status=CommitStatus.COMMITTED,
+            ),))
+        selected = _select_generation(service)
     with StorageAdministrationService(tmp_path) as owner:
+        old_digest = owner.acquire_verified_snapshot().tuple_digest
+
         def lose_response(*_args: object) -> None:
             raise RuntimeError("publication interrupted")
 
@@ -191,7 +200,7 @@ def test_named_generation_does_not_release_data_before_pending_intent_recovery(
             if publication_cut == "control_committed" and intent.phase == "finalized":
                 lose_response()
             original_intent_write(intent, entry)
-            if publication_cut == "prepared" and intent.phase == "prepared":
+            if publication_cut in ("prepared", "prepared_corrupt") and intent.phase == "prepared":
                 lose_response()
 
         with monkeypatch.context() as scoped:
@@ -204,10 +213,20 @@ def test_named_generation_does_not_release_data_before_pending_intent_recovery(
                     memory_id="pending-source", domain=MemoryDomain.TRANSCRIPT, text="pending",
                     source_kind="fixture", status=CommitStatus.COMMITTED,
                 ),))
-    commit_data = publication_cut != "prepared"
+    if corrupt:
+        with closing(sqlite3.connect(selected)) as connection, connection:
+            connection.execute("UPDATE memory_payloads SET body = zeroblob(length(body))")
+    commit_data = publication_cut in ("data_committed", "control_committed")
     with StorageAdministrationService(tmp_path) as recovered:
         with pytest.raises(InstallationIntegrityError, match="pending publication recovery"):
             recovered.memory_plane_store().get_record("pending-source")
+        if corrupt:
+            with pytest.raises(InstallationQuarantinedError, match="pending publication quarantined"):
+                recovered.acquire_verified_snapshot()
+            finalized = recovered._control.read_publication_state(recovered._repository_id())
+            assert finalized is not None and finalized.payload_digest() == old_digest
+            assert recovered._control_state().quarantined_reason is not None
+            return
         assert recovered.acquire_verified_snapshot().ordinal == int(commit_data)
         record = recovered.memory_plane_store().get_record("pending-source")
         if commit_data:
