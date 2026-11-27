@@ -3,10 +3,10 @@
  *
  * Host contract: pi-coding-agent-extension/v1, bound to the authoritative
  * 0.99.x event surface. Session starts resume the provisioned task through
- * signed intake. The managed source owner must approve any observation
- * before intake. Forks are denied unless the owner granted explicit
- * branch authorization (MEMORII_AUTHORIZE_BRANCH=1) — the pinned contract's
- * rule that a session branch never continues an authorized task implicitly.
+ * signed intake only for the operator-selected MEMORII_PI_SESSION_ID. The
+ * managed source owner must approve any observation
+ * before intake. Interactive forks require MEMORII_AUTHORIZE_BRANCH=1.
+ * A branch must match the operator-selected session before using Memorii.
  * The credential is read from an owner-only file; sidecar failures surface
  * as extension errors, never silently skipped events.
  */
@@ -19,6 +19,7 @@ const SIDECAR_URL = process.env.MEMORII_SIDECAR_URL ?? "http://127.0.0.1:8762";
 const CREDENTIAL_PATH =
   process.env.MEMORII_CREDENTIAL_PATH ?? "/run/memorii/pi-extension.credential";
 const TASK_ID = process.env.MEMORII_TASK_ID ?? "task:pi-session";
+const SESSION_ID = process.env.MEMORII_PI_SESSION_ID;
 
 function bearerToken(): string {
   const raw = readFileSync(CREDENTIAL_PATH, "utf8").trim();
@@ -101,6 +102,19 @@ interface PiMessageEvent {
   message?: { role?: string; content?: string | { type: string; text?: string }[] };
 }
 
+interface PiSessionContext {
+  sessionManager: { getSessionId(): string };
+}
+
+function requireBoundSession(context: PiSessionContext): void {
+  if (!SESSION_ID) {
+    throw new Error("memorii requires an operator-selected MEMORII_PI_SESSION_ID");
+  }
+  if (context.sessionManager.getSessionId() !== SESSION_ID) {
+    throw new Error("memorii denied an unbound Pi session");
+  }
+}
+
 export function userMessageText(event: PiMessageEvent): string | undefined {
   if (event.message?.role !== "user") return undefined;
   const content = event.message.content;
@@ -116,17 +130,18 @@ export default function memoriiExtension(pi: unknown): void {
   const host = pi as {
     on?: (
       event: string,
-      handler: (event: never) => unknown,
+      handler: (event: never, context: PiSessionContext) => unknown,
     ) => () => void;
   };
   if (typeof host?.on !== "function") {
     throw new Error(`unsupported Pi host surface for ${HOST_CONTRACT}`);
   }
 
-  host.on("session_start", async (_event: PiSessionStartEvent) => {
+  host.on("session_start", async (_event: PiSessionStartEvent, context: PiSessionContext) => {
     // Hosts continue operator-provisioned tasks; they never mint their own
     // (start_task generates a server-side task id by contract). A session
     // without its provisioned task fails closed instead of fabricating one.
+    requireBoundSession(context);
     const revision = await currentTaskVersion();
     await submitCommand({
       kind: "resume_task",
@@ -144,9 +159,10 @@ export default function memoriiExtension(pi: unknown): void {
         : { cancel: true },
   );
 
-  host.on("message_start", async (event: PiMessageEvent) => {
+  host.on("message_start", async (event: PiMessageEvent, context: PiSessionContext) => {
     const text = userMessageText(event);
     if (text === undefined) return;
+    requireBoundSession(context);
     const revision = await currentTaskVersion();
     await submitCommand({
       kind: "record_observation",

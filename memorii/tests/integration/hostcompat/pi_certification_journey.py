@@ -40,7 +40,8 @@ agent_dir.mkdir(parents=True, exist_ok=True)
 session_dir = root / "pi-sessions"
 session_dir.mkdir(parents=True)
 
-base_env = dict(os.environ, **journey.environment)
+session_id = "cert-session"
+base_env = dict(os.environ, **journey.environment, MEMORII_PI_SESSION_ID=session_id)
 
 
 def run_pi(*args: str, env_extra: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -62,7 +63,7 @@ def run_pi(*args: str, env_extra: dict[str, str] | None = None) -> subprocess.Co
 try:
     baseline = journey.read()
     first_prompt = "record this certification turn"
-    first = run_pi("--session-id", "cert-session", first_prompt)
+    first = run_pi("--session-id", session_id, first_prompt)
     assert first.returncode == 0, first.stderr
     first_receipt = journey.prove_turn(first_prompt)
     journey.stop()
@@ -82,9 +83,13 @@ try:
     assert journey.read().revision > reopened.revision
 
     [session_file] = list(session_dir.rglob("*.jsonl"))
+    observations_before_fork = list(journey.sidecar.observations)
     fork = run_pi("--fork", str(session_file), "fork attempt")
-    assert "cancel" in (fork.stderr + fork.stdout).lower(), fork.stderr
-    print("Unapproved Pi fork denied", flush=True)
+    assert "memorii denied an unbound Pi session" in fork.stderr, fork.stderr
+    assert journey.sidecar.observations == observations_before_fork
+    retry = journey.drain()
+    assert retry.returncode == 0 and retry.stdout == ""
+    print("The actual Pi startup fork could not submit to the bound Memorii task", flush=True)
     print("JOURNEY: PASS (managed resume and runtime state read)")
 finally:
     stub_server.shutdown()
