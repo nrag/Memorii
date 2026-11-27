@@ -10,6 +10,7 @@ import pytest
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.storage_administration.service import StorageAdministrationService
 from memorii.domain.enums import CommitStatus, MemoryDomain
+from memorii.stores.sqlite.partition import LEGACY_RUNTIME_UPGRADE_SCHEMA_VERSION
 from tests.support.payload_storage_probe import (
     PayloadProbeError,
     build_payload_probe,
@@ -19,7 +20,8 @@ from tests.support.payload_storage_probe import (
 
 
 @pytest.fixture
-def verified_partition(tmp_path: Path) -> Path:
+def verified_partition(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setattr("memorii.stores.sqlite.partition.PARTITION_SCHEMA_VERSION", LEGACY_RUNTIME_UPGRADE_SCHEMA_VERSION)
     with StorageAdministrationService(tmp_path / "fixture") as service:
         service.initialize()
         first = CanonicalMemoryRecord(

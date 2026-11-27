@@ -84,7 +84,7 @@ def test_startup_acquisition_budget_includes_the_tenth_sample(last_ns: int, stat
     assert isinstance(quantiles, dict) and quantiles["p95_ms"] == last_ns / 1_000_000
 
 
-def test_failed_or_unavailable_samples_cannot_pass_p95_budget() -> None:
+def test_failed_or_unavailable_samples_cannot_pass_latency_budget() -> None:
     failed = _summarize("state_read", [Measurement("failure", None, "busy"), Measurement("pass", 10)])
     assert (failed["attempted"], failed["errors"], failed["status"]) == (2, 1, "failed")
     assert _summarize("command_commit", [], unavailable="endpoint missing")["status"] == "unavailable"

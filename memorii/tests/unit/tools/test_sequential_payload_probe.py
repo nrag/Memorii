@@ -7,12 +7,14 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 from typing import Literal
+from unittest.mock import patch
 
 import pytest
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.persistence.contracts import RuntimeMaterializationManifest
 from memorii.core.storage_administration.service import StorageAdministrationService
 from memorii.domain.enums import CommitStatus, MemoryDomain
+from memorii.stores.sqlite.partition import LEGACY_RUNTIME_UPGRADE_SCHEMA_VERSION
 from tests.support.payload_storage_probe import (
     PayloadProbeError,
     build_payload_probe,
@@ -25,7 +27,10 @@ from tests.support.sequential_payload_probe import build_sequential_projection, 
 def _build_projection(
     tmp_path: Path, batches: tuple[tuple[CanonicalMemoryRecord, ...], ...],
 ) -> tuple[Path, RuntimeMaterializationManifest, RuntimeMaterializationManifest]:
-    with StorageAdministrationService(tmp_path / "installation") as service:
+    with (
+        patch("memorii.stores.sqlite.partition.PARTITION_SCHEMA_VERSION", LEGACY_RUNTIME_UPGRADE_SCHEMA_VERSION),
+        StorageAdministrationService(tmp_path / "installation") as service,
+    ):
         service.initialize()
         for records in batches:
             service.publish_memory_plane_batch(records)

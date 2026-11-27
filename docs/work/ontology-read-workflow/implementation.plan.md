@@ -50,9 +50,9 @@ exhaustive adversarial matrices and operational certification remain Level 3.
 
 ## Current State and Baseline
 
-**4/4 requirements implemented. 0/1 milestone closed.** The managed-host
-workflow and local Package Smoke passed on the corrected candidate.
-Remaining verification and gate evidence are tracked below. The prior
+**4/4 requirements implemented and locally verified. 0/1 milestones closed.**
+The managed-host workflow and local Package Smoke passed on the corrected
+candidate. Hosted gate evidence remains in progress. The prior
 review froze design bytes at code base `9d661a3b`. Initial planning inspected
 `7c6a3a94a135ffc75dec9761595b337c0f4b7de5`, which advances new partitions
 to raw payload storage v8. The review baseline adds publication recovery and
@@ -80,8 +80,8 @@ eligibility and release safeguards.
 | Requirement | Implementation obligation | Strongest planned evidence | Status |
 | --- | --- | --- | --- |
 | OCI-01 | Inspect the exact selected package by strict ID or entire normalized name. Return the complete visible descriptor matches with typed endpoints, aliases and read behavior. Preserve ambiguity, seed type authority and unavailable on incomplete projection. | Typed serialization, full 3/56 inventory and exact normalization tests, both factory lookups. | Implemented. Focused catalog and both host inspection checks passed. |
-| OCI-02 | Perform inspection, clarification and current diagnosis without credentials through both real hosts. Compare the optional expected selected version before membership/facts in diagnosis. | Installed work and household flows after reopen; same-store seed-to-default install CAS; same version with changed fact. | Implemented. Work and home flows and the same-store stale-version guard passed. Historical and same-version changed-fact witnesses remain open. |
-| OCI-03 | Authorize both at entry and release. Verify exact catalog/version/runtime, historical fact authority, current temporal eligibility and suppression, with scoped status precedence. | Scope/role and read-history regressions, barrier controlled selection and revocation, both reader carriers/directions and native suppression window. | Implemented. Retained provenance, late host authorization, live suppression, and the SQLite selection and durable revocation fence passed. Remaining carrier and scope witnesses are open. |
+| OCI-02 | Perform inspection, clarification and current diagnosis without credentials through both real hosts. Compare the optional expected selected version before membership/facts in diagnosis. | Installed work and household flows after reopen; same-store seed-to-default install CAS; same version with changed fact. | Level 2 locally verified. Work and home, stale version, protected historical continuity, same-version correction and retraction passed. |
+| OCI-03 | Authorize both at entry and release. Verify exact catalog/version/runtime, historical fact authority, current temporal eligibility and suppression, with scoped status precedence. | Scope/role and read-history regressions, barrier controlled selection and revocation, both reader carriers/directions and native suppression window. | Level 2 locally verified. Native and claim-state carriers, account and agent isolation, half-open validity, late release, suppression and durable fences passed. |
 | OCI-04 | Pure request-time path. Inspection does not query facts; neither call writes state, calls a model or affects learning. | Real-root before/after bytes and dispatch tripwires for success, denial, failure and retry. | Implemented. Both host paths preserved the read snapshot with network, model and legacy writer-route tripwires enabled. |
 
 ## Production Entrypoint Bindings
@@ -530,17 +530,36 @@ reported polynomial trailing-slash trimming in the TypeScript client on
 `53da8b53`. Replacing it with a backward character scan preserved request
 URLs. TypeScript checking, all 10 tests and the installed SDK check passed.
 
-No unresolved approved-design choice. The bill workflow and package gate
-have local verification. Milestone closure still requires the remaining
-acceptance witnesses and scope-required checks, including actual PR runner
-evidence. The unit shards and timing aggregate are separate from successful
-inventory collection. Clean-baseline Ruff and Pyright failures are recorded
-as branch-level gate evidence.
+The immutable architecture snapshot passed the installed scope/carrier
+test in 369.47 seconds and the lifecycle test in 496.38 seconds. Both
+exercise the accepted Level 2 boundaries. The lifecycle used one
+inspection digest for the original due date, a committed correction, and
+retraction. The protected historical and symmetric reads still passed
+after reopen. The only later changes affecting gates are SDK URL trimming
+and the scoped-context job timeout. The updated inventory verified
+1,955 pins at `9b2e5f3f`. The current
+[PR Gates run](https://github.com/nrag/Memorii/actions/runs/46081240197)
+is pending. CodeQL passed on `9b2e5f3f`.
+
+The first Unit Test Shard 5 run exposed missing `python3.12` for the
+isolated CTV compiler and two v7 payload probe fixtures that inherited the
+v8 default. The shard now installs the reference interpreter before the
+existing Python 3.11 setup. The two probes explicitly initialize v7 so
+their inline-payload assertions still run. Shard selection is unchanged.
+All 297 focused interpreter and storage-probe cases passed. Shard 3
+also rejected a test name that used the percentile as a priority-like
+coordinate. Its name now describes the latency budget without changing
+the assertion. The Package Smoke workflow pin was refreshed and all
+1,955 pins matched.
+
+No unresolved approved-design choice. All Level 2 acceptance witnesses
+have local verification. Milestone closure requires current GitHub
+results, including all applicable unit shards and the timing aggregate.
+The baseline lint and type failures are resolved.
 
 ## Next Action
 
-Reconcile the frozen host tests and current GitHub gate run before
-milestone closure.
+Reconcile the current GitHub gate results before milestone closure.
 
 ## Outcome and Retrospective
 
