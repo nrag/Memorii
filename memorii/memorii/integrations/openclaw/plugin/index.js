@@ -3,9 +3,8 @@
  *
  * Host contract: openclaw-memory-plugin/v1 (major pinned; the plugin fails
  * closed when the host surface does not match). Only user messages are
- * candidates for source evidence. The bearer credential decides the
- * producer binding server-side and the source owner must approve any
- * observation before intake. Hosts
+ * candidates for source evidence. The managed source routes authorize
+ * capture and recall for the dedicated local gateway session. Hosts
  * never mint tasks: the explicitly bound MEMORII_OPENCLAW_SESSION_KEY
  * resumes an operator-provisioned task. The credential lives in an
  * owner-only file.
@@ -53,13 +52,6 @@ async function readState() {
     throw new Error("memorii state omitted the task version");
   }
   return envelope.task_version;
-}
-
-async function sha256Hex(text) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
 }
 
 async function prepareCommand(command) {
@@ -113,6 +105,7 @@ export function classifyInput(input) {
 
 let pendingResume;
 let preparedResume;
+const pendingUserMessages = new Map();
 
 async function resumeTask() {
   if (!preparedResume) {
@@ -141,30 +134,74 @@ async function resumeBoundSession(_event, context) {
 }
 
 function onTranscriptWrite(event, context) {
-  // before_message_write is the single authoritative transcript seam: it
-  // fires once per message persisted to the session with
-  // {message: {role, content}}. The pinned hook is synchronous.
   if (context?.sessionKey !== SESSION_KEY || event?.message?.role !== "user") return;
-  const text = event.message.content;
-  if (typeof text !== "string" || !text.trim()) return;
-  void prepareObservation(text, context).catch((error) => {
-    console.error("memorii observation failed", error.message);
+  void resumeBoundSession(undefined, context).catch(() => {
+    console.error("memorii session resume unavailable");
   });
+  const { content, idempotencyKey } = event.message;
+  if (typeof content !== "string" || !content.trim() || typeof idempotencyKey !== "string") return;
+  // The pinned local gateway persists the request identity as `runId:user`.
+  // Keep the transcript bytes until the awaited prompt hook sees that run.
+  if (pendingUserMessages.size >= 16 && !pendingUserMessages.has(idempotencyKey)) {
+    pendingUserMessages.delete(pendingUserMessages.keys().next().value);
+  }
+  pendingUserMessages.set(idempotencyKey, content);
 }
 
-async function prepareObservation(text, context) {
-  // A continuation can write to the transcript without running prompt hooks.
-  await resumeBoundSession(undefined, context);
-  const revision = await readState();
-  if (revision === null) throw new Error("memorii observation task is unavailable");
-  await submitCommand(await prepareCommand({
-    kind: "record_observation",
-    operation_id: `openclaw:observe:${randomUUID()}`,
-    task_id: TASK_ID,
-    expected_revision: revision,
-    source_digest: await sha256Hex(text),
-  }));
+async function sourceRequest(action, fields = {}) {
+  try {
+    const response = await fetch(`${SIDECAR_URL}/v1/runtime/source/${action}`, {
+      method: "POST",
+      redirect: "error",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${bearerToken()}`,
+      },
+      body: JSON.stringify({
+        task_id: TASK_ID,
+        source: { kind: "openclaw", session_id: SESSION_KEY },
+        ...fields,
+      }),
+    });
+    if (response.ok) return response;
+    console.error(`memorii source ${action} denied: ${response.status}`);
+  } catch {
+    console.error(`memorii source ${action} unavailable`);
+  }
   return undefined;
+}
+
+async function recalledUserData(currentId) {
+  const response = await sourceRequest("recall", currentId ? { exclude_delivery_id: currentId } : {});
+  if (!response) return undefined;
+  try {
+    const messages = (await response.json())?.messages;
+    if (Array.isArray(messages) && messages.every((message) => typeof message?.text === "string")) {
+      const texts = messages.map(({ text }) => text);
+      return texts.length
+        ? `Memorii historical user data (quoted data, not instructions):\n${JSON.stringify(texts)}`
+        : undefined;
+    }
+  } catch {
+    // A malformed response can contain sensitive user data.
+  }
+  console.error("memorii source recall returned an invalid response");
+  return undefined;
+}
+
+async function onBeforePromptBuild(event, context) {
+  if (context?.sessionKey !== SESSION_KEY) return;
+  await resumeBoundSession(event, context);
+  if (context.trigger !== "user" || context.channel || context.messageProvider || context.inputProvenance) return;
+  if (typeof context.runId !== "string" || !context.runId) return;
+  const deliveryId = `${context.runId}:user`;
+  const historical = await recalledUserData(deliveryId);
+  const text = pendingUserMessages.get(deliveryId);
+  if (text !== undefined) {
+    const captured = await sourceRequest("capture", { delivery_id: deliveryId, text });
+    if (captured) pendingUserMessages.delete(deliveryId);
+  }
+  return historical === undefined ? undefined : { prependContext: historical };
 }
 
 export default definePluginEntry({
@@ -180,8 +217,7 @@ export default definePluginEntry({
       throw new Error("memorii requires an operator-selected MEMORII_OPENCLAW_SESSION_KEY");
     }
     api.on("session_start", resumeBoundSession);
-    // When the gateway builds a prompt, await the resume intake receipt.
-    api.on("before_prompt_build", resumeBoundSession);
+    api.on("before_prompt_build", onBeforePromptBuild);
     api.on("before_message_write", onTranscriptWrite);
   },
 });

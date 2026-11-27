@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import threading
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 _MODEL_ID = "stub-model"
@@ -37,6 +38,7 @@ class _Handler(BaseHTTPRequestHandler):
             return
         length = int(self.headers.get("Content-Length") or 0)
         request = json.loads(self.rfile.read(length) or b"{}")
+        self.observe_request(request)
         reply = _next_reply()
         message = {
             "role": "assistant",
@@ -76,9 +78,19 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, *args: object) -> None:
         return
 
+    def observe_request(self, request: dict) -> None:
+        pass
 
-def serve_stub_provider(port: int = 0) -> tuple[str, ThreadingHTTPServer]:
-    server = ThreadingHTTPServer(("127.0.0.1", port), _Handler)
+
+def serve_stub_provider(
+    port: int = 0, *, observe: Callable[[dict], None] | None = None,
+) -> tuple[str, ThreadingHTTPServer]:
+    class Handler(_Handler):
+        def observe_request(self, request: dict) -> None:
+            if observe is not None:
+                observe(request)
+
+    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return f"http://127.0.0.1:{server.server_address[1]}", server

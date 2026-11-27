@@ -50,6 +50,15 @@ class HostCommandAuthorityError(RuntimeError):
     """Managed command authority was absent, stale, or outside its scope."""
 
 
+class NativeSourceScope(BaseModel):
+    """One operator-selected source in a dedicated local harness session."""
+
+    kind: Literal["pi", "openclaw"]
+    session_id: str = Field(min_length=1, max_length=512, pattern=r"^[^\x00]+$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
 class HostCommandGrant(BaseModel):
     """One finite command grant, persisted in installation control state."""
 
@@ -62,6 +71,7 @@ class HostCommandGrant(BaseModel):
     allowed_task_ids: tuple[str, ...] = ()
     allowed_projection_task_ids: tuple[str, ...] = ()
     allowed_writeback_scopes: tuple[CandidateScope, ...] = ()
+    native_source: NativeSourceScope | None = None
     epoch: int = Field(default=1, ge=1)
     expires_at: datetime
     installation_id: str = Field(min_length=1)
@@ -90,6 +100,7 @@ class HostCommandGrant(BaseModel):
             raise ValueError("expires_at must be timezone-aware")
         _validate_projection_tasks(self.allowed_task_ids, self.allowed_projection_task_ids)
         _validate_writeback_scopes(self.allowed_kinds, self.allowed_writeback_scopes)
+        _validate_native_source(self.native_source, self.allowed_kinds, self.allowed_task_ids, self.allowed_operation_ids)
         return self
 
 
@@ -105,6 +116,7 @@ class HostCommandGrantRequest(BaseModel):
     allowed_task_ids: tuple[str, ...] = ()
     allowed_projection_task_ids: tuple[str, ...] = ()
     allowed_writeback_scopes: tuple[CandidateScope, ...] = ()
+    native_source: NativeSourceScope | None = None
     expires_at: datetime
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -130,6 +142,7 @@ class HostCommandGrantRequest(BaseModel):
             raise ValueError("expires_at must be timezone-aware")
         _validate_projection_tasks(self.allowed_task_ids, self.allowed_projection_task_ids)
         _validate_writeback_scopes(self.allowed_kinds, self.allowed_writeback_scopes)
+        _validate_native_source(self.native_source, self.allowed_kinds, self.allowed_task_ids, self.allowed_operation_ids)
         return self
 
 
@@ -145,6 +158,7 @@ class ResolvedHostCommandAuthority(BaseModel):
     data_generation_id: str
     allowed_projection_task_ids: tuple[str, ...] = ()
     allowed_writeback_scopes: tuple[CandidateScope, ...] = ()
+    native_source: NativeSourceScope | None = None
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -172,6 +186,16 @@ def _validate_projection_tasks(command_tasks: tuple[str, ...], projection_tasks:
         or not set(projection_tasks).issubset(command_tasks)
     ):
         raise ValueError("projection scope must be unique and inside the explicit command task scope")
+
+
+def _validate_native_source(
+    source: NativeSourceScope | None,
+    kinds: tuple[RuntimeCommandKind, ...],
+    tasks: tuple[str, ...],
+    operations: tuple[str, ...],
+) -> None:
+    if source is not None and ("record_observation" not in kinds or len(tasks) != 1 or operations):
+        raise ValueError("native source enrollment requires one exact task and observation authority")
 
 
 class _RegistryPayload(BaseModel):
@@ -208,6 +232,12 @@ class ManagedHostCommandAuthority:
         """Owner-authorize a new finite grant for the current generation."""
         require_owner_capability(self._administration, capability)
         with self._administration.verified_operation_context() as (state, finalized):
+            if request.native_source is not None:
+                from memorii.core.persistence.runtime_repository import RuntimeStateRepository
+
+                task = RuntimeStateRepository(self._administration.partition()).get_task(request.allowed_task_ids[0])
+                if task is None or task.principal != request.principal or datetime.now(UTC) >= request.expires_at:
+                    raise HostCommandAuthorityError("denied: native source task or expiry is unavailable")
             if any(scope.partition_id != finalized.repository_id for scope in request.allowed_writeback_scopes):
                 raise HostCommandAuthorityError("denied: writeback scope is outside the installation partition")
             payload = self._read_payload()
@@ -581,6 +611,7 @@ class ManagedHostCommandAuthority:
             data_generation_id=grant.data_generation_id,
             allowed_projection_task_ids=grant.allowed_projection_task_ids,
             allowed_writeback_scopes=grant.allowed_writeback_scopes,
+            native_source=grant.native_source,
         )
 
     def _grant_for(self, grant_id: str) -> HostCommandGrant:

@@ -2738,6 +2738,7 @@ class SemanticIngestionAtomicStore:
         *,
         prepared: PreparedSourceAdmission,
         writer_binding: SemanticWriterCommitBinding,
+        transaction_precondition: Callable[[], None] | None = None,
     ) -> SourceAdmissionAccepted:
         """Publish only the immutable Step-1 admission evidence.
 
@@ -2750,11 +2751,13 @@ class SemanticIngestionAtomicStore:
             return self._publish_admitted_source_linearized(
                 prepared=prepared,
                 writer_binding=writer_binding,
+                transaction_precondition=transaction_precondition,
             )
         with linearization.exclusive():
             return self._publish_admitted_source_linearized(
                 prepared=prepared,
                 writer_binding=writer_binding,
+                transaction_precondition=transaction_precondition,
             )
 
     def publish_admitted_source_with_prepared_source(
@@ -2874,6 +2877,7 @@ class SemanticIngestionAtomicStore:
         *,
         prepared: PreparedSourceAdmission,
         writer_binding: SemanticWriterCommitBinding,
+        transaction_precondition: Callable[[], None] | None = None,
     ) -> SourceAdmissionAccepted:
         admission = prepared.accepted
         seal_member = self._mint_source_retention_seal_member(prepared)
@@ -2916,6 +2920,7 @@ class SemanticIngestionAtomicStore:
                     ),
                 ),
                 authorization=authorization,
+                transaction_precondition=transaction_precondition,
             )
         except MemoryPlaneRevisionConflictError as exc:
             if not all(

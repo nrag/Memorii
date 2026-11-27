@@ -1038,6 +1038,14 @@ class StorageAdministrationService:
                 raise InstallationIntegrityError("verified operation tuple is missing")
             yield state, finalized
 
+    def current_publication_in_fence(self) -> tuple[InstallationControlState, RuntimePublicationState]:
+        """Read authority coordinates from a publication fence already held by the caller."""
+        state = self._require_operational()
+        finalized = self._control.read_publication_state(self._repository_id())
+        if finalized is None:
+            raise InstallationIntegrityError("current publication tuple is missing")
+        return state, finalized
+
     def sign_operation_origin(self, coordinate: OperationOriginCoordinate) -> OperationOrigin:
         """Sign a resolved operation coordinate using the installation key owner."""
         return OperationOrigin(

@@ -18,18 +18,37 @@ def build_openapi_document() -> dict[str, object]:
     from memorii.core.harness_state.consolidation_read import ConsolidationReadPage, ConsolidationReadRequest
     from memorii.core.harness_state.consumer import SpoolRecord
     from memorii.core.harness_state.envelope import HarnessStateEnvelope
+    from memorii.core.harness_state.native_sources import (
+        NativeSourceCaptureRequest,
+        NativeSourceRecall,
+        NativeSourceRecallRequest,
+    )
     from memorii.core.harness_state.sidecar import (
         SidecarError,
         SidecarIntakeRequest,
         SidecarRequest,
     )
-    from memorii.core.persistence.runtime_contracts import OperationOrigin, RuntimeCommandRequest
+    from memorii.core.persistence.runtime_contracts import OperationOrigin, RuntimeCommandReceipt, RuntimeCommandRequest
     from memorii.core.persistence.writeback_decisions import WritebackDecisionReceipt, WritebackDecisionRequest
 
     def schema(model: type) -> dict[str, object]:
         return json.loads(
             json.dumps(model.model_json_schema(), sort_keys=True)
         )
+
+    def native_source_route(operation: str, request: type, response: type) -> dict[str, object]:
+        def content(model: type) -> dict[str, object]:
+            return {"application/json": {"schema": {"$ref": f"#/components/schemas/{model.__name__}"}}}
+
+        return {"post": {
+            "operationId": operation,
+            "security": [{"bearerAuth": []}],
+            "requestBody": {"required": True, "content": content(request)},
+            "responses": {
+                "200": {"description": "Authorized native source result", "content": content(response)},
+                "default": {"description": "Closed error envelope", "content": content(SidecarError)},
+            },
+        }}
 
     return {
         "openapi": "3.1.0",
@@ -46,6 +65,12 @@ def build_openapi_document() -> dict[str, object]:
         },
         "servers": [{"url": "http://127.0.0.1", "description": "loopback only"}],
         "paths": {
+            "/v1/runtime/source/capture": native_source_route(
+                "captureNativeSource", NativeSourceCaptureRequest, RuntimeCommandReceipt,
+            ),
+            "/v1/runtime/source/recall": native_source_route(
+                "recallNativeSource", NativeSourceRecallRequest, NativeSourceRecall,
+            ),
             "/v1/consolidation/decision": {
                 "post": {
                     "operationId": "decideWriteback",
@@ -216,6 +241,10 @@ def build_openapi_document() -> dict[str, object]:
             },
             "schemas": {
                 "SidecarRequest": schema(SidecarRequest),
+                "NativeSourceCaptureRequest": schema(NativeSourceCaptureRequest),
+                "NativeSourceRecallRequest": schema(NativeSourceRecallRequest),
+                "NativeSourceRecall": schema(NativeSourceRecall),
+                "RuntimeCommandReceipt": schema(RuntimeCommandReceipt),
                 "SidecarIntakeRequest": schema(SidecarIntakeRequest),
                 "RuntimeCommandRequest": schema(RuntimeCommandRequest),
                 "OperationOrigin": schema(OperationOrigin),

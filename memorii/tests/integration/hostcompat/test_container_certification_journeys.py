@@ -20,42 +20,38 @@ import pytest
 
 REPO_ROOT = __file__.rsplit("/memorii/", 1)[0]
 
+MANAGED_REFRESH = (
+    "memorii/core/harness_state/client.py",
+    "memorii/core/harness_state/envelope.py",
+    "memorii/core/harness_state/service.py",
+    "memorii/core/harness_state/sidecar.py",
+    "memorii/core/harness_state/managed_ingress.py",
+    "memorii/core/harness_state/native_sources.py",
+    "memorii/core/harness_state/write_authority.py",
+    "memorii/core/memory_evolution/atomic_store.py",
+    "memorii/core/provider/native_source_admission.py",
+    "memorii/core/harness_state/consumer.py",
+    "memorii/tools/runtime_consume.py",
+    "memorii/core/persistence/runtime_api.py",
+    "memorii/core/persistence/runtime_contracts.py",
+    "memorii/core/storage_administration/service.py",
+    "memorii/core/storage_administration/writer_enrollment.py",
+)
+
 JOURNEYS = {
     "pi": {
         "image": "memorii-pi-validation",
         "dockerfile": "Dockerfile.pi",
         "script": "pi_certification_journey.py",
         "venv": "/opt/memorii-venv/bin/python",
-        "refresh": (
-            "memorii/core/harness_state/client.py",
-            "memorii/core/harness_state/envelope.py",
-            "memorii/core/harness_state/service.py",
-            "memorii/core/harness_state/sidecar.py",
-            "memorii/core/harness_state/consumer.py",
-            "memorii/tools/runtime_consume.py",
-            "memorii/core/persistence/runtime_api.py",
-            "memorii/core/persistence/runtime_contracts.py",
-            "memorii/core/storage_administration/service.py",
-            "memorii/core/storage_administration/writer_enrollment.py",
-        ),
+        "refresh": MANAGED_REFRESH,
     },
     "openclaw": {
         "image": "memorii-openclaw-validation",
         "dockerfile": "Dockerfile.openclaw",
         "script": "openclaw_certification_journey.py",
         "venv": "/opt/memorii-venv/bin/python",
-        "refresh": (
-            "memorii/core/harness_state/client.py",
-            "memorii/core/harness_state/envelope.py",
-            "memorii/core/harness_state/service.py",
-            "memorii/core/harness_state/sidecar.py",
-            "memorii/core/harness_state/consumer.py",
-            "memorii/tools/runtime_consume.py",
-            "memorii/core/persistence/runtime_api.py",
-            "memorii/core/persistence/runtime_contracts.py",
-            "memorii/core/storage_administration/service.py",
-            "memorii/core/storage_administration/writer_enrollment.py",
-        ),
+        "refresh": MANAGED_REFRESH,
     },
     "hermes": {
         "image": "hermes-memorii-pr",

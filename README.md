@@ -231,7 +231,7 @@ This does not certify full agent behavior or a production release. See the
 [Agent Integration Readiness Plan](docs/plans/agent_integration_readiness.md)
 for the remaining evaluation and operational requirements.
 
-### Managed Task Resume In Pi And OpenClaw
+### Managed Task Resume And Memory In Pi And OpenClaw
 
 Provision a task, an installation-issued host credential, a task-scoped read
 grant, and a finite `resume_task` grant for that credential. Run
@@ -250,9 +250,27 @@ owner-only permissions.
 The host submits a signed resume to the managed spool. Run
 `memorii-consume --installation-root <root> --managed --drain` as the storage
 owner to commit pending commands. The task can be read from the authenticated
-state endpoint after a restart. Governed transcript admission and recall of
-captured Pi and OpenClaw messages still require a configured provider-source
-owner.
+state endpoint after a restart.
+
+To enable user-message capture and recall, issue a finite
+`memorii-operator runtime-grant issue` grant with `--kind resume_task`,
+`--kind record_observation`, exactly one `--task-id`, and
+`--native-source '{"kind":"pi","session_id":"<native-id>"}'`. For OpenClaw,
+use `"kind":"openclaw"` and the exact gateway session key, then set
+`plugins.entries.memorii.hooks.allowConversationAccess` and
+`plugins.entries.memorii.hooks.allowPromptInjection` in that gateway.
+Enroll OpenClaw only for a dedicated operator-controlled local session.
+Forwarded or shared-channel sender identity is outside this binding.
+
+Capture retains user text through governed admission, then commits a signed
+observation. The owner drain can recover a staged observation after a sidecar
+interruption. The enrolled session can recall up to four committed messages
+after restart. `memorii-operator runtime-grant revoke --grant-id <id>`
+withdraws future capture and recall under that enrollment.
+Source-level suppression uses the existing forget controls. To include a
+captured message in a task lifecycle archive, the owner explicitly issues its
+exact runtime source release with
+`memorii-operator runtime-source-grant issue-native --entry-file <committed-spool-entry>`.
 
 ## Correctness And Safety Contracts
 

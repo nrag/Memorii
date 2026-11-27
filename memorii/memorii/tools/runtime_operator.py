@@ -139,11 +139,18 @@ def main(argv: list[str] | None = None) -> int:
         help="closed writeback target scope JSON with kind, partition_id, and task_id (repeatable)",
     )
     grant_issue.add_argument("--expires-at", required=True, help="ISO-8601 timestamp with offset")
+    grant_issue.add_argument(
+        "--native-source", help="Exact dedicated native source as JSON with kind and session_id",
+    )
     grant_revoke = grant_sub.add_parser("revoke", help="Revoke one host command grant")
     grant_revoke.add_argument("--grant-id", required=True)
 
     source_grant = commands.add_parser("runtime-source-grant", help="Manage durable provider source release")
     source_grant_sub = source_grant.add_subparsers(dest="source_grant_command", required=True)
+    source_grant_issue = source_grant_sub.add_parser(
+        "issue-native", help="Release one committed native observation for runtime lifecycle use",
+    )
+    source_grant_issue.add_argument("--entry-file", type=Path, required=True, help="Original committed managed spool entry")
     source_grant_revoke = source_grant_sub.add_parser("revoke", help="Revoke one exact task/source release grant")
     source_grant_revoke.add_argument("--grant-id", required=True)
 
@@ -361,16 +368,30 @@ def main(argv: list[str] | None = None) -> int:
             print(decision.model_dump_json())
             return 0
         if arguments.command == "runtime-source-grant":
+            from pydantic import ValidationError
+
+            from memorii.core.persistence.runtime_api import RuntimeCommandError
             from memorii.core.persistence.runtime_repository import RuntimeStateError
             from memorii.core.provider.runtime_source_authority import RuntimeSourceAuthorityError
             from memorii.core.provider.runtime_source_release import RuntimeSourceReleaseAuthority
             from memorii.core.storage_administration.service import StorageAdministrationError
 
             try:
-                release = RuntimeSourceReleaseAuthority(administration).revoke(
-                    capability=require_capability(), grant_id=arguments.grant_id,
-                )
-            except (RuntimeSourceAuthorityError, RuntimeStateError, StorageAdministrationError) as exc:
+                owner = require_capability()
+                if arguments.source_grant_command == "issue-native":
+                    from memorii.core.harness_state.consumer import ManagedSpoolEntry
+                    from memorii.core.harness_state.native_source_release import issue_native_source_release
+
+                    try:
+                        entry = ManagedSpoolEntry.model_validate_json(arguments.entry_file.read_bytes())
+                    except (OSError, ValidationError) as exc:
+                        raise OperatorError("invalid_request: committed native observation entry could not be read") from exc
+                    release = issue_native_source_release(administration, capability=owner, entry=entry)
+                else:
+                    release = RuntimeSourceReleaseAuthority(administration).revoke(
+                        capability=owner, grant_id=arguments.grant_id,
+                    )
+            except (RuntimeCommandError, RuntimeSourceAuthorityError, RuntimeStateError, StorageAdministrationError) as exc:
                 raise OperatorError(str(exc)) from exc
             print(json.dumps({"grant_id": release.grant_id, "status": release.status}, sort_keys=True))
             return 0
@@ -383,6 +404,7 @@ def main(argv: list[str] | None = None) -> int:
                 HostCommandAuthorityError,
                 HostCommandGrantRequest,
                 ManagedHostCommandAuthority,
+                NativeSourceScope,
             )
             from memorii.core.persistence.writeback_decisions import CandidateScope
 
@@ -420,13 +442,22 @@ def main(argv: list[str] | None = None) -> int:
                     allowed_writeback_scopes=tuple(
                         scope_parser.validate_json(raw) for raw in arguments.writeback_scope
                     ),
+                    native_source=(
+                        None if arguments.native_source is None
+                        else NativeSourceScope.model_validate_json(arguments.native_source)
+                    ),
                     expires_at=expires_at,
                 )
             except ValidationError as exc:
                 raise OperatorError("invalid_request: runtime grant scope is invalid") from exc
             try:
-                issued = authority.issue(grant_request, capability=require_capability())
-            except HostCommandAuthorityError as exc:
+                if grant_request.native_source is None:
+                    issued = authority.issue(grant_request, capability=require_capability())
+                else:
+                    from memorii.core.harness_state.native_sources import enroll_native_source
+
+                    issued = enroll_native_source(administration, grant_request, capability=require_capability())
+            except (HostCommandAuthorityError, ValueError) as exc:
                 raise OperatorError(str(exc)) from exc
             print(issued.model_dump_json())
             return 0

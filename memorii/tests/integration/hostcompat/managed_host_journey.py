@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -14,11 +14,16 @@ from pathlib import Path
 from memorii.core.harness_state.consumer import ManagedRuntimeSpool
 from memorii.core.harness_state.credentials import SidecarCredentialStore
 from memorii.core.harness_state.envelope import HarnessStateEnvelope
+from memorii.core.harness_state.native_sources import NativeSourceCaptureRequest, enroll_native_source
 from memorii.core.harness_state.service import RuntimeReadGrant
-from memorii.core.harness_state.sidecar import RuntimeSidecar, SidecarError, serve_loopback
-from memorii.core.harness_state.write_authority import HostCommandGrantRequest, ManagedHostCommandAuthority
-from memorii.core.persistence.runtime_contracts import RuntimeCommandReceipt, RuntimeCommandRequest, TaskRecord
-from memorii.core.persistence.runtime_repository import RuntimeStateRepository, publish_runtime_change
+from memorii.core.harness_state.sidecar import RuntimeSidecar, serve_loopback
+from memorii.core.harness_state.write_authority import (
+    HostCommandGrantRequest,
+    ManagedHostCommandAuthority,
+    NativeSourceScope,
+)
+from memorii.core.persistence.runtime_contracts import RuntimeCommandReceipt, TaskRecord
+from memorii.core.persistence.runtime_repository import publish_runtime_change
 from memorii.core.storage_administration.operator import mint_owner_capability
 from memorii.core.storage_administration.service import StorageAdministrationService
 
@@ -26,25 +31,29 @@ from memorii.core.storage_administration.service import StorageAdministrationSer
 class ObservedSidecar(RuntimeSidecar):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.observations: list[tuple[str | None, int, str | None]] = []
+        self.observations: list[tuple[NativeSourceCaptureRequest, RuntimeCommandReceipt]] = []
 
-    def handle_prepare_request(self, **kwargs) -> tuple[int, bytes]:
-        status, body = super().handle_prepare_request(**kwargs)
-        command = RuntimeCommandRequest.model_validate_json(kwargs["body"])
-        if command.kind == "record_observation":
-            error_code = SidecarError.model_validate_json(body).code if status != 200 else None
-            self.observations.append((command.source_digest, status, error_code))
+    def handle_native_source_request(self, **kwargs) -> tuple[int, bytes]:
+        status, body = super().handle_native_source_request(**kwargs)
+        if kwargs["capture"] and status == 200:
+            self.observations.append((
+                NativeSourceCaptureRequest.model_validate_json(kwargs["body"]),
+                RuntimeCommandReceipt.model_validate_json(body),
+            ))
         return status, body
 
 
 class ManagedHostJourney:
-    def __init__(self, root: Path, host: str) -> None:
+    def __init__(self, root: Path, host, session_id: str) -> None:
         self.installation = root / "installation"
         self.task_id = f"task:{host}-session"
         self.goal = f"Resume the persisted {host} task"
         self.credentials = SidecarCredentialStore(self.installation / "control" / "runtime-credentials")
         self.spool_root = self.installation / "spool" / "managed"
         self.principal = "principal:a"
+        self.source = NativeSourceScope(kind=host, session_id=session_id)
+        self.grant_id = f"commands:{host}"
+        self.model_requests: list[dict] = []
         self.credential, self.secret = self.credentials.issue(self.principal)
         with StorageAdministrationService(self.installation) as administration:
             administration.initialize()
@@ -56,12 +65,13 @@ class ManagedHostJourney:
                 administration, lambda connection, repo: repo.apply_task(connection, task),
                 operation_binding="host_journey_task",
             )
-            ManagedHostCommandAuthority(administration).issue(
+            enroll_native_source(
+                administration,
                 HostCommandGrantRequest(
-                    grant_id=f"commands:{host}", principal=self.principal, credential_id=self.credential.credential_id,
+                    grant_id=self.grant_id, principal=self.principal, credential_id=self.credential.credential_id,
                     client_namespace=f"host:{host}", allowed_task_ids=(self.task_id,),
                     allowed_kinds=("resume_task", "record_observation"),
-                    expires_at=datetime.now(UTC) + timedelta(hours=1),
+                    expires_at=datetime.now(UTC) + timedelta(hours=1), native_source=self.source,
                 ),
                 capability=mint_owner_capability(administration, "owner"),
             )
@@ -107,26 +117,67 @@ class ManagedHostJourney:
         with urllib.request.urlopen(request, timeout=5) as response:
             return HarnessStateEnvelope.model_validate_json(response.read())
 
+    def source_request(self, endpoint: str, **fields: object) -> tuple[int, dict]:
+        body = {"task_id": self.task_id, "source": self.source.model_dump(), **fields}
+        request = urllib.request.Request(
+            f"{self.url}/v1/runtime/source/{endpoint}", data=json.dumps(body).encode(),
+            headers={"Authorization": f"Bearer {self.secret}", "Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                return response.status, json.load(response)
+        except urllib.error.HTTPError as error:
+            with error:
+                return error.code, json.load(error)
+
     def prove_turn(self, prompt: str) -> RuntimeCommandReceipt:
-        assert self.sidecar.observations == [
-            (hashlib.sha256(prompt.encode()).hexdigest(), 503, "unsupported_configuration"),
-        ]
-        print("Native message text matched; governed source owner unavailable (503)", flush=True)
+        [(captured, receipt)] = self.sidecar.observations
+        assert captured.text == prompt and captured.source == self.source
+        assert receipt.status == "committed" and receipt.operation_origin and receipt.source_admission
+        assert receipt.source_admission.task_id == self.task_id
         spool = ManagedRuntimeSpool(self.spool_root)
-        [entry] = spool.pending()
-        assert entry.delivery.command.kind == "resume_task"
-        result = self.drain()
-        assert result.returncode == 0, result.stderr
-        receipt = RuntimeCommandReceipt.model_validate_json(result.stdout)
-        assert receipt.status == "committed" and receipt.operation_origin == entry.operation_origin.coordinate
-        assert entry.delivery.command.task_id == self.task_id
+        entry = spool.find(receipt.operation_origin)
+        assert entry is not None and entry.state == "committed"
+        assert entry.operation_origin.coordinate == receipt.operation_origin
+        assert prompt not in entry.model_dump_json()
         assert spool.pending() == ()
         retry = self.drain()
         assert retry.returncode == 0 and retry.stdout == ""
-        repository = RuntimeStateRepository(self.administration.partition())
-        assert repository.get_task(self.task_id) is not None
-        print("Signed resume committed via managed drain; retry empty", flush=True)
+        status, payload = self.source_request("capture", delivery_id=captured.delivery_id, text=prompt)
+        assert status == 200 and RuntimeCommandReceipt.model_validate(payload) == receipt
+        status, payload = self.source_request("capture", delivery_id=captured.delivery_id, text=prompt + " altered")
+        assert status == 409 and payload["code"] == "conflict"
+        assert self.source_request("recall", task_id="task:other")[0] == 403
+        assert self.source_request("recall", source={"kind": self.source.kind, "session_id": "unbound"})[0] == 403
+        print("Exact user text committed with a signed observation; duplicate reused the same receipt", flush=True)
         return receipt
+
+    def prove_recall(self, first_prompt: str) -> None:
+        status, recall = self.source_request("recall")
+        assert status == 200 and recall["messages"][-1]["text"] == first_prompt
+
+    def prove_model_recall(self, first_prompt: str) -> None:
+        assert any(
+            "Memorii historical user data" in message and first_prompt in message
+            for message in self.last_model_messages()
+        ), "recalled data did not appear in the model request"
+        print("Restarted native host delivered the remembered text to the model", flush=True)
+
+    def last_model_messages(self) -> list[str]:
+        return [json.dumps(message.get("content")) for message in self.model_requests[-1]["messages"]]
+
+    def revoke(self) -> None:
+        ManagedHostCommandAuthority(self.administration).revoke(
+            self.grant_id, capability=mint_owner_capability(self.administration, "owner"),
+        )
+        status, payload = self.source_request("recall")
+        assert status == 403 and payload["code"] == "denied" and "messages" not in payload
+        status, payload = self.source_request("capture", delivery_id="revoked-delivery", text="revoked input")
+        assert status == 403 and payload["code"] == "denied"
+        print("Revoked enrollment denied recall", flush=True)
+
+    def prove_model_without_recall(self) -> None:
+        assert all("Memorii historical user data" not in message for message in self.last_model_messages())
 
     def drain(self) -> subprocess.CompletedProcess[str]:
         return subprocess.run(

@@ -1117,6 +1117,184 @@
         "title": "HarnessStateEnvelope",
         "type": "object"
       },
+      "NativeSourceCaptureRequest": {
+        "$defs": {
+          "NativeSourceScope": {
+            "additionalProperties": false,
+            "description": "One operator-selected source in a dedicated local harness session.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "pi",
+                  "openclaw"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "session_id": {
+                "maxLength": 512,
+                "minLength": 1,
+                "pattern": "^[^\\x00]+$",
+                "title": "Session Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "session_id"
+            ],
+            "title": "NativeSourceScope",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "delivery_id": {
+            "maxLength": 512,
+            "minLength": 1,
+            "pattern": "^[^\\x00]+$",
+            "title": "Delivery Id",
+            "type": "string"
+          },
+          "protocol_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Protocol Version",
+            "type": "integer"
+          },
+          "source": {
+            "$ref": "#/$defs/NativeSourceScope"
+          },
+          "task_id": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Task Id",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 16384,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "source",
+          "delivery_id",
+          "text"
+        ],
+        "title": "NativeSourceCaptureRequest",
+        "type": "object"
+      },
+      "NativeSourceRecall": {
+        "$defs": {
+          "RecalledNativeMessage": {
+            "additionalProperties": false,
+            "properties": {
+              "source_id": {
+                "title": "Source Id",
+                "type": "string"
+              },
+              "text": {
+                "title": "Text",
+                "type": "string"
+              }
+            },
+            "required": [
+              "source_id",
+              "text"
+            ],
+            "title": "RecalledNativeMessage",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/$defs/RecalledNativeMessage"
+            },
+            "title": "Messages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "messages"
+        ],
+        "title": "NativeSourceRecall",
+        "type": "object"
+      },
+      "NativeSourceRecallRequest": {
+        "$defs": {
+          "NativeSourceScope": {
+            "additionalProperties": false,
+            "description": "One operator-selected source in a dedicated local harness session.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "pi",
+                  "openclaw"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "session_id": {
+                "maxLength": 512,
+                "minLength": 1,
+                "pattern": "^[^\\x00]+$",
+                "title": "Session Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "session_id"
+            ],
+            "title": "NativeSourceScope",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "exclude_delivery_id": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "pattern": "^[^\\x00]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Exclude Delivery Id"
+          },
+          "protocol_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Protocol Version",
+            "type": "integer"
+          },
+          "source": {
+            "$ref": "#/$defs/NativeSourceScope"
+          },
+          "task_id": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "source"
+        ],
+        "title": "NativeSourceRecallRequest",
+        "type": "object"
+      },
       "OperationOrigin": {
         "$defs": {
           "OperationOriginCoordinate": {
@@ -1195,6 +1373,268 @@
           "signature"
         ],
         "title": "OperationOrigin",
+        "type": "object"
+      },
+      "RuntimeCommandReceipt": {
+        "$defs": {
+          "OperationOriginCoordinate": {
+            "additionalProperties": false,
+            "description": "Immutable identity of an intent prepared under a managed host binding.",
+            "properties": {
+              "client_namespace": {
+                "maxLength": 512,
+                "minLength": 1,
+                "title": "Client Namespace",
+                "type": "string"
+              },
+              "generation_id": {
+                "maxLength": 512,
+                "minLength": 1,
+                "title": "Generation Id",
+                "type": "string"
+              },
+              "installation_id": {
+                "maxLength": 512,
+                "minLength": 1,
+                "title": "Installation Id",
+                "type": "string"
+              },
+              "operation_id": {
+                "maxLength": 512,
+                "minLength": 1,
+                "title": "Operation Id",
+                "type": "string"
+              },
+              "principal": {
+                "maxLength": 512,
+                "minLength": 1,
+                "title": "Principal",
+                "type": "string"
+              },
+              "repository_id": {
+                "maxLength": 1024,
+                "minLength": 1,
+                "title": "Repository Id",
+                "type": "string"
+              },
+              "request_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Request Digest",
+                "type": "string"
+              }
+            },
+            "required": [
+              "installation_id",
+              "repository_id",
+              "generation_id",
+              "principal",
+              "client_namespace",
+              "operation_id",
+              "request_digest"
+            ],
+            "title": "OperationOriginCoordinate",
+            "type": "object"
+          },
+          "RuntimeSourceAdmissionReceipt": {
+            "additionalProperties": false,
+            "description": "Metadata-only runtime binding to an exact provider-owned admission.",
+            "properties": {
+              "admission_index_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Admission Index Digest",
+                "type": "string"
+              },
+              "delivery_key_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Delivery Key Digest",
+                "type": "string"
+              },
+              "modalities": {
+                "items": {
+                  "$ref": "#/$defs/SourceModality"
+                },
+                "minItems": 1,
+                "title": "Modalities",
+                "type": "array"
+              },
+              "provider_source_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Provider Source Digest",
+                "type": "string"
+              },
+              "retained_at": {
+                "format": "date-time",
+                "title": "Retained At",
+                "type": "string"
+              },
+              "source_id": {
+                "maxLength": 512,
+                "minLength": 1,
+                "title": "Source Id",
+                "type": "string"
+              },
+              "source_record_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Source Record Digest",
+                "type": "string"
+              },
+              "source_type": {
+                "const": "user",
+                "title": "Source Type",
+                "type": "string"
+              },
+              "source_write_revision": {
+                "minimum": 1,
+                "title": "Source Write Revision",
+                "type": "integer"
+              },
+              "task_id": {
+                "maxLength": 512,
+                "minLength": 1,
+                "title": "Task Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "task_id",
+              "source_id",
+              "source_record_digest",
+              "provider_source_digest",
+              "admission_index_digest",
+              "delivery_key_digest",
+              "source_write_revision",
+              "source_type",
+              "modalities",
+              "retained_at"
+            ],
+            "title": "RuntimeSourceAdmissionReceipt",
+            "type": "object"
+          },
+          "SourceModality": {
+            "enum": [
+              "assertion",
+              "correction",
+              "quoted_or_pasted",
+              "hypothetical",
+              "question",
+              "instruction",
+              "tool_result",
+              "assistant_claim",
+              "third_party_claim",
+              "noise"
+            ],
+            "title": "SourceModality",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "base_revision": {
+            "minimum": 0,
+            "title": "Base Revision",
+            "type": "integer"
+          },
+          "client_namespace": {
+            "minLength": 1,
+            "title": "Client Namespace",
+            "type": "string"
+          },
+          "consolidation_result_id": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Consolidation Result Id"
+          },
+          "current_revision": {
+            "minimum": 0,
+            "title": "Current Revision",
+            "type": "integer"
+          },
+          "operation_id": {
+            "minLength": 1,
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "operation_origin": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/OperationOriginCoordinate"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "origin_proof_digest": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Origin Proof Digest"
+          },
+          "request_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Request Digest",
+            "type": "string"
+          },
+          "result_digest": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Result Digest"
+          },
+          "source_admission": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/RuntimeSourceAdmissionReceipt"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "status": {
+            "default": "pending",
+            "enum": [
+              "pending",
+              "committed",
+              "rejected",
+              "needs_reconciliation"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation_id",
+          "client_namespace",
+          "request_digest",
+          "base_revision",
+          "current_revision"
+        ],
+        "title": "RuntimeCommandReceipt",
         "type": "object"
       },
       "RuntimeCommandRequest": {
@@ -2520,6 +2960,90 @@
               }
             },
             "description": "Closed error envelope (no task-derived data)"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/runtime/source/capture": {
+      "post": {
+        "operationId": "captureNativeSource",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NativeSourceCaptureRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeCommandReceipt"
+                }
+              }
+            },
+            "description": "Authorized native source result"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SidecarError"
+                }
+              }
+            },
+            "description": "Closed error envelope"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/runtime/source/recall": {
+      "post": {
+        "operationId": "recallNativeSource",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NativeSourceRecallRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NativeSourceRecall"
+                }
+              }
+            },
+            "description": "Authorized native source result"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SidecarError"
+                }
+              }
+            },
+            "description": "Closed error envelope"
           }
         },
         "security": [

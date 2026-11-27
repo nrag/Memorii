@@ -37,8 +37,13 @@ from memorii.core.harness_state.consumer import (
     ManagedRuntimeSpool,
     SpoolRecord,
 )
-from memorii.core.harness_state.credentials import SidecarCredentialStore
+from memorii.core.harness_state.credentials import CredentialError, SidecarCredentialStore
 from memorii.core.harness_state.grant_registry import GrantEpochRegistry
+from memorii.core.harness_state.native_sources import (
+    NativeSourceCaptureRequest,
+    NativeSourceRecallRequest,
+    NativeSourceService,
+)
 from memorii.core.harness_state.paging import HarnessCursorError
 from memorii.core.harness_state.service import (
     HarnessStateError,
@@ -162,9 +167,11 @@ class RuntimeSidecar:
         grant_registry: GrantEpochRegistry | None = None,
         revoked_view: RevokedIdentityServingGate | None = None,
         administration: StorageAdministrationService | None = None,
+        native_sources: NativeSourceService | None = None,
     ) -> None:
         self._repository = repository
         self._administration = administration
+        self._native_sources = native_sources
         self._credentials = credentials
         self._grant_factory = grant_factory
         self._intake_factory = intake_factory
@@ -238,7 +245,37 @@ class RuntimeSidecar:
             ),
             writeback_factory=lambda secret: WritebackDecisionService(administration, credentials, secret),
             administration=administration,
+            native_sources=NativeSourceService(administration, credentials, spool, grant_factory),
         )
+
+    def handle_native_source_request(
+        self, *, capture: bool, bearer_token: str | None, origin: str | None, body: bytes, host: str | None,
+    ) -> tuple[int, bytes]:
+        if origin is not None or host not in (None, "127.0.0.1", "localhost", "::1"):
+            return _error(403, "denied", None)
+        if not bearer_token:
+            return _error(401, "unauthenticated", None)
+        if self._native_sources is None:
+            return _error(503, "unsupported_configuration", None)
+        if len(body) > _MAXIMUM_INTAKE_BYTES:
+            return _error(400, "invalid_request", None)
+        try:
+            if capture:
+                result = self._native_sources.capture(bearer_token, NativeSourceCaptureRequest.model_validate_json(body))
+                return 200, result.model_dump_json().encode()
+            recall = self._native_sources.recall(bearer_token, NativeSourceRecallRequest.model_validate_json(body))
+            return 200, recall.model_dump_json().encode()
+        except (ValidationError, UnicodeError):
+            return _error(400, "invalid_request", None)
+        except (RuntimeCommandError, ConsumerDeliveryError) as exc:
+            code = _harness_error_code(str(exc))
+            return _error(_ERROR_STATUS[code], code, None)
+        except CredentialError:
+            return _error(401, "unauthenticated", None)
+        except (InstallationIntegrityError, InstallationQuarantinedError, sqlite3.DatabaseError):
+            return _error(500, "integrity_error", None)
+        except (OSError, StorageAdministrationError):
+            return _error(503, "unavailable", None)
 
     def _principal_for(self, secret: str) -> str | None:
         if isinstance(self._credentials, SidecarCredentialStore):
@@ -539,6 +576,19 @@ def build_sidecar_handler(sidecar: RuntimeSidecar) -> type[BaseHTTPRequestHandle
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:  # noqa: N802 - http.server API
+            if self.path in ("/v1/runtime/source/capture", "/v1/runtime/source/recall"):
+                length = _safe_content_length(self.headers.get("Content-Length"), _MAXIMUM_INTAKE_BYTES)
+                if length is None:
+                    self._respond(*_error(400, "invalid_request", None))
+                    return
+                self._respond(*sidecar.handle_native_source_request(
+                    capture=self.path == "/v1/runtime/source/capture",
+                    bearer_token=self.headers.get("Authorization", "").removeprefix("Bearer ") or None,
+                    origin=self.headers.get("Origin"),
+                    body=self.rfile.read(length) if length else b"",
+                    host=self.headers.get("Host", "").split(":")[0] or None,
+                ))
+                return
             if self.path in ("/v1/operations/prepare", "/v1/consolidation/read"):
                 length = _safe_content_length(self.headers.get("Content-Length"), _MAXIMUM_INTAKE_BYTES)
                 if length is None:

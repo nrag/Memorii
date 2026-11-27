@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Callable
 from datetime import UTC, datetime
+from functools import partial
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -44,6 +45,7 @@ def authenticated_host_commands(
     secret: str,
     *,
     observation_source: RuntimeObservationSource | None = None,
+    enrolled_source_append: bool = False,
 ) -> ManagedRuntimeCommandService:
     """Resolve authority afresh under the runtime owner's publication fence."""
     grants = ManagedHostCommandAuthority(administration)
@@ -78,6 +80,7 @@ def authenticated_host_commands(
 
     return ManagedRuntimeCommandService(
         administration, authorize=authorize, observation_source=observation_source,
+        enrolled_source_append=enrolled_source_append,
     )
 
 
@@ -153,4 +156,13 @@ def spooled_host_commands(
             return None
         return ResolvedRuntimeCommandAuthority(resolved.principal, resolved.client_namespace, resolved)
 
-    return ManagedRuntimeCommandService(administration, authorize=authorize)
+    from memorii.core.harness_state.native_sources import resolve_enrolled_runtime_source
+
+    observation_source = (
+        partial(resolve_enrolled_runtime_source, administration)
+        if proof.coordinate.operation_id.startswith("native-source:") else None
+    )
+    return ManagedRuntimeCommandService(
+        administration, authorize=authorize, observation_source=observation_source,
+        enrolled_source_append=observation_source is not None,
+    )

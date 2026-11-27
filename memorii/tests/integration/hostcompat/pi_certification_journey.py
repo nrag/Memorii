@@ -8,14 +8,14 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, "/opt/memorii-src/memorii")
-sys.path.insert(0, "/opt/memorii-src/memorii/tests/integration/hostcompat")
 
 from managed_host_journey import ManagedHostJourney
 from stub_openai_provider import serve_stub_provider
 
 root = Path("/tmp/memorii-journey")
-journey = ManagedHostJourney(root, "pi")
-stub_url, stub_server = serve_stub_provider()
+session_id = "cert-session"
+journey = ManagedHostJourney(root, "pi", session_id)
+stub_url, stub_server = serve_stub_provider(observe=journey.model_requests.append)
 
 agent_dir = Path("/root/.pi/agent")
 agent_dir.mkdir(parents=True, exist_ok=True)
@@ -25,7 +25,7 @@ agent_dir.mkdir(parents=True, exist_ok=True)
             "name": "Stub",
             "baseUrl": f"{stub_url}/v1",
             "apiKey": "stub-key",
-            "api": "openai",
+            "api": "openai-completions",
             "authHeader": True,
             "models": [{
                 "id": "stub-model",
@@ -40,7 +40,6 @@ agent_dir.mkdir(parents=True, exist_ok=True)
 session_dir = root / "pi-sessions"
 session_dir.mkdir(parents=True)
 
-session_id = "cert-session"
 base_env = dict(os.environ, **journey.environment, MEMORII_PI_SESSION_ID=session_id)
 
 
@@ -71,13 +70,16 @@ try:
 
     reopened = journey.read()
     assert reopened.goal == journey.goal and reopened.revision > baseline.revision
-    assert reopened.task_version == baseline.task_version
+    assert reopened.task_version == baseline.task_version + 1
     assert reopened.revision != reopened.task_version
     print("Reopened sidecar recalled the provisioned task and committed runtime revision", flush=True)
 
+    journey.prove_recall(first_prompt)
     second_prompt = "continue after restart"
     second = run_pi("--continue", second_prompt)
     assert second.returncode == 0, second.stderr
+    assert journey.model_requests, second.stderr + "\n" + second.stdout[-4500:]
+    journey.prove_model_recall(first_prompt)
     second_receipt = journey.prove_turn(second_prompt)
     assert second_receipt.operation_id != first_receipt.operation_id
     assert journey.read().revision > reopened.revision
@@ -90,7 +92,11 @@ try:
     retry = journey.drain()
     assert retry.returncode == 0 and retry.stdout == ""
     print("The actual Pi startup fork could not submit to the bound Memorii task", flush=True)
-    print("JOURNEY: PASS (managed resume and runtime state read)")
+    journey.revoke()
+    revoked_turn = run_pi("--session-id", session_id, "continue after revocation")
+    assert revoked_turn.returncode == 0, revoked_turn.stderr
+    journey.prove_model_without_recall()
+    print("JOURNEY: PASS (signed capture, restart recall, and revocation)")
 finally:
     stub_server.shutdown()
     stub_server.server_close()

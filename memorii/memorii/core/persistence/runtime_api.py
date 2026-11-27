@@ -266,6 +266,8 @@ class RuntimeCommandService:
         *,
         operation_origin: OperationOrigin | None = None,
         source_admission: RuntimeSourceAdmissionReceipt | None = None,
+        enrolled_source_append: bool = False,
+        enrolled_resume: bool = False,
     ) -> None:
         assert isinstance(connection, sqlite3.Connection)
         lookup_namespace = (
@@ -289,7 +291,9 @@ class RuntimeCommandService:
         if operation_origin is not None and request.kind in {"pause_task", "complete_task"}:
             result = self._apply_managed_lifecycle(connection, repository, request, operation_origin.coordinate)
         elif operation_origin is not None and request.kind == "resume_task":
-            self._apply_managed_resume(connection, repository, request, operation_origin.coordinate)
+            self._apply_managed_resume(
+                connection, repository, request, operation_origin.coordinate, enrolled_resume=enrolled_resume,
+            )
         elif operation_origin is not None and request.kind == "record_observation":
             task = repository.get_task_in(connection, request.task_id or "")
             if (
@@ -298,7 +302,10 @@ class RuntimeCommandService:
                 or source_admission.provider_source_digest != request.source_digest
             ):
                 raise RuntimeCommandError("denied: verified provider admission is unavailable")
-            if task.lifecycle != "active" or task.version != request.expected_revision:
+            expected = request.expected_revision
+            assert expected is not None
+            revision_matches = task.version == expected or (enrolled_source_append and task.version > expected)
+            if task.lifecycle != "active" or not revision_matches:
                 raise RuntimeCommandError("conflict: observation task or revision is no longer active")
             observed = repository.task_observation_source_keys_in(connection, task.task_id)
             key = source_admission.source_id, source_admission.source_record_digest
@@ -462,12 +469,16 @@ class RuntimeCommandService:
         repository: RuntimeStateRepository,
         request: RuntimeCommandRequest,
         coordinate: OperationOriginCoordinate,
+        *,
+        enrolled_resume: bool = False,
     ) -> None:
         task = repository.get_task_in(connection, request.task_id or "")
         revoked = RefreshingRevokedIdentityView(self._administration.installation_root / "control")
         if task is None or task.principal != coordinate.principal or revoked.is_revoked_task(task.task_id):
             raise RuntimeCommandError("denied: task resume authority is unavailable")
-        if task.version != request.expected_revision:
+        expected = request.expected_revision
+        assert expected is not None
+        if task.version != expected and not (enrolled_resume and task.lifecycle == "active" and task.version > expected):
             raise RuntimeCommandError("conflict: task state moved past the expected revision")
         if task.lifecycle == "active":
             return
@@ -805,10 +816,12 @@ class ManagedRuntimeCommandService:
         *,
         authorize: RuntimeCommandAuthorizer,
         observation_source: RuntimeObservationSource | None = None,
+        enrolled_source_append: bool = False,
     ) -> None:
         self._administration = administration
         self._authorize = authorize
         self._observation_source = observation_source
+        self._enrolled_source_append = enrolled_source_append
 
     def prepare(self, request: RuntimeCommandRequest) -> OperationOrigin:
         """Authenticate new intent explicitly, without publishing any effect."""
@@ -875,6 +888,8 @@ class ManagedRuntimeCommandService:
             service._apply_command(
                 connection, repository, request, coordinate.request_digest,
                 operation_origin=operation_origin, source_admission=source,
+                enrolled_source_append=self._enrolled_source_append,
+                enrolled_resume=projection_grant is not None and projection_grant.native_source is not None,
             )
             if projection_grant is not None:
                 from memorii.core.work_state.runtime_projection import stage_work_projection

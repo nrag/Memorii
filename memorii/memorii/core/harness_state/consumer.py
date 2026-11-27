@@ -23,7 +23,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from memorii.core.persistence.runtime_contracts import OperationOrigin, RuntimeCommandRequest
+from memorii.core.persistence.runtime_contracts import OperationOrigin, OperationOriginCoordinate, RuntimeCommandRequest
 
 
 class ConsumerDeliveryError(RuntimeError):
@@ -68,8 +68,7 @@ class ManagedRuntimeSpool:
         self._directory = Path(directory)
         self._directory.mkdir(mode=0o700, parents=True, exist_ok=True)
 
-    def _path(self, origin: OperationOrigin) -> Path:
-        coordinate = origin.coordinate
+    def _path(self, coordinate: OperationOriginCoordinate) -> Path:
         identity = (
             coordinate.installation_id,
             coordinate.repository_id,
@@ -86,7 +85,7 @@ class ManagedRuntimeSpool:
             entry = ManagedSpoolEntry.model_validate_json(path.read_bytes())
         except (OSError, ValueError) as exc:
             raise ConsumerDeliveryError("integrity_error: unreadable managed intake") from exc
-        if self._path(entry.operation_origin) != path:
+        if self._path(entry.operation_origin.coordinate) != path:
             raise ConsumerDeliveryError("integrity_error: intake identity mismatch")
         return entry
 
@@ -124,7 +123,7 @@ class ManagedRuntimeSpool:
         ):
             raise ConsumerDeliveryError("denied: managed intake binding mismatch")
         validate(delivery.command, operation_origin)
-        path = self._path(operation_origin)
+        path = self._path(operation_origin.coordinate)
         with locked_file(self._directory / "intake.lock", exclusive=True):
             if path.exists():
                 existing = self._read(path)
@@ -143,11 +142,19 @@ class ManagedRuntimeSpool:
             entries = (self._read(path) for path in sorted(self._directory.glob("*.json")))
             return tuple(entry for entry in entries if entry.state == "pending")
 
+    def find(self, coordinate: OperationOriginCoordinate) -> ManagedSpoolEntry | None:
+        """Look up the original signed delivery for one immutable operation identity."""
+        from memorii.core.memory_plane.file_lock import locked_file
+
+        path = self._path(coordinate)
+        with locked_file(self._directory / "intake.lock", exclusive=False):
+            return self._read(path) if path.exists() else None
+
     def mark_committed(self, entry: ManagedSpoolEntry) -> None:
         """Acknowledge only the exact intent whose command was dispatched."""
         from memorii.core.memory_plane.file_lock import locked_file
 
-        path = self._path(entry.operation_origin)
+        path = self._path(entry.operation_origin.coordinate)
         with locked_file(self._directory / "intake.lock", exclusive=True):
             existing = self._read(path)
             if existing == entry.model_copy(update={"state": "committed"}):

@@ -13,14 +13,13 @@ from contextlib import suppress
 from pathlib import Path
 
 sys.path.insert(0, "/opt/memorii-src/memorii")
-sys.path.insert(0, "/opt/memorii-src/memorii/tests/integration/hostcompat")
 
 from managed_host_journey import ManagedHostJourney
 from stub_openai_provider import serve_stub_provider
 
 GATEWAY_TOKEN = "cert-token-1"
-journey = ManagedHostJourney(Path("/tmp/memorii-journey"), "openclaw")
 session_key = "agent:main:cert-session"
+journey = ManagedHostJourney(Path("/tmp/memorii-journey"), "openclaw", session_key)
 base_env = dict(
     os.environ, **journey.environment, OPENCLAW_GATEWAY_TOKEN=GATEWAY_TOKEN,
     MEMORII_OPENCLAW_SESSION_KEY=session_key,
@@ -39,7 +38,7 @@ subprocess.run(
     cwd=extensions_home, capture_output=True, text=True, timeout=900, check=False,
 )
 
-stub_url, stub_server = serve_stub_provider()
+stub_url, stub_server = serve_stub_provider(observe=journey.model_requests.append)
 
 def config_set(path: str, value: str) -> None:
     result = subprocess.run(
@@ -56,7 +55,10 @@ config_set("models.providers.stub", json.dumps({
     "authHeader": True,
     "models": [{"id": "stub-model", "name": "Stub Model", "api": "openai-completions"}],
 }))
-config_set("plugins.entries.memorii", json.dumps({"enabled": True, "config": {}}))
+config_set("plugins.entries.memorii", json.dumps({
+    "enabled": True, "config": {},
+    "hooks": {"allowConversationAccess": True, "allowPromptInjection": True},
+}))
 config_set("plugins.allow", json.dumps(["memorii"]))
 config_set("gateway.mode", "local")
 config_set("gateway.auth.mode", "token")
@@ -121,13 +123,15 @@ try:
     assert wait_for_loopback_port(18789), Path("/tmp/gateway-journey.log").read_text()[-2000:]
     reopened = journey.read()
     assert reopened.goal == journey.goal and reopened.revision > baseline.revision
-    assert reopened.task_version == baseline.task_version
+    assert reopened.task_version == baseline.task_version + 1
     assert reopened.revision != reopened.task_version
     print("Reopened gateway and sidecar recalled the provisioned task and committed runtime revision", flush=True)
 
+    journey.prove_recall(first_prompt)
     second_prompt = "continue the same session"
     second = run_agent("--session-key", session_key, "-m", second_prompt)
     assert second.returncode == 0, second.stderr
+    journey.prove_model_recall(first_prompt)
     second_receipt = journey.prove_turn(second_prompt)
     assert second_receipt.operation_id != first_receipt.operation_id
     assert journey.read().revision > reopened.revision
@@ -139,7 +143,11 @@ try:
     retry = journey.drain()
     assert retry.returncode == 0 and retry.stdout == ""
     print("An unbound OpenClaw session could not submit to the Memorii task", flush=True)
-    print("JOURNEY: PASS (managed resume and runtime state read)")
+    journey.revoke()
+    revoked_turn = run_agent("--session-key", session_key, "-m", "continue after revocation")
+    assert revoked_turn.returncode == 0, revoked_turn.stderr
+    journey.prove_model_without_recall()
+    print("JOURNEY: PASS (signed capture, restart recall, and revocation)")
 except Exception:
     gateway_log.flush()
     print(Path("/tmp/gateway-journey.log").read_text()[-6000:], file=sys.stderr)

@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 import os
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -99,6 +101,15 @@ class GrantEpochRegistry:
                 f"stale_grant: grant {grant_id} at epoch {epoch};"
                 f" current epoch is {current}"
             )
+
+    @contextmanager
+    def current_read(self, grant_id: str, epoch: int) -> Iterator[None]:
+        """Linearize assembling an authorized read result with grant revocation."""
+        from memorii.core.memory_plane.file_lock import locked_file
+
+        with locked_file(self._directory / "registry.lock", exclusive=False):
+            self.require_current(grant_id, epoch)
+            yield
 
     def verify_permissions(self) -> None:
         for path in (self._epochs_path, self._revocations_path):

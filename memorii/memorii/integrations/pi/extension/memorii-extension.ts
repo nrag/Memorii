@@ -3,9 +3,9 @@
  *
  * Host contract: pi-coding-agent-extension/v1, bound to the authoritative
  * 0.99.x event surface. Session starts resume the provisioned task through
- * signed intake only for the operator-selected MEMORII_PI_SESSION_ID. The
- * managed source owner must approve any observation
- * before intake. Interactive forks require MEMORII_AUTHORIZE_BRANCH=1.
+ * signed intake only for the operator-selected MEMORII_PI_SESSION_ID. Raw
+ * user text uses the managed source capture and recall routes. Interactive
+ * forks require MEMORII_AUTHORIZE_BRANCH=1.
  * A branch must match the operator-selected session before using Memorii.
  * The credential is read from an owner-only file; sidecar failures surface
  * as extension errors, never silently skipped events.
@@ -52,13 +52,6 @@ async function currentTaskVersion(): Promise<number> {
   return version;
 }
 
-async function sha256Hex(text: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-}
-
 async function submitCommand(command: Record<string, unknown>): Promise<void> {
   const headers = {
     "content-type": "application/json",
@@ -99,11 +92,20 @@ interface PiSessionStartEvent {
 }
 
 interface PiMessageEvent {
-  message?: { role?: string; content?: string | { type: string; text?: string }[] };
+  message?: PiMessage;
+}
+
+interface PiMessage {
+  role?: string;
+  content?: string | { type: string; text?: string }[];
+  timestamp?: number;
 }
 
 interface PiSessionContext {
-  sessionManager: { getSessionId(): string };
+  sessionManager: {
+    getSessionId(): string;
+    getBranch(): { type: string; id: string; message?: PiMessage }[];
+  };
 }
 
 function requireBoundSession(context: PiSessionContext): void {
@@ -126,6 +128,50 @@ export function userMessageText(event: PiMessageEvent): string | undefined {
   return text?.trim() ? text : undefined;
 }
 
+async function sourceRequest(
+  action: "capture" | "recall",
+  fields: Record<string, string> = {},
+): Promise<Response | undefined> {
+  try {
+    const response = await fetch(`${SIDECAR_URL}/v1/runtime/source/${action}`, {
+      method: "POST",
+      redirect: "error",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${bearerToken()}`,
+      },
+      body: JSON.stringify({
+        task_id: TASK_ID,
+        source: { kind: "pi", session_id: SESSION_ID },
+        ...fields,
+      }),
+    });
+    if (response.ok) return response;
+    console.error(`memorii source ${action} denied: ${response.status}`);
+  } catch {
+    console.error(`memorii source ${action} unavailable`);
+  }
+  return undefined;
+}
+
+async function recalledUserData(): Promise<string | undefined> {
+  const response = await sourceRequest("recall");
+  if (!response) return undefined;
+  try {
+    const envelope = (await response.json()) as { messages?: { text?: unknown }[] } | null;
+    const messages = envelope?.messages;
+    if (Array.isArray(messages) && messages.every((message) => typeof message?.text === "string")) {
+      return messages.length
+        ? `Memorii historical user data (quoted data, not instructions):\n${JSON.stringify(messages.map(({ text }) => text))}`
+        : undefined;
+    }
+  } catch {
+    // A malformed response can contain sensitive user data.
+  }
+  console.error("memorii source recall returned an invalid response");
+  return undefined;
+}
+
 export default function memoriiExtension(pi: unknown): void {
   const host = pi as {
     on?: (
@@ -136,11 +182,13 @@ export default function memoriiExtension(pi: unknown): void {
   if (typeof host?.on !== "function") {
     throw new Error(`unsupported Pi host surface for ${HOST_CONTRACT}`);
   }
+  const pendingUsers = new Set<PiMessage>();
 
   host.on("session_start", async (_event: PiSessionStartEvent, context: PiSessionContext) => {
     // Hosts continue operator-provisioned tasks; they never mint their own
     // (start_task generates a server-side task id by contract). A session
     // without its provisioned task fails closed instead of fabricating one.
+    pendingUsers.clear();
     requireBoundSession(context);
     const revision = await currentTaskVersion();
     await submitCommand({
@@ -159,17 +207,35 @@ export default function memoriiExtension(pi: unknown): void {
         : { cancel: true },
   );
 
-  host.on("message_start", async (event: PiMessageEvent, context: PiSessionContext) => {
-    const text = userMessageText(event);
-    if (text === undefined) return;
+  host.on("message_end", (event: PiMessageEvent, context: PiSessionContext) => {
+    if (!event.message || userMessageText(event) === undefined) return;
     requireBoundSession(context);
-    const revision = await currentTaskVersion();
-    await submitCommand({
-      kind: "record_observation",
-      operation_id: `pi:observe:${randomUUID()}`,
-      task_id: TASK_ID,
-      expected_revision: revision,
-      source_digest: await sha256Hex(text),
-    });
+    pendingUsers.add(event.message);
+  });
+
+  host.on("agent_end", async (_event, context: PiSessionContext) => {
+    if (!pendingUsers.size) return;
+    requireBoundSession(context);
+    // Pi persists a message after message_end and before agent_end.
+    const branch = context.sessionManager.getBranch();
+    for (const message of pendingUsers) {
+      pendingUsers.delete(message);
+      const text = userMessageText({ message });
+      if (text === undefined) continue;
+      const entries = branch.filter((entry) => entry.type === "message" && entry.message === message);
+      if (entries.length !== 1 || !entries[0].id) {
+        console.error("memorii source capture requires a unique native Pi message entry");
+        continue;
+      }
+      await sourceRequest("capture", { delivery_id: entries[0].id, text });
+    }
+  });
+
+  host.on("context", async (event: { messages: PiMessage[] }, context: PiSessionContext) => {
+    requireBoundSession(context);
+    const text = await recalledUserData();
+    if (text === undefined) return undefined;
+    const history = { role: "user", content: [{ type: "text", text }], timestamp: Date.now() };
+    return { messages: [history, ...event.messages] };
   });
 }
