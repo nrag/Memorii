@@ -384,14 +384,14 @@ _INITIAL_MATERIALIZATION_CATALOGS = (
     ("runtime_checkpoints", "checkpoint_id", "record_json"),
 )
 _CONSOLIDATION_CATALOG = ("consolidation_results", "result_id", "record_json")
-_RUNTIME_EVENT_INDEX_CATALOGS = (
+RUNTIME_EVENT_INDEX_CATALOGS = (
     ("runtime_event_id_bindings", "event_id", "binding_json"),
     ("runtime_dedupe_bindings", "dedupe_key", "binding_json"),
     ("runtime_record_version_bindings", "record_version_id", "binding_json"),
 )
 _RUNTIME_HISTORY_TABLES = (
     "runtime_event_batches", _SKILL_CANDIDATE_CATALOG[0],
-    *(catalog for catalog, _, _ in _RUNTIME_EVENT_INDEX_CATALOGS),
+    *(catalog for catalog, _, _ in RUNTIME_EVENT_INDEX_CATALOGS),
 )
 _MATERIALIZATION_CATALOGS_BY_VERSION = {
     _INITIAL_PARTITION_SCHEMA_VERSION: _INITIAL_MATERIALIZATION_CATALOGS,
@@ -401,15 +401,15 @@ _MATERIALIZATION_CATALOGS_BY_VERSION = {
     ),
     _RUNTIME_HISTORY_SCHEMA_VERSION: (
         *_INITIAL_MATERIALIZATION_CATALOGS, _CONSOLIDATION_CATALOG, *_DELIVERY_CATALOGS,
-        _SKILL_CANDIDATE_CATALOG, *_RUNTIME_EVENT_INDEX_CATALOGS,
+        _SKILL_CANDIDATE_CATALOG, *RUNTIME_EVENT_INDEX_CATALOGS,
     ),
     _RUNTIME_SOURCE_RELEASE_SCHEMA_VERSION: (
         *_INITIAL_MATERIALIZATION_CATALOGS, _CONSOLIDATION_CATALOG, *_DELIVERY_CATALOGS,
-        _SKILL_CANDIDATE_CATALOG, *_RUNTIME_EVENT_INDEX_CATALOGS, _RUNTIME_SOURCE_RELEASE_CATALOG,
+        _SKILL_CANDIDATE_CATALOG, *RUNTIME_EVENT_INDEX_CATALOGS, _RUNTIME_SOURCE_RELEASE_CATALOG,
     ),
     _RUNTIME_REPLAY_CHECKPOINT_SCHEMA_VERSION: (
         *_INITIAL_MATERIALIZATION_CATALOGS, _CONSOLIDATION_CATALOG, *_DELIVERY_CATALOGS,
-        _SKILL_CANDIDATE_CATALOG, *_RUNTIME_EVENT_INDEX_CATALOGS, _RUNTIME_SOURCE_RELEASE_CATALOG,
+        _SKILL_CANDIDATE_CATALOG, *RUNTIME_EVENT_INDEX_CATALOGS, _RUNTIME_SOURCE_RELEASE_CATALOG,
         _DELIVERY_RESTORE_HOLD_CATALOG,
     ),
 }
@@ -846,7 +846,7 @@ class PartitionDataRepository:
             "CREATE TABLE runtime_event_batches ("
             " sequence INTEGER PRIMARY KEY, record_json TEXT NOT NULL)"
         )
-        for catalog, key, payload in (*_RUNTIME_EVENT_INDEX_CATALOGS, _SKILL_CANDIDATE_CATALOG):
+        for catalog, key, payload in (*RUNTIME_EVENT_INDEX_CATALOGS, _SKILL_CANDIDATE_CATALOG):
             connection.execute(
                 f"CREATE TABLE {catalog} ({key} TEXT PRIMARY KEY NOT NULL, {payload} TEXT NOT NULL)"
             )
@@ -949,7 +949,7 @@ class PartitionDataRepository:
 
     @staticmethod
     def runtime_replay_binding_rows(connection: sqlite3.Connection) -> Iterator[Iterator[tuple[str, str]]]:
-        for catalog, key, payload in _RUNTIME_EVENT_INDEX_CATALOGS:
+        for catalog, key, payload in RUNTIME_EVENT_INDEX_CATALOGS:
             rows = connection.execute(f"SELECT {key}, {payload} FROM {catalog}")
             rows.row_factory = None
             yield ((str(row[0]), str(row[1])) for row in rows)
@@ -966,7 +966,7 @@ class PartitionDataRepository:
         record_json: str,
         bindings: tuple[dict[str, str], dict[str, str], dict[str, str]],
     ) -> None:
-        for (catalog, key, payload), identity_rows in zip(_RUNTIME_EVENT_INDEX_CATALOGS, bindings, strict=True):
+        for (catalog, key, payload), identity_rows in zip(RUNTIME_EVENT_INDEX_CATALOGS, bindings, strict=True):
             connection.executemany(
                 f"INSERT INTO {catalog} ({key}, {payload}) VALUES (?, ?)",
                 identity_rows.items(),

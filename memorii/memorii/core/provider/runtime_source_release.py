@@ -10,7 +10,11 @@ from typing import Annotated, Literal, Self
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from memorii.core.consolidation.runtime_outputs import MAX_CONSOLIDATION_SOURCE_REFERENCES, ConsolidationSourceReference
-from memorii.core.memory_evolution.admission import _index_digest, _index_id, source_admission_source_digest
+from memorii.core.memory_evolution.admission import (
+    source_admission_index_record_id,
+    source_admission_record_content_digest,
+    source_admission_source_digest,
+)
 from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedIngressContext, OperationFenceBinding
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.store import record_digest
@@ -162,7 +166,7 @@ def _release_is_current(
         if not _observation_matches(connection, repository, grant):
             return False
         source = _record(connection, repository, admission.source_id)
-        index = _record(connection, repository, _index_id(admission.delivery_key_digest))
+        index = _record(connection, repository, source_admission_index_record_id(admission.delivery_key_digest))
         return (
             source is not None and index is not None
             and source.memory_id == admission.source_id
@@ -177,7 +181,7 @@ def _release_is_current(
             and source_admission_source_digest(source) == admission.provider_source_digest
             and index.source_kind == "semantic_ingestion_admission_index"
             and record_digest(index) == grant.source_index_record_digest
-            and _index_digest(index) == admission.admission_index_digest
+            and source_admission_record_content_digest(index) == admission.admission_index_digest
             and revoked.keeps_record(source) and revoked.keeps_record(index)
         )
     except (TypeError, ValueError):
@@ -317,7 +321,7 @@ class RuntimeSourceReleaseAuthority:
                 or evidence.retained_at != source.retained_at
             ):
                 raise _denied()
-            index = _record(connection, repository, _index_id(source.delivery_key_digest))
+            index = _record(connection, repository, source_admission_index_record_id(source.delivery_key_digest))
             if index is None:
                 raise _denied()
             grant_id = _grant_id(origin.generation_id, task.task_id, origin.principal, source.source_id)

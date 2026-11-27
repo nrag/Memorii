@@ -25,6 +25,7 @@ from memorii.core.storage_administration.operator_backup import BackupRestoreOpe
 from memorii.core.storage_administration.operator_governance import ForgetTargetSelector, GovernanceOperator
 from memorii.core.storage_administration.service import StorageAdministrationService
 from memorii.domain.enums import CommitStatus, MemoryDomain
+from memorii.stores.sqlite.partition import LEGACY_RUNTIME_UPGRADE_SCHEMA_VERSION
 
 _RECOVERY_KEY = b"k" * 32
 _OWNER = "owner:backup-test"
@@ -49,9 +50,10 @@ def _set_mode(operator: StorageAdministrationOperator, owner: OwnerCapability, m
 
 
 @pytest.fixture
-def installation(tmp_path: Path) -> Path:
+def installation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root = tmp_path / "installation"
-    with StorageAdministrationService(root) as service:
+    with monkeypatch.context() as legacy, StorageAdministrationService(root) as service:
+        legacy.setattr("memorii.stores.sqlite.partition.PARTITION_SCHEMA_VERSION", LEGACY_RUNTIME_UPGRADE_SCHEMA_VERSION)
         service.initialize()
         service.publish_memory_plane_batch((_record("memory:before"),))
         _set_mode(StorageAdministrationOperator(service), mint_owner_capability(service, _OWNER), "read_only")
@@ -340,7 +342,7 @@ def test_erasure_waits_for_backup_plaintext_cleanup(
     erasure_waiting = Event()
     partition = installation / "partition"
     original_copy = operator_backup._sqlite_backup
-    original_guard = operator_backup._backup_lifetime_guard
+    original_guard = operator_backup.backup_lifetime_guard
 
     @contextmanager
     def observed_guard(service: StorageAdministrationService, *, exclusive: bool) -> Iterator[None]:
@@ -376,7 +378,7 @@ def test_erasure_waits_for_backup_plaintext_cleanup(
             reviewed = governance.plan_erasure(capability=owner).model_copy(update={"acknowledged": True})
             return governance.apply_erasure(capability=owner, plan=reviewed, erase=True).incomplete
 
-    monkeypatch.setattr(operator_backup, "_backup_lifetime_guard", observed_guard)
+    monkeypatch.setattr(operator_backup, "backup_lifetime_guard", observed_guard)
     monkeypatch.setattr(operator_backup, "_sqlite_backup", copy_during_erasure_request)
     with ThreadPoolExecutor(max_workers=2) as executor:
         backup = executor.submit(make_backup)

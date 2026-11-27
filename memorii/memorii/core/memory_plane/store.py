@@ -97,7 +97,7 @@ class MemoryPlaneWriteAuthorization:
 
 
 @dataclass(frozen=True)
-class _RuntimeCandidateWriteAuthorization(MemoryPlaneWriteAuthorization):
+class RuntimeCandidateWriteAuthorization(MemoryPlaneWriteAuthorization):
     """In-process authorization for one exact immutable candidate effect."""
 
     memory_id: str
@@ -868,7 +868,7 @@ def validate_governed_write(
         record = reserved[0]
         if (
             len(records) != 1
-            or not isinstance(authorization, _RuntimeCandidateWriteAuthorization)
+            or not isinstance(authorization, RuntimeCandidateWriteAuthorization)
             or record.source_kind != RUNTIME_WRITEBACK_CANDIDATE_SOURCE_KIND
             or not record.memory_id.startswith(RUNTIME_WRITEBACK_CANDIDATE_ID_PREFIX)
             or record.status != CommitStatus.CANDIDATE

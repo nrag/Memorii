@@ -20,11 +20,11 @@ from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.scoped_context.authority import ResolvedScopedReadGrant
 from memorii.core.scoped_context.service import (
     LegacyBootstrapV3ProjectionReadVerifier,
-    _authorized,
-    _current_eligible,
-    _inner_scope_agrees,
-    _is_new_structured_claim_projection,
-    _source_closure_ids,
+    claim_state_scope_agrees,
+    is_structured_claim_projection,
+    record_is_current,
+    record_is_in_scoped_read_grant,
+    source_closure_ids,
     verify_structured_catalog_projection_for_read,
 )
 from memorii.core.semantic_ingestion.catalog_authority import (
@@ -829,7 +829,7 @@ def _native_source_verified(
         evidence = SourceAuthorityEvidence.model_validate(projection.content.get("source_authority_evidence"))
         return (
             source.status is CommitStatus.COMMITTED
-            and _current_eligible(source, now)
+            and record_is_current(source, now)
             and source.memory_id == evidence.source_id == projection.content.get("source_id")
             and source_admission_source_digest(source) == evidence.source_digest == projection.content.get("source_digest")
             and source.user_id == projection.user_id
@@ -859,9 +859,9 @@ def read_current_catalog_bound_facts(
     projections: dict[str, list[CanonicalMemoryRecord]] = {}
     state_records: dict[str, list[CanonicalMemoryRecord]] = {}
     for record in records:
-        if record.domain is not MemoryDomain.SEMANTIC or not _authorized(record, grant):
+        if record.domain is not MemoryDomain.SEMANTIC or not record_is_in_scoped_read_grant(record, grant):
             continue
-        if _is_new_structured_claim_projection(record):
+        if is_structured_claim_projection(record):
             predicate, subject, value, is_entity = _native_selectors(record)
             claim_id = record.content.get("claim_assertion_id")
             if isinstance(claim_id, str) and predicate == predicate_id and (
@@ -901,7 +901,7 @@ def read_current_catalog_bound_facts(
             record.domain is MemoryDomain.SEMANTIC
             and record.visibility is MemoryRecordVisibility.RUNTIME_CONTEXT
             and record.status is CommitStatus.COMMITTED
-            and _is_new_structured_claim_projection(record)
+            and is_structured_claim_projection(record)
             and isinstance(claim_id := record.content.get("claim_assertion_id"), str)
             and claim_id in state_records
             and claim_id not in live_projections
@@ -1013,7 +1013,7 @@ def read_current_catalog_bound_facts(
         if state is not None:
             claim_ids.update((state.claim_id, state.source_claim_id))
         if state_record is not None:
-            source_ids.update(_source_closure_ids(state_record, by_id))
+            source_ids.update(source_closure_ids(state_record, by_id))
         if projection is not None:
             predicate, subject, value, is_entity = _native_selectors(projection)
             if isinstance(subject, str):
@@ -1025,8 +1025,8 @@ def read_current_catalog_bound_facts(
             if isinstance(source, str):
                 source_ids.add(source)
                 if retained_source is not None:
-                    source_ids.update(_source_closure_ids(retained_source, by_id))
-            source_ids.update(_source_closure_ids(projection, by_id))
+                    source_ids.update(source_closure_ids(retained_source, by_id))
+            source_ids.update(source_closure_ids(projection, by_id))
             try:
                 identity = AcceptedClaimIdentity.model_validate_json(json.dumps(projection.content.get("claim_identity")))
             except (TypeError, ValueError):
@@ -1056,15 +1056,15 @@ def read_current_catalog_bound_facts(
 
             state_verified = not states or (
                 len(states) == 1 and state_record is not None and state is not None
-                and _inner_scope_agrees(state_record) and state.claim_key.subject_entity_id == subject
+                and claim_state_scope_agrees(state_record) and state.claim_key.subject_entity_id == subject
                 and state.claim_key.predicate_id == predicate_id and state.object_value == value
-                and bool(_source_closure_ids(state_record, by_id))
+                and bool(source_closure_ids(state_record, by_id))
             )
             provenance_verified = all(
                 (dependency := by_id.get(source_id)) is not None
                 and (
                     source_id == source
-                    or (_authorized(dependency, grant) and _current_eligible(dependency, now))
+                    or (record_is_in_scoped_read_grant(dependency, grant) and record_is_current(dependency, now))
                 )
                 for source_id in source_ids
             )

@@ -10,7 +10,7 @@ from typing import Annotated, Literal
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from memorii.core.consolidation.runtime_outputs import ConsolidationSourceReference
-from memorii.core.memory_evolution.admission import GovernedSourceAdmissionService, _index_id
+from memorii.core.memory_evolution.admission import GovernedSourceAdmissionService, source_admission_index_record_id
 from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedIngressContext, OperationFenceBinding
 from memorii.core.memory_evolution.source_governance import semantic_required_outcome_scopes_for_retained_source
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
@@ -121,7 +121,7 @@ def resolve_runtime_source(
         raise _denied()
 
     source_id = operation_fence.source_id
-    index_id = _index_id(binding.delivery_key_digest)
+    index_id = source_admission_index_record_id(binding.delivery_key_digest)
     source_row = partition.read_current_record_row(connection, source_id)
     index_row = partition.read_current_record_row(connection, index_id)
     if source_row is None or index_row is None:

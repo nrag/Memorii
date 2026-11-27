@@ -90,10 +90,14 @@ def test_write_begin_rechecks_cache_after_an_unfenced_external_change(
         assert service._control.read_pending_intent(service._repository_id()) is None
 
 
-def test_tracker_honors_savepoint_rollback_and_replace_secondary_unique_key(tmp_path: Path) -> None:
+def test_tracker_honors_savepoint_rollback_and_replace_secondary_unique_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from memorii.stores.sqlite.materialization_sql import capture_manifest_changes
-    from memorii.stores.sqlite.partition import PartitionDataRepository
+    from memorii.stores.sqlite.partition import LEGACY_RUNTIME_UPGRADE_SCHEMA_VERSION, PartitionDataRepository
 
+    # This SQL fixture exercises the retained inline-record projection.
+    monkeypatch.setattr("memorii.stores.sqlite.partition.PARTITION_SCHEMA_VERSION", LEGACY_RUNTIME_UPGRADE_SCHEMA_VERSION)
     with PartitionDataRepository(tmp_path / "data.sqlite3") as partition, partition.transaction(write=True) as connection:
         connection.execute(
             "INSERT INTO memory_current_records VALUES ('first', '{}', 'committed', 'transcript', 'raw', 1)",

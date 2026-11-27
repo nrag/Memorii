@@ -18,6 +18,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Event
+from unittest.mock import patch
 
 from owner_boundary_probe import (
     _CLIENT,
@@ -214,11 +215,13 @@ def _fixture(root: Path) -> tuple[str, int, str, str, bytes]:
     from memorii.core.memory_plane.models import CanonicalMemoryRecord
     from memorii.core.storage_administration.service import StorageAdministrationService
     from memorii.domain.enums import CommitStatus, MemoryDomain
+    from memorii.stores.sqlite.partition import LEGACY_RUNTIME_UPGRADE_SCHEMA_VERSION
     from tests.support.reference_capacity import TaskAllocation
     from tests.support.reference_capacity_fixture import _prepare
 
     allocation = TaskAllocation("balanced", 0, 3, 9, 0, 0, 2)
-    _prepare(root, "balanced", (allocation,), raw_payloads=True)
+    with patch("memorii.stores.sqlite.partition.PARTITION_SCHEMA_VERSION", LEGACY_RUNTIME_UPGRADE_SCHEMA_VERSION):
+        _prepare(root, "balanced", (allocation,), raw_payloads=True)
     with StorageAdministrationService(root) as owner:
         owner.publish_memory_plane_batch((CanonicalMemoryRecord(
             memory_id="release-race-body", domain=MemoryDomain.TRANSCRIPT,
@@ -268,7 +271,7 @@ def _checked_client(child: subprocess.Popen, expected: bytes, minimum: int, maxi
     return result
 
 
-def _mutate(root: Path, case: str) -> None:
+def _mutate(root: Path, case: str, credential_fd: int) -> None:
     if case in {"invalid_signature", "different_publication"}:
         _publication_change(root, case)
     elif case.startswith("rotate"):
@@ -278,7 +281,9 @@ def _mutate(root: Path, case: str) -> None:
         previous = sys.stdin.buffer.readline(256)
         if not previous.endswith(b"\n"):
             raise RuntimeError("missing credential expected by the fixture controller")
-        print(rotate_fixture_credential(root, previous[:-1].decode("ascii")), flush=True)
+        credential = rotate_fixture_credential(root, previous[:-1].decode("ascii"))
+        with os.fdopen(credential_fd, "wb") as credential_pipe:
+            credential_pipe.write(credential.encode("ascii") + b"\n")
     elif case == "revoke_under_pressure":
 
         from memorii.core.harness_state.grant_registry import GrantEpochRegistry
@@ -293,12 +298,22 @@ def _mutate(root: Path, case: str) -> None:
 def _change_authority(root: Path, case: str, secret: str) -> str | None:
     # The owner UID performs mutations. The controller uses a private
     # subprocess pipe for bearer secrets and publishes no credential contents.
-    result = subprocess.run(
-        [sys.executable, "-B", "-W", "error", __file__, "mutate", str(root), case],
-        user=_SERVICE, group=_SERVICE, extra_groups=[], input=secret + "\n", text=True,
-        stdout=subprocess.PIPE, check=True, timeout=10,
-    )
-    return result.stdout.strip() if case.startswith("rotate") else None
+    read_fd, write_fd = os.pipe()
+    with os.fdopen(read_fd, "rb") as credential_pipe:
+        try:
+            subprocess.run(
+                [sys.executable, "-B", "-W", "error", __file__, "mutate", str(root), case, str(write_fd)],
+                user=_SERVICE, group=_SERVICE, extra_groups=[], input=secret + "\n", text=True,
+                stdout=subprocess.DEVNULL, pass_fds=(write_fd,), check=True, timeout=10,
+            )
+        finally:
+            os.close(write_fd)
+        if case.startswith("rotate"):
+            line = credential_pipe.readline(256)
+            if not line.endswith(b"\n"):
+                raise RuntimeError("missing replacement credential from the fixture owner")
+            return line[:-1].decode("ascii")
+        return None
 
 
 def _probe_lock(root: Path) -> int:
@@ -427,7 +442,7 @@ def main() -> int:
     elif action == "client":
         _client(Path(args[0]), args[1] == "1")
     elif action == "mutate":
-        _mutate(Path(args[0]), args[1])
+        _mutate(Path(args[0]), args[1], int(args[2]))
     elif action == "probe-lock":
         return _probe_lock(Path(args[0]))
     elif action == "hold-liveness":

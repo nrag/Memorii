@@ -354,10 +354,15 @@ def test_installed_catalog_read_workflow_needs_no_key_or_write_tool(tmp_path, mo
         state_record = record_from_claim_state(state=state, source_candidate_id="partner-evidence").model_copy(
             update={"agent_id": partner.agent_id},
         )
-        foreign_state = state_record.model_copy(update={"user_id": "foreign-account"})
+        foreign_key = state.claim_key.model_copy(update={
+            "scope": state.claim_key.scope.model_copy(update={"user_id": "foreign-account"}),
+        })
+        foreign_state = record_from_claim_state(
+            state=state.model_copy(update={"claim_key": foreign_key}), source_candidate_id="partner-evidence",
+        ).model_copy(update={"agent_id": partner.agent_id})
         peer_state = state_record.model_copy(update={"agent_id": "peer-agent"})
 
-        def diagnose_with_claim_state(candidate, *, include_original=True):
+        def diagnose_with_claim_state(candidate, *, include_original=True, reference_time=None):
             def read_with_claim_state(**kwargs):
                 records = kwargs["records"]
                 if not include_original:
@@ -367,6 +372,8 @@ def test_installed_catalog_read_workflow_needs_no_key_or_write_tool(tmp_path, mo
 
             with monkeypatch.context() as scoped:
                 scoped.setattr(catalog_read_workflow, "read_current_catalog_bound_facts", read_with_claim_state)
+                if reference_time is not None:
+                    scoped.setattr(generic._adapter._service, "_now_provider", lambda: reference_time)
                 return generic.diagnose_structured_recall(partner_request).model_dump(mode="json")
 
         for hidden in (foreign_state, peer_state):
@@ -377,6 +384,14 @@ def test_installed_catalog_read_workflow_needs_no_key_or_write_tool(tmp_path, mo
         assert [(item["claim_id"], item["object_value"], item["derived_direction"]) for item in carried["items"]] == [
             (state.claim_id, subject_ids["partner_of"], "reverse"),
         ]
+        start = datetime.now(UTC)
+        end = start + timedelta(minutes=1)
+        bounded_state = state.model_copy(update={"valid_from": start, "valid_to": end})
+        bounded_record = record_from_claim_state(
+            state=bounded_state, source_candidate_id="partner-evidence",
+        ).model_copy(update={"agent_id": partner.agent_id})
+        assert diagnose_with_claim_state(bounded_record, reference_time=start)["status"] == "found"
+        assert diagnose_with_claim_state(bounded_record, reference_time=end) == {"status": "no_readable_fact"}
 
         def suppress_before_release(**kwargs):
             pending = original_read(**kwargs)

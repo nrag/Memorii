@@ -915,7 +915,7 @@ class GovernanceOperator:
 
             from memorii.core.persistence.contracts import canonical_json_digest
             from memorii.core.storage_administration.generation_selection import PARTITION_GENERATION_SELECTOR
-            from memorii.core.storage_administration.operator_backup import _backup_lifetime_guard
+            from memorii.core.storage_administration.operator_backup import backup_lifetime_guard
 
             def remove_error(
                 _operation: Callable[..., object], _path: str,
@@ -926,7 +926,7 @@ class GovernanceOperator:
                 if not isinstance(failure[1], FileNotFoundError):
                     raise failure[1]
 
-            with _backup_lifetime_guard(service, exclusive=True), service._publication_fence():
+            with backup_lifetime_guard(service, exclusive=True), service._publication_fence():
                 require_owner_capability(service, capability)
                 state = service._control_state()
                 journal_entry = service._journal_entry(

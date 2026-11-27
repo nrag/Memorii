@@ -312,7 +312,7 @@ class _VerifiedBackup:
     control_tip_digest: str
 
 
-def _backup_lifetime_guard(service: StorageAdministrationService, *, exclusive: bool):
+def backup_lifetime_guard(service: StorageAdministrationService, *, exclusive: bool):
     # Erasure takes this before the publication fence, so it cannot finish
     # while a backup still retains readers or plaintext outside that fence.
     return locked_file(service.installation_root / "control" / ".backup-lifetime.lock", exclusive=exclusive)
@@ -522,7 +522,7 @@ class BackupRestoreOperator:
             raise OperatorError("invalid_request: use a fresh backup directory")
         archive_root.parent.mkdir(parents=True, exist_ok=True)
         with (
-            _backup_lifetime_guard(service, exclusive=False),
+            backup_lifetime_guard(service, exclusive=False),
             tempfile.TemporaryDirectory(prefix=".backup-", dir=archive_root.parent) as scratch,
             tempfile.TemporaryDirectory(
                 prefix=".backup-plaintext-", dir=service.installation_root / "partition",

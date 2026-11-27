@@ -471,8 +471,39 @@ The user confirmed that ontology ships on the shared
 runtime-overlay and capture work is included in combined branch verification.
 Its current working tree already resolves the previously recorded whole-tree
 Ruff and Pyright failures. Both checks passed locally on the combined tree.
-GitHub confirmed the branch has no existing pull request and the current
-remote main and v8 heads are `885c7db7` and `0bbc68a2`, respectively.
+The runtime and static fixes landed at `2ea415c8`. The native capture
+and harness regression run passed 15 tests. The shared branch now
+includes ontology at `1d4d4756`, pushed to origin. [Draft PR #126](https://github.com/nrag/Memorii/pull/126)
+started PR Gates against main `885c7db7`. The initial mergeability check
+reported a mergeable branch behind main by one merge commit. GitHub
+results remain pending.
+
+The [first PR Gates run](https://github.com/nrag/Memorii/actions/runs/46079693423)
+passed Static Analysis, Package Smoke and Durable Runtime Integration.
+The local Linux Package Smoke block also passed for all 1,949 matching
+manifest pins. Its 1,969 checked package inputs matched `1d4d4756` bytes.
+Durable Storage failed on a savepoint/replace fixture that used v7 inline
+SQL against the v8 default. The fixture now selects its intended legacy
+schema and all four incremental materialization tests passed locally.
+Benchmark Contract Tests exposed cross-module private imports in the
+protected read and existing runtime paths. The owning modules now expose
+the same helpers to those callers without changing their behavior.
+CodeQL flagged a test credential written to stdout. The isolated Linux
+custody fixture now transfers the rotated credential through a dedicated,
+inherited pipe. Both rotation scenarios and revocation under backpressure
+passed with that change.
+
+The combined v8 scoped-context suite passed all 146 cases locally at
+`1d4d4756` inputs. The existing installed case took 464.89 seconds.
+The final verification delta reuses existing test nodes for the early
+overlay guard, durable selected-version corruption, and seed-to-default
+historical continuity. The 27 focused core cases and installed early
+overlay case passed. Final installed same-version correction/retraction
+and scope/carrier tests are running against the frozen gate-fix source.
+An earlier live candidate crossed package identities while files changed
+and correctly rejected reopen. That run supplies no acceptance evidence.
+Targeted review cleared the private-pipe, exported-helper and v7 fixture
+changes. The package manifest was refreshed against the changed module bytes.
 
 No unresolved approved-design choice. The bill workflow and package gate
 have local verification. Milestone closure still requires the remaining
@@ -483,8 +514,8 @@ as branch-level gate evidence.
 
 ## Next Action
 
-Finish the bounded Level 2 acceptance witnesses, then verify and publish
-the integrated v8 candidate on the existing branch.
+Finish the bounded Level 2 acceptance witnesses and reconcile the exact
+GitHub gate run before milestone closure.
 
 ## Outcome and Retrospective
 

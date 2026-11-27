@@ -15,7 +15,7 @@ from memorii.core.harness_state.writeback_decision import WritebackDecisionError
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.store import (
     RecordAbsentPrecondition,
-    _RuntimeCandidateWriteAuthorization,
+    RuntimeCandidateWriteAuthorization,
     record_digest,
 )
 from memorii.core.persistence.contracts import InstallationControlState, RuntimePublicationState
@@ -396,7 +396,7 @@ class ManagedCandidateDeliveryWorker:
             connection, (candidate,), expected_revision=None,
             expected_write_revision=effect.revision - 1,
             preconditions=(RecordAbsentPrecondition(memory_id=effect.record_id),),
-            authorization=_RuntimeCandidateWriteAuthorization(effect.record_id, effect.record_digest),
+            authorization=RuntimeCandidateWriteAuthorization(effect.record_id, effect.record_digest),
         )
 
     @staticmethod

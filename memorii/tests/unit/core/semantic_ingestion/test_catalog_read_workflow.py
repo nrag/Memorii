@@ -32,6 +32,7 @@ from memorii.core.semantic_ingestion.catalog_authority import (
     SelectedCatalogAuthorityRepository,
     SourceScopeGrant,
     StructuredFactReadAuthority,
+    catalog_version_memory_id,
 )
 from memorii.core.semantic_ingestion.catalog_capture_pin import PackageIndexedCatalogBundleLocator
 from memorii.core.storage_administration.revoked_identity_view import empty_revoked_view
@@ -43,7 +44,7 @@ from memorii.domain.enums import MemoryDomain
 def catalog_planes(request, tmp_path):
     if request.param == "memory":
         plane = MemoryPlaneService()
-        yield plane, plane, None
+        yield plane, plane, None, None
         return
     with StorageAdministrationService(tmp_path) as owner:
         owner.initialize()
@@ -51,7 +52,7 @@ def catalog_planes(request, tmp_path):
     write_owner, write_plane = open_managed_partition(tmp_path)
     try:
         database_path = write_owner.partition().database_path
-        yield read_plane, write_plane, database_path.with_name(database_path.name + ".lock")
+        yield read_plane, write_plane, database_path.with_name(database_path.name + ".lock"), read_owner
     finally:
         write_owner.close()
         read_owner.close()
@@ -62,7 +63,7 @@ def test_catalog_installation_version_change_precedes_membership_and_fact_reads(
     monkeypatch, catalog_planes, revoked_kind: str,
 ) -> None:
     now = datetime(2026, 11, 27, tzinfo=UTC)
-    plane, writer_plane, partition_lock = catalog_planes
+    plane, writer_plane, partition_lock, read_owner = catalog_planes
     scope = CatalogAuthorityScope(schema_version=1, kind="base")
     authenticated = AuthenticatedPrincipalAgent(principal_id="alice", agent_id="assistant")
     fact = FactScopeGrant(
@@ -213,6 +214,28 @@ def test_catalog_installation_version_change_precedes_membership_and_fact_reads(
         "kind": "exact", "predicate_id": "unknown_relation", "subject_entity_id": "opaque-subject",
         "expected_catalog_version_digest": default.version.version_digest,
     }) == "unsupported_predicate"
+
+    snapshot = plane.read_snapshot_linearized
+    selected_version_id = catalog_version_memory_id(default.version)
+
+    def snapshot_without_selected_version(callback):
+        return snapshot(lambda revision, records: callback(revision, tuple(
+            record for record in records if record.memory_id != selected_version_id
+        )))
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(plane, "read_snapshot_linearized", snapshot_without_selected_version)
+        assert diagnose({
+            "kind": "exact", "predicate_id": "project_owner", "subject_entity_id": "opaque-subject",
+            "expected_catalog_version_digest": expected,
+        }) == "unavailable"
+        response = read_catalog_workflow(
+            {"kind": "name", "name": "project owner"}, operation="inspect", ingress=ingress,
+            host_request=host_request, host_authority=host, memory_plane=plane, locator=locator,
+            now_provider=lambda: now, legacy_verifier=Mock(), suppression_view=lambda _: empty_revoked_view(),
+        )
+        assert response.model_dump(mode="json") == {"status": "unavailable"}
+
     selection = Mock(side_effect=AssertionError("no selected catalog should be probed"))
     monkeypatch.setattr(locator, "locate_selected", selection)
     assert diagnose({"kind": "unresolved", "reference": "subject"}) == "needs_clarification"
@@ -222,9 +245,16 @@ def test_catalog_installation_version_change_precedes_membership_and_fact_reads(
     # The managed guard can refuse a snapshot before dispatch ever enters the
     # callback. Both public shapes are safe and disjoint from read denial.
     with monkeypatch.context() as scoped:
-        scoped.setattr(plane, "read_snapshot_linearized", Mock(side_effect=InstallationIntegrityError(
-            "private partition state",
-        )))
+        if read_owner is None:
+            scoped.setattr(plane, "read_snapshot_linearized", Mock(side_effect=InstallationIntegrityError(
+                "private partition state",
+            )))
+        else:
+            path, publication = read_owner._active_partition_selection()
+            scoped.setattr(
+                read_owner, "_active_partition_selection",
+                lambda: (path.with_name("new-generation.sqlite3"), publication),
+            )
         assert diagnose({"kind": "unresolved", "reference": "subject"}) == "unavailable"
         response = read_catalog_workflow(
             {"kind": "name", "name": "project owner"}, operation="inspect", ingress=ingress,

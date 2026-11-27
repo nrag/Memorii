@@ -14,7 +14,7 @@ from measure_sealed_startup import prepare_fixture
 from memorii.core.harness_state.grant_registry import GrantRegistryError
 from memorii.core.memory_plane.file_lock import locked_file
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
-from memorii.core.storage_administration.operator_backup import _backup_lifetime_guard
+from memorii.core.storage_administration.operator_backup import backup_lifetime_guard
 from memorii.core.storage_administration.service import StorageAdministrationService
 from memorii.domain.enums import CommitStatus, MemoryDomain
 from retained_vfs_probe import ReleaseDenied
@@ -171,7 +171,7 @@ def test_drained_worker_hands_off_to_ordinary_verified_v8_writer(
         return original(self, connection, finalized, **kwargs)
 
     monkeypatch.setattr(StorageAdministrationService, "_matches_materialization", observe_exact)
-    with StorageAdministrationService(root) as owner, _backup_lifetime_guard(owner, exclusive=True):
+    with StorageAdministrationService(root) as owner, backup_lifetime_guard(owner, exclusive=True):
         assert owner.acquire_verified_snapshot().tuple_digest == expected
         assert exact_calls == [expected]
         change_mode(owner, "active")

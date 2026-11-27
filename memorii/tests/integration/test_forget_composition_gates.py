@@ -389,13 +389,13 @@ def test_crash_cut_recovers_and_stops_serving(tmp_path) -> None:
 
         from memorii.core.memory_evolution import MemoryQueryRequest
         from memorii.core.memory_evolution.service import MemoryEvolutionService
-        from memorii.core.scoped_context.service import _current_eligible
+        from memorii.core.scoped_context.service import record_is_current
 
         now = datetime.now(UTC)
         claim = reopened_plane.get_record(
             "mem:evolution:claim:claim:parity"
         )
-        assert claim is not None and _current_eligible(claim, now) is False
+        assert claim is not None and record_is_current(claim, now) is False
         view = view_from_control_root(root / "control", records=reopened_plane.list_records())
         assert view.is_revoked_entity("entity:parity")
         evolution = MemoryEvolutionService(

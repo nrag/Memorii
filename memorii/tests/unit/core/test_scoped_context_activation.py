@@ -331,23 +331,38 @@ def _schema2_structured_projection_records():
 
 def test_schema2_catalog_read_releases_verified_persisted_version_after_jsonl_reopen(tmp_path) -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
-    projection, binding, states, pin, version, read_authority = _schema2_structured_projection_records()
+    projection, binding, states, pin, _version, read_authority = _schema2_structured_projection_records()
     store = JsonlMemoryPlaneStore(tmp_path / "valid")
     with store._locked(exclusive=True):
         store._replace_batches([
             PersistedBatch.create(
                 revision=1, data_revision=1,
-                records=(projection, binding, *states, pin, version),
+                records=(projection, binding, *states, pin),
             ),
         ])
-    reopened = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "valid"))
+    plane = MemoryPlaneService(record_store=store)
     authority = InProcessScopedReadAuthority(now_provider=lambda: now)
     handle = _structured_read_handle(authority, now=now, read_authority=read_authority)
-    result = ProviderMemoryService(memory_plane=reopened, scoped_read_authority=authority).retrieve_context(
-        _request(), opaque_host_ingress=handle,
-    )
+    runtime = ProviderMemoryService(memory_plane=plane, scoped_read_authority=authority)
+    runtime.ensure_catalog_seed_genesis()
+    seed = runtime._catalog_selection_repository.resolve_selected_bundle()
+    before_install = runtime.retrieve_context(_request(), opaque_host_ingress=handle)
+    assert before_install.status is ScopedContextStatus.PARTIAL_OPTIONAL
+    runtime.ensure_default_catalog_release()
+    selected = runtime._catalog_selection_repository.resolve_selected_bundle()
+    assert selected.catalog.catalog_digest == seed.catalog.catalog_digest
+    assert selected.version.version_digest != seed.version.version_digest
+    assert plane.get_record(pin.memory_id) == pin
+    assert plane.get_record(binding.memory_id) == binding
+
+    reopened = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "valid"))
+    service = ProviderMemoryService(memory_plane=reopened, scoped_read_authority=authority)
+    after_reopen = service._catalog_selection_repository.resolve_selected_bundle()
+    assert after_reopen.version.version_digest == selected.version.version_digest
+    result = service.retrieve_context(_request(), opaque_host_ingress=handle)
     assert result.status is ScopedContextStatus.PARTIAL_OPTIONAL
-    assert [item.record_id for item in result.mandatory_items] == [projection.memory_id]
+    assert result.mandatory_items == before_install.mandatory_items
+    assert tuple(item.record_id for item in result.mandatory_items) == (projection.memory_id,)
 
 
 @pytest.mark.parametrize("version_mode", ("missing", "substituted"))

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import socket
 import sys
 import tomllib
@@ -18,15 +19,65 @@ from memorii.core.memory_evolution.atomic_store import StructuredSubmissionGrant
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.provider.models import ProviderOperation
+from memorii.core.scoped_context.authority import ScopedNamespaceGrantRow
+from memorii.core.semantic_ingestion.catalog_authority import (
+    CatalogOwnerVisibilityGrant,
+    FactScopeGrant,
+    StructuredGrantState,
+)
 from memorii.core.semantic_ingestion.default_catalog_corpus import (
     EXPECTED_DEFAULT_RELATION_IDS,
     DefaultCatalogCorpusRow,
     load_default_catalog_acceptance_corpus,
 )
+from memorii.domain.enums import MemoryDomain
+from memorii.integrations.catalog_read_binding import CatalogReadGrantReference, CatalogReadOptIn
+from memorii.integrations.hermes_local_authority import load_local_level2_authority
 from tests.fixtures.semantic_ingestion.default_catalog_proposals import (
     DefaultCatalogProposalFixture,
     build_default_catalog_proposal,
 )
+
+
+def _catalog_read_opt_in(
+    home: Path, *, user_id: str, projection: CanonicalMemoryRecord, records: tuple[CanonicalMemoryRecord, ...],
+) -> CatalogReadOptIn:
+    installation_id = load_local_level2_authority(hermes_home=home)["installation_id"]
+    assert isinstance(installation_id, str)
+    grants = [
+        StructuredGrantState.model_validate(record.content["state"])
+        for record in records if record.source_kind == "semantic_ingestion_structured_grant_state"
+    ]
+    (fact_grant,) = [state.grant for state in grants if state.active and isinstance(state.grant, FactScopeGrant)]
+    catalog_grants = [
+        state.grant for state in grants if state.active and isinstance(state.grant, CatalogOwnerVisibilityGrant)
+    ]
+    return CatalogReadOptIn(
+        installation_id=installation_id,
+        storage_root=home / "memorii",
+        user_id=user_id,
+        agent_id=fact_grant.authenticated.agent_id,
+        fact_scope=fact_grant.fact_scope,
+        rows=(ScopedNamespaceGrantRow(
+            domain=MemoryDomain.SEMANTIC,
+            task_id=projection.task_id,
+            session_id=projection.session_id,
+            user_id=projection.user_id,
+            agent_id=projection.agent_id,
+            execution_node_id=projection.execution_node_id,
+            solver_run_id=projection.solver_run_id,
+        ),),
+        grant_references=tuple(
+            CatalogReadGrantReference(
+                catalog_scope=catalog_grant.catalog_scope,
+                fact_grant_id=fact_grant.grant_id,
+                fact_grant_version=fact_grant.grant_version,
+                catalog_grant_id=catalog_grant.grant_id,
+                catalog_grant_version=catalog_grant.grant_version,
+            )
+            for catalog_grant in catalog_grants
+        ),
+    )
 
 
 @pytest.fixture
@@ -1881,12 +1932,22 @@ def test_installed_learned_overlay_preserves_default_entity_relation_lifecycle(
     provider.shutdown()
     assert replacement_object_quote in recalled
 
+    read_opt_in = _catalog_read_opt_in(
+        tmp_path, user_id="raw:user:one", projection=projection, records=records,
+    )
+    assert any(reference.catalog_scope == scope for reference in read_opt_in.grant_references)
     reopened = bridge_module.MemoriiHermesMemoryProvider()
     reopened.initialize(
         "session:default", hermes_home=tmp_path, user_id="raw:user:one",
         agent_identity="profile:primary", platform="cli", agent_context="primary",
-        agent_workspace="hermes",
+        agent_workspace="hermes", catalog_read_opt_in=read_opt_in,
     )
+    assert reopened.inspect_catalog_relation({"kind": "name", "name": "project owner"}).model_dump(mode="json") == {
+        "status": "unavailable",
+    }
+    assert reopened.diagnose_structured_recall({
+        "kind": "exact", "predicate_id": "project_owned_by", "subject_entity_id": subject_entity_id,
+    }).model_dump(mode="json") == {"status": "unavailable"}
     reopened.on_turn_start(3, f"Recall who owns {subject_quote}.")
     assert reopened.get_tool_schemas()[1]["function"]["name"] == "memorii_read_fact"
     reopened_current = reopened.handle_tool_call(
@@ -1999,7 +2060,7 @@ def test_installed_default_catalog_money_relation_commits_reads_and_revokes(
 def test_installed_default_catalog_literal_retraction_and_symmetric_reads_survive_reopen(
     bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Prove the remaining shared M3 lifecycle and symmetric read mechanics."""
+    """Exercise correction, retraction, and symmetric recall across reopen."""
     from memorii.core.semantic_ingestion.openai_responses_project_assertions import (
         OpenAIResponsesApiClient,
     )
@@ -2028,11 +2089,12 @@ def test_installed_default_catalog_literal_retraction_and_symmetric_reads_surviv
         "entry_points",
         lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
     )
+    read_opt_in = None
     provider = bridge_module.MemoriiHermesMemoryProvider()
     provider.initialize(
         "session:lifecycle-shared", hermes_home=tmp_path, user_id="raw:user:one",
         agent_identity="profile:primary", platform="cli", agent_context="primary",
-        agent_workspace="hermes",
+        agent_workspace="hermes", catalog_read_opt_in=lambda: read_opt_in,
     )
     transcript: list[dict[str, object]] = []
 
@@ -2062,6 +2124,18 @@ def test_installed_default_catalog_literal_retraction_and_symmetric_reads_surviv
     due_subject_id = initial_projection.content["claim_identity"]["subject_assertion_ref"][
         "logical_entity_id_at_assertion"
     ]
+    read_opt_in = _catalog_read_opt_in(
+        tmp_path, user_id="raw:user:one", projection=initial_projection, records=initial_records,
+    )
+    selected = provider.inspect_catalog_relation({"kind": "name", "name": "work item due date"})
+    assert selected.status == "matched"
+    diagnosis_request = {
+        "kind": "exact", "predicate_id": "work_item_due_on", "subject_entity_id": due_subject_id,
+        "expected_catalog_version_digest": selected.catalog_version_digest,
+    }
+    initial_diagnosis = provider.diagnose_structured_recall(diagnosis_request)
+    assert initial_diagnosis.status == "found"
+    assert [json.loads(item.object_value)["value"] for item in initial_diagnosis.items] == ["2026-10-03"]
     initial_due = provider.handle_tool_call(
         "memorii_read_fact",
         {"predicate_id": "work_item_due_on", "subject_entity_id": due_subject_id, "view": "current"},
@@ -2127,6 +2201,10 @@ def test_installed_default_catalog_literal_retraction_and_symmetric_reads_surviv
         {"predicate_id": "work_item_due_on", "subject_entity_id": due_subject_id, "view": "current"},
     )
     assert [item["object_value"] for item in corrected_due["items"]] == [replacement_value]
+    corrected_diagnosis = provider.diagnose_structured_recall(diagnosis_request)
+    assert corrected_diagnosis.status == "found"
+    assert [item.object_value for item in corrected_diagnosis.items] == [replacement_value]
+    assert corrected_diagnosis.items[0].catalog_version_digest == selected.catalog_version_digest
     before_retraction = datetime.now(UTC).isoformat()
     complete_turn(correction_source)
 
@@ -2161,6 +2239,9 @@ def test_installed_default_catalog_literal_retraction_and_symmetric_reads_surviv
         {"predicate_id": "work_item_due_on", "subject_entity_id": due_subject_id, "view": "current"},
     )
     assert retracted_current == {"status": "ok", "items": []}
+    assert provider.diagnose_structured_recall(diagnosis_request).model_dump(mode="json") == {
+        "status": "no_readable_fact",
+    }
     due_history = provider.handle_tool_call(
         "memorii_read_fact",
         {"predicate_id": "work_item_due_on", "subject_entity_id": due_subject_id, "view": "history"},

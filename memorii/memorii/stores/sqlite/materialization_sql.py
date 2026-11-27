@@ -11,7 +11,7 @@ from itertools import zip_longest
 
 from memorii.core.persistence.contracts import MaterializationCatalogEntry, RuntimeMaterializationManifest
 from memorii.stores.sqlite.materialization_accumulator import MaterializationAccumulator
-from memorii.stores.sqlite.partition import _RUNTIME_EVENT_INDEX_CATALOGS
+from memorii.stores.sqlite.partition import RUNTIME_EVENT_INDEX_CATALOGS
 from memorii.stores.sqlite.raw_memory_payloads import (
     RAW_CURRENT_BASE_SELECTOR,
     RAW_MEMORY_LAYOUTS,
@@ -65,7 +65,7 @@ _LAYOUTS: dict[str, _Layout] = {
 
 _CAPTURE_TABLE = "manifest_changed_keys"
 _RAW_LAYOUTS: dict[str, _Layout] = dict(sorted((_LAYOUTS | RAW_MEMORY_LAYOUTS).items()))
-_REPLAY_BINDING_CATALOGS = frozenset(catalog for catalog, _, _ in _RUNTIME_EVENT_INDEX_CATALOGS)
+_REPLAY_BINDING_CATALOGS = frozenset(catalog for catalog, _, _ in RUNTIME_EVENT_INDEX_CATALOGS)
 
 
 def _layouts_for_catalogs(catalog_names: frozenset[str]) -> dict[str, _Layout]:
