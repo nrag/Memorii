@@ -231,6 +231,29 @@ This does not certify full agent behavior or a production release. See the
 [Agent Integration Readiness Plan](docs/plans/agent_integration_readiness.md)
 for the remaining evaluation and operational requirements.
 
+### Managed Task Resume In Pi And OpenClaw
+
+Provision a task, an installation-issued host credential, a task-scoped read
+grant, and a finite `resume_task` grant for that credential. Run
+`RuntimeSidecar.for_managed_installation` on loopback under the storage owner.
+Set `MEMORII_SIDECAR_URL`, `MEMORII_CREDENTIAL_PATH`, and `MEMORII_TASK_ID` in the
+host process. The credential file belongs to the host account and requires
+owner-only permissions.
+
+- For Pi 0.99.2, select the session with `pi --session-id <id>` and set
+  `MEMORII_PI_SESSION_ID` to that exact ID before loading the extension. The
+  extension checks the native session ID again after a restart or fork.
+- For OpenClaw 2026.9.7, set `MEMORII_OPENCLAW_SESSION_KEY` in the gateway
+  environment and target that same key with `openclaw agent --session-key
+  agent:<agent-id>:<session-key>`. Restart the gateway after changing the pin.
+
+The host submits a signed resume to the managed spool. Run
+`memorii-consume --installation-root <root> --managed --drain` as the storage
+owner to commit pending commands. The task can be read from the authenticated
+state endpoint after a restart. Governed transcript admission and recall of
+captured Pi and OpenClaw messages still require a configured provider-source
+owner.
+
 ## Correctness And Safety Contracts
 
 Memorii is designed around fail-closed boundaries:

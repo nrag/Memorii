@@ -6,9 +6,9 @@
  * candidates for source evidence. The bearer credential decides the
  * producer binding server-side and the source owner must approve any
  * observation before intake. Hosts
- * never mint tasks: the session hook resumes the operator-provisioned task
- * or fails closed. The credential is read from an owner-only file and never
- * appears in argv or logs.
+ * never mint tasks: the explicitly bound MEMORII_OPENCLAW_SESSION_KEY
+ * resumes an operator-provisioned task. The credential lives in an
+ * owner-only file.
  */
 
 import { randomUUID } from "node:crypto";
@@ -20,6 +20,7 @@ const SIDECAR_URL = process.env.MEMORII_SIDECAR_URL ?? "http://127.0.0.1:8762";
 const CREDENTIAL_PATH =
   process.env.MEMORII_CREDENTIAL_PATH ?? "/run/memorii/openclaw-plugin.credential";
 const TASK_ID = process.env.MEMORII_TASK_ID ?? "task:openclaw-session";
+const SESSION_KEY = process.env.MEMORII_OPENCLAW_SESSION_KEY;
 
 function bearerToken() {
   const raw = readFileSync(CREDENTIAL_PATH, "utf8").trim();
@@ -130,7 +131,8 @@ async function resumeTask() {
   await submitCommand(preparedResume);
 }
 
-async function onSessionStart() {
+async function resumeBoundSession(_event, context) {
+  if (context?.sessionKey !== SESSION_KEY) return;
   pendingResume ??= resumeTask().catch((error) => {
     pendingResume = undefined;
     throw error;
@@ -138,19 +140,21 @@ async function onSessionStart() {
   await pendingResume;
 }
 
-async function onTranscriptWrite(context) {
+function onTranscriptWrite(event, context) {
   // before_message_write is the single authoritative transcript seam: it
   // fires once per message persisted to the session with
-  // {message: {role, content}}. Only user messages are authentic source
-  // evidence; assistant writes are derived, never source. The first user
-  // write of a process resumes the provisioned task — gateway turns do not
-  // dispatch session_start to plugins, so session adoption lands here.
-  if (context?.message?.role !== "user") {
-    return undefined;
-  }
-  await onSessionStart();
-  const text = context.message.content;
-  if (typeof text !== "string" || !text.trim()) return undefined;
+  // {message: {role, content}}. The pinned hook is synchronous.
+  if (context?.sessionKey !== SESSION_KEY || event?.message?.role !== "user") return;
+  const text = event.message.content;
+  if (typeof text !== "string" || !text.trim()) return;
+  void prepareObservation(text, context).catch((error) => {
+    console.error("memorii observation failed", error.message);
+  });
+}
+
+async function prepareObservation(text, context) {
+  // A continuation can write to the transcript without running prompt hooks.
+  await resumeBoundSession(undefined, context);
   const revision = await readState();
   if (revision === null) throw new Error("memorii observation task is unavailable");
   await submitCommand(await prepareCommand({
@@ -172,9 +176,12 @@ export default definePluginEntry({
     if (typeof api?.on !== "function") {
       throw new Error(`unsupported OpenClaw host surface for ${HOST_CONTRACT}`);
     }
-    // The typed hook runner dispatches these events; api.on is the
-    // supported registration surface for them.
-    api.on("session_start", onSessionStart);
+    if (!SESSION_KEY) {
+      throw new Error("memorii requires an operator-selected MEMORII_OPENCLAW_SESSION_KEY");
+    }
+    api.on("session_start", resumeBoundSession);
+    // When the gateway builds a prompt, await the resume intake receipt.
+    api.on("before_prompt_build", resumeBoundSession);
     api.on("before_message_write", onTranscriptWrite);
   },
 });

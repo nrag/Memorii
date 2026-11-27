@@ -4,10 +4,12 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import socket
 import subprocess
 import sys
 import time
+from contextlib import suppress
 from pathlib import Path
 
 sys.path.insert(0, "/opt/memorii-src/memorii")
@@ -18,7 +20,11 @@ from stub_openai_provider import serve_stub_provider
 
 GATEWAY_TOKEN = "cert-token-1"
 journey = ManagedHostJourney(Path("/tmp/memorii-journey"), "openclaw")
-base_env = dict(os.environ, **journey.environment, OPENCLAW_GATEWAY_TOKEN=GATEWAY_TOKEN)
+session_key = "agent:main:cert-session"
+base_env = dict(
+    os.environ, **journey.environment, OPENCLAW_GATEWAY_TOKEN=GATEWAY_TOKEN,
+    MEMORII_OPENCLAW_SESSION_KEY=session_key,
+)
 
 # Plugin into the extensions home: root-owned (OpenClaw blocks foreign-uid
 # plugin files), with openclaw resolvable for the plugin-sdk import.
@@ -88,11 +94,13 @@ def run_agent(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 def stop_gateway() -> None:
-    gateway.terminate()
+    with suppress(ProcessLookupError):
+        os.killpg(gateway.pid, signal.SIGTERM)
     try:
         gateway.wait(timeout=30)
     except subprocess.TimeoutExpired:
-        gateway.kill()
+        with suppress(ProcessLookupError):
+            os.killpg(gateway.pid, signal.SIGKILL)
         gateway.wait(timeout=30)
 
 
@@ -100,11 +108,13 @@ try:
     assert wait_for_loopback_port(18789), Path("/tmp/gateway-journey.log").read_text()[-2000:]
     baseline = journey.read()
     first_prompt = "record this certification turn"
-    first = run_agent("--session-id", "cert-session", "-m", first_prompt)
+    first = run_agent("--session-key", session_key, "-m", first_prompt)
     assert first.returncode == 0, first.stderr
     first_receipt = journey.prove_turn(first_prompt)
 
     stop_gateway()
+    with suppress(ConnectionRefusedError), socket.create_connection(("127.0.0.1", 18789), timeout=2):
+        raise AssertionError("the old gateway is still listening")
     journey.stop()
     journey.start()
     gateway = start_gateway()
@@ -116,12 +126,24 @@ try:
     print("Reopened gateway and sidecar recalled the provisioned task and committed runtime revision", flush=True)
 
     second_prompt = "continue the same session"
-    second = run_agent("--session-id", "cert-session", "-m", second_prompt)
+    second = run_agent("--session-key", session_key, "-m", second_prompt)
     assert second.returncode == 0, second.stderr
     second_receipt = journey.prove_turn(second_prompt)
     assert second_receipt.operation_id != first_receipt.operation_id
     assert journey.read().revision > reopened.revision
+
+    observations_before_other_session = list(journey.sidecar.observations)
+    other = run_agent("--session-key", "agent:main:unbound-session", "-m", "unbound session")
+    assert other.returncode == 0, other.stderr
+    assert journey.sidecar.observations == observations_before_other_session
+    retry = journey.drain()
+    assert retry.returncode == 0 and retry.stdout == ""
+    print("An unbound OpenClaw session could not submit to the Memorii task", flush=True)
     print("JOURNEY: PASS (managed resume and runtime state read)")
+except Exception:
+    gateway_log.flush()
+    print(Path("/tmp/gateway-journey.log").read_text()[-6000:], file=sys.stderr)
+    raise
 finally:
     stop_gateway()
     gateway_log.close()
