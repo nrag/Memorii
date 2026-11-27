@@ -12,13 +12,17 @@ never filtered — only host/operator-serving endpoints consult the view.
 from __future__ import annotations
 
 from pathlib import Path
+from stat import S_ISDIR
 from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.storage_administration.suppression_journal import (
+    SuppressionCoordinate,
     read_suppression_records,
 )
+from memorii.domain.enums import CommitStatus, MemoryDomain
 
 _DIRECTIVE_RECORD_PREFIX = "semantic_ingestion:revocation:"
 _DIRECTIVE_RECORD_SOURCE_KIND = "semantic_ingestion_revocation_directive"
@@ -186,7 +190,7 @@ def identities_from_journal(control_root: Path) -> RevokedIdentities:
     )
 
 
-def identities_from_directive_records(records) -> RevokedIdentities:
+def identities_from_directive_records(records, *, verify: bool = False) -> RevokedIdentities:
     """Derive the revoked-identity sets from directive index records.
 
     Each enforcement publication writes one content-free index record per
@@ -201,11 +205,23 @@ def identities_from_directive_records(records) -> RevokedIdentities:
     tasks: set[str] = set()
     justifications: set[str] = set()
     for record in records:
-        if not str(record.memory_id).startswith(_DIRECTIVE_RECORD_PREFIX):
+        has_identity = record.memory_id.startswith(_DIRECTIVE_RECORD_PREFIX)
+        has_kind = record.source_kind == _DIRECTIVE_RECORD_SOURCE_KIND
+        if not has_identity and not has_kind:
             continue
-        if str(getattr(record, "source_kind", "")) != _DIRECTIVE_RECORD_SOURCE_KIND:
+        targets = record.content.get("revoked_targets")
+        if verify:
+            if (
+                not has_identity or not has_kind
+                or record.domain is not MemoryDomain.SEMANTIC
+                or record.status is not CommitStatus.COMMITTED
+                or not isinstance(targets, (list, tuple)) or not targets
+            ):
+                raise ValueError("suppression directive index is invalid")
+            targets = tuple(SuppressionCoordinate.model_validate(coordinate).model_dump() for coordinate in targets)
+        if not has_identity or not has_kind:
             continue
-        for coordinate in record.content.get("revoked_targets") or []:
+        for coordinate in targets or ():
             kind = coordinate.get("coordinate_kind")
             identifier = coordinate.get("coordinate_id")
             if not isinstance(identifier, str) or not identifier:
@@ -346,6 +362,21 @@ class RefreshingRevokedIdentityView:
         if fingerprint != self._fingerprint:
             self._view = view_from_control_root(self._control_root)
             self._fingerprint = fingerprint
+
+    def sample_snapshot(self, records: tuple[CanonicalMemoryRecord, ...]) -> RevokedIdentityView:
+        """Sample the current journal, archive and fenced directive records once."""
+        for path in (self._control_root, self._control_root / "suppressions", self._control_root / "suppressions-archive"):
+            try:
+                mode = path.stat().st_mode
+            except FileNotFoundError:
+                continue
+            if not S_ISDIR(mode):
+                raise ValueError("suppression authority directory is invalid")
+            tuple(path.iterdir())
+        journal_view = view_from_control_root(self._control_root)
+        return RevokedIdentityView(
+            journal_view.identities.union(identities_from_directive_records(records, verify=True))
+        )
 
     def is_revoked_entity(self, logical_entity_id: str) -> bool:
         self._refresh()

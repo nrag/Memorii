@@ -83,6 +83,356 @@ def test_real_roots_forward_scoped_authority(root: str, tmp_path) -> None:
     assert result.authority_binding_receipt is not None
 
 
+@pytest.mark.integration
+def test_installed_catalog_read_workflow_needs_no_key_or_write_tool(tmp_path, monkeypatch) -> None:
+    """Seed facts through the writer, then reopen both real read compositions."""
+    import importlib.metadata
+    import socket
+    from types import ModuleType, SimpleNamespace
+
+    from memorii.core.semantic_ingestion.catalog_authority import (
+        CatalogOwnerVisibilityGrant,
+        FactScopeGrant,
+        StructuredGrantState,
+    )
+    from memorii.core.semantic_ingestion.default_catalog_corpus import (
+        load_default_catalog_acceptance_corpus,
+    )
+    from memorii.core.semantic_ingestion.hermes_completed_turn_runtime import HermesCompletedTurnRuntime
+    from memorii.core.semantic_ingestion.openai_responses_project_assertions import OpenAIResponsesApiClient
+    from memorii.core.storage_administration.service import StorageAdministrationService
+    from memorii.core.storage_administration.suppression_journal import (
+        SuppressionCoordinate,
+        SuppressionRecord,
+        write_suppression_record,
+    )
+    from memorii.integrations.catalog_read_binding import CatalogReadGrantReference, CatalogReadOptIn
+    from memorii.integrations.hermes_factory import build_local_level2_authenticated_source_runtime
+    from memorii.integrations.hermes_local_authority import (
+        authorize_local_level2,
+        authorize_local_structured_tool,
+        load_local_level2_authority,
+    )
+    from tests.fixtures.semantic_ingestion.default_catalog_proposals import build_default_catalog_proposal
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("the no-key catalog journey attempted external transport")
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(OpenAIResponsesApiClient, "complete", forbidden)
+    monkeypatch.setattr(socket, "getaddrinfo", forbidden)
+    monkeypatch.setattr(socket.socket, "connect", forbidden)
+    monkeypatch.setattr(socket.socket, "connect_ex", forbidden)
+    # The optional Hermes host ABI is the only stand-in. Discovery of both
+    # Memorii's bridge and its first-party service uses installed metadata.
+    host_module = ModuleType("agent")
+    abi_module = ModuleType("agent.memory_provider")
+    abi_module.MemoryProvider = type("MemoryProvider", (), {})
+    monkeypatch.setitem(sys.modules, "agent", host_module)
+    monkeypatch.setitem(sys.modules, "agent.memory_provider", abi_module)
+    monkeypatch.delitem(sys.modules, "memorii.integrations.hermes_memory_provider", raising=False)
+    (entry,) = [
+        candidate
+        for candidate in importlib.metadata.entry_points(group="hermes_agent.memory_providers")
+        if candidate.name == "memorii"
+    ]
+    bridge_class = entry.load()
+    context = {
+        "hermes_home": tmp_path,
+        "user_id": "raw:user:household",
+        "agent_identity": "profile:primary",
+        "platform": "cli",
+        "agent_context": "primary",
+        "agent_workspace": "hermes",
+    }
+    storage_root = tmp_path / "memorii"
+    with StorageAdministrationService(storage_root) as owner:
+        owner.initialize()
+    authorize_local_level2(hermes_home=tmp_path)
+    bootstrap = load_local_level2_authority(hermes_home=tmp_path)
+    authorize_local_structured_tool(hermes_home=tmp_path)
+    relations = ("obligation_due_on", "work_item_due_on", "project_owned_by", "partner_of")
+    rows = {row.relation_id: row for row in load_default_catalog_acceptance_corpus().rows}
+    bridge = bridge_class()
+    bridge.initialize("session:provision", **context)
+    transcript: list[dict[str, object]] = []
+    try:
+        for ordinal, predicate in enumerate(relations, start=1):
+            fixture = build_default_catalog_proposal(rows[predicate])
+            bridge.on_turn_start(ordinal, fixture.source)
+            bridge.get_tool_schemas()
+            result = bridge.handle_tool_call("memorii_submit_fact", fixture.tool_arguments())
+            assert result["status"] == "committed", result
+            timestamp = datetime.now(UTC).isoformat()
+            transcript.extend((
+                {"role": "user", "content": fixture.source, "timestamp": timestamp},
+                {"role": "assistant", "content": "Recorded.", "timestamp": timestamp},
+            ))
+            bridge.sync_turn(user_content=fixture.source, assistant_content="Recorded.", messages=transcript)
+            bridge.prefetch(fixture.subject_quote)
+        plane = bridge._provider._service._memory_plane
+        records = tuple(plane.list_records())
+    finally:
+        bridge.shutdown()
+
+    projections = {
+        record.content["claim_identity"]["assertion_key_at_recording"]["slot"]["predicate_id"]: record
+        for record in records
+        if record.content.get("runtime_context_projection_kind") == "bootstrap_v3_claim_assertion"
+    }
+    assert set(relations) <= projections.keys()
+    subject_ids = {
+        predicate: projection.content["claim_identity"]["subject_assertion_ref"]["logical_entity_id_at_assertion"]
+        for predicate, projection in projections.items()
+    }
+    reverse_subject = projections["partner_of"].content["claim_identity"]["object_assertion_ref"][
+        "logical_entity_id_at_assertion"
+    ]
+    states = [
+        StructuredGrantState.model_validate(record.content["state"])
+        for record in records
+        if record.source_kind == "semantic_ingestion_structured_grant_state"
+    ]
+    (fact_grant,) = [state.grant for state in states if state.active and isinstance(state.grant, FactScopeGrant)]
+    catalog_grants = [
+        state.grant for state in states if state.active and isinstance(state.grant, CatalogOwnerVisibilityGrant)
+    ]
+    opt_in = CatalogReadOptIn(
+        installation_id=bootstrap["installation_id"],
+        storage_root=storage_root,
+        user_id=context["user_id"],
+        agent_id=fact_grant.authenticated.agent_id,
+        fact_scope=fact_grant.fact_scope,
+        rows=tuple({
+            ScopedNamespaceGrantRow(
+                domain=MemoryDomain.SEMANTIC,
+                task_id=projection.task_id,
+                session_id=projection.session_id,
+                user_id=projection.user_id,
+                agent_id=projection.agent_id,
+                execution_node_id=projection.execution_node_id,
+                solver_run_id=projection.solver_run_id,
+            )
+            for projection in projections.values()
+        }),
+        grant_references=tuple(
+            CatalogReadGrantReference(
+                catalog_scope=grant.catalog_scope,
+                fact_grant_id=fact_grant.grant_id,
+                fact_grant_version=fact_grant.grant_version,
+                catalog_grant_id=grant.grant_id,
+                catalog_grant_version=grant.grant_version,
+            )
+            for grant in catalog_grants
+        ),
+    )
+    assert opt_in.grant_references
+    (storage_root / "local-structured-tool.json").unlink()
+
+    def writer_route_forbidden(*_args, **_kwargs):
+        pytest.fail("the scoped read dispatched to a completed-turn or write route")
+
+    monkeypatch.setattr(HermesCompletedTurnRuntime, "read_structured_facts", writer_route_forbidden)
+    monkeypatch.setattr(HermesCompletedTurnRuntime, "capture_user_turn", writer_route_forbidden)
+
+    def assert_read_workflow(host, memory_plane) -> None:
+        before = memory_plane.read_snapshot()
+        for name, relation in (
+            ("bill due date", "obligation_due_on"),
+            ("work item due date", "work_item_due_on"),
+        ):
+            found_relation = host.inspect_catalog_relation({"kind": "name", "name": name})
+            payload = found_relation.model_dump(mode="json")
+            assert payload["status"] == "matched", payload
+            assert [row["predicate_id"] for row in payload["relations"]] == [relation]
+            request = {
+                "kind": "exact", "predicate_id": relation, "subject_entity_id": subject_ids[relation],
+                "expected_catalog_version_digest": payload["catalog_version_digest"],
+            }
+            result = host.diagnose_structured_recall(request).model_dump(mode="json")
+            assert result["status"] == "found", result
+            assert [item["predicate_id"] for item in result["items"]] == [relation]
+            assert json.loads(result["items"][0]["object_value"])["value"] == "2026-10-03"
+            assert host.diagnose_structured_recall({
+                **request, "subject_entity_id": "unrecorded-subject",
+            }).model_dump(mode="json") == {"status": "no_readable_fact"}
+        ambiguity = host.inspect_catalog_relation({"kind": "name", "name": "project owner"}).model_dump(mode="json")
+        assert ambiguity["status"] == "ambiguous"
+        assert [row["predicate_id"] for row in ambiguity["relations"]] == ["project_owned_by", "project_owner"]
+        assert host.diagnose_structured_recall({
+            "kind": "exact", "predicate_id": "project_owned_by", "subject_entity_id": subject_ids["project_owned_by"],
+            "expected_catalog_version_digest": ambiguity["catalog_version_digest"],
+        }).status == "found"
+        assert host.diagnose_structured_recall({
+            "kind": "exact", "predicate_id": "partner_of", "subject_entity_id": reverse_subject,
+        }).model_dump(mode="json")["items"][0]["derived_direction"] == "reverse"
+        assert host.inspect_catalog_relation({"kind": "name", "name": "unrecorded relation"}).model_dump(mode="json") == {
+            "status": "no_match",
+        }
+        assert host.diagnose_structured_recall({
+            "kind": "exact", "predicate_id": "unrecorded_relation", "subject_entity_id": reverse_subject,
+        }).model_dump(mode="json") == {"status": "unsupported_predicate"}
+        assert host.diagnose_structured_recall({
+            "kind": "unresolved", "reference": "subject",
+        }).model_dump(mode="json") == {"status": "needs_clarification"}
+        assert host.diagnose_structured_recall({
+            "kind": "exact", "predicate_id": "unrecorded_relation", "subject_entity_id": reverse_subject,
+            "expected_catalog_version_digest": "0" * 64,
+        }).model_dump(mode="json") == {"status": "catalog_changed"}
+        assert host.inspect_catalog_relation({"kind": "name", "name": "*"}).model_dump(mode="json") == {
+            "status": "invalid_request",
+        }
+        assert memory_plane.read_snapshot() == before
+
+    current_opt_in = opt_in
+    bridge = bridge_class()
+    bridge.initialize("session:read", **context, catalog_read_opt_in=lambda: current_opt_in)
+    try:
+        assert_read_workflow(bridge, bridge._provider._service._memory_plane)
+        from memorii.core.provider import catalog_read_workflow
+
+        project = catalog_read_workflow.project_catalog_relations
+
+        def switch_session_after_lookup(bundle):
+            declarations = project(bundle)
+            bridge.on_session_switch("session:read-rotated")
+            return declarations
+
+        with monkeypatch.context() as scoped:
+            scoped.setattr(catalog_read_workflow, "project_catalog_relations", switch_session_after_lookup)
+            assert bridge.inspect_catalog_relation({"kind": "name", "name": "bill due date"}).model_dump(mode="json") == {
+                "status": "denied",
+            }
+        assert bridge.inspect_catalog_relation({"kind": "name", "name": "bill due date"}).status == "matched"
+
+        def withdraw_after_lookup(bundle):
+            nonlocal current_opt_in
+            declarations = project(bundle)
+            current_opt_in = None
+            return declarations
+
+        with monkeypatch.context() as scoped:
+            scoped.setattr(catalog_read_workflow, "project_catalog_relations", withdraw_after_lookup)
+            assert bridge.inspect_catalog_relation({"kind": "name", "name": "bill due date"}).model_dump(mode="json") == {
+                "status": "denied",
+            }
+        assert bridge.inspect_catalog_relation({"kind": "name", "name": "bill due date"}).model_dump(mode="json") == {
+            "status": "denied",
+        }
+    finally:
+        bridge.shutdown()
+
+    generic = build_local_level2_authenticated_source_runtime(SimpleNamespace(
+        **context, storage_root=storage_root, session_id="session:generic-read",
+        parent_session_id=None, catalog_read_opt_in=opt_in,
+    ))
+    try:
+        assert_read_workflow(generic, generic._adapter._service._memory_plane)
+        original_read = catalog_read_workflow.read_current_catalog_bound_facts
+        partner = projections["partner_of"]
+        partner_request = {"kind": "exact", "predicate_id": "partner_of", "subject_entity_id": reverse_subject}
+        native_result = generic.diagnose_structured_recall(partner_request).model_dump(mode="json")
+        evidence = partner.model_copy(update={
+            "memory_id": "semantic:partner-evidence", "text": "Current relationship evidence.",
+            "content": {},
+        })
+        state = ClaimState(
+            claim_id="claim:partner-state",
+            source_claim_id=partner.content["claim_assertion_id"],
+            claim_key=ClaimKey(
+                predicate_id="partner_of", subject_entity_id=subject_ids["partner_of"],
+                scope=MemoryScope(task_id=partner.task_id, session_id=partner.session_id, user_id=partner.user_id),
+            ),
+            object_value=reverse_subject,
+            lifecycle_state=ClaimLifecycleState.ACTIVE,
+            confidence=ConfidenceComponents(extraction=1, evidence=1, source_trust=1, calibrated=1),
+            evidence_spans=[EvidenceSpan(
+                source_id=evidence.memory_id, quote=evidence.text, source_type=SourceType.USER,
+                timestamp=partner.timestamp,
+            )],
+        )
+        state_record = record_from_claim_state(state=state, source_candidate_id="partner-evidence").model_copy(
+            update={"agent_id": partner.agent_id},
+        )
+        foreign_state = state_record.model_copy(update={"user_id": "foreign-account"})
+        peer_state = state_record.model_copy(update={"agent_id": "peer-agent"})
+
+        def diagnose_with_claim_state(candidate, *, include_original=True):
+            def read_with_claim_state(**kwargs):
+                records = kwargs["records"]
+                if not include_original:
+                    records = tuple(row for row in records if row.memory_id != partner.memory_id)
+                kwargs["records"] = (*records, evidence, candidate)
+                return original_read(**kwargs)
+
+            with monkeypatch.context() as scoped:
+                scoped.setattr(catalog_read_workflow, "read_current_catalog_bound_facts", read_with_claim_state)
+                return generic.diagnose_structured_recall(partner_request).model_dump(mode="json")
+
+        for hidden in (foreign_state, peer_state):
+            assert diagnose_with_claim_state(hidden) == native_result
+            assert diagnose_with_claim_state(hidden, include_original=False) == {"status": "no_readable_fact"}
+        carried = diagnose_with_claim_state(state_record)
+        assert carried["status"] == "found"
+        assert [(item["claim_id"], item["object_value"], item["derived_direction"]) for item in carried["items"]] == [
+            (state.claim_id, subject_ids["partner_of"], "reverse"),
+        ]
+
+        def suppress_before_release(**kwargs):
+            pending = original_read(**kwargs)
+            write_suppression_record(storage_root / "control", SuppressionRecord(
+                suppression_id="a" * 64,
+                plan_digest="b" * 64,
+                closure_digest="c" * 64,
+                scope_note="bill evidence suppression before enforcement",
+                suppressed=(SuppressionCoordinate(
+                    coordinate_kind="source",
+                    coordinate_id=projections["obligation_due_on"].content["source_id"],
+                ),),
+                applied_at_unix=int(datetime.now(UTC).timestamp()),
+            ))
+            return pending
+
+        bill = {"kind": "exact", "predicate_id": "obligation_due_on",
+                "subject_entity_id": subject_ids["obligation_due_on"]}
+        with monkeypatch.context() as scoped:
+            scoped.setattr(catalog_read_workflow, "read_current_catalog_bound_facts", suppress_before_release)
+            result = generic.diagnose_structured_recall(bill).model_dump(mode="json")
+        assert result == {"status": "no_readable_fact"}
+        assert generic.diagnose_structured_recall(bill).model_dump(mode="json") == result
+        assert generic.diagnose_structured_recall({
+            "kind": "exact", "predicate_id": "work_item_due_on",
+            "subject_entity_id": subject_ids["work_item_due_on"],
+        }).status == "found"
+        work_group = projections["work_item_due_on"].content["transaction_group_id"]
+        fanout_kind = "semantic_ingestion_bootstrap_graph_v3_group_commit_fanout"
+        fanout_id = next(
+            record.memory_id for record in records
+            if record.source_kind == fanout_kind and record.content.get("transaction_group_id") == work_group
+        )
+
+        def read_with_missing_fanout(**kwargs):
+            kwargs["records"] = tuple(row for row in kwargs["records"] if row.memory_id != fanout_id)
+            return original_read(**kwargs)
+
+        work = {"kind": "exact", "predicate_id": "work_item_due_on",
+                "subject_entity_id": subject_ids["work_item_due_on"]}
+        with monkeypatch.context() as scoped:
+            scoped.setattr(catalog_read_workflow, "read_current_catalog_bound_facts", read_with_missing_fanout)
+            assert generic.diagnose_structured_recall(work).model_dump(mode="json") == {"status": "unavailable"}
+            write_suppression_record(storage_root / "control", SuppressionRecord(
+                suppression_id="d" * 64,
+                plan_digest="e" * 64,
+                closure_digest="f" * 64,
+                scope_note="known history record removed after suppression",
+                suppressed=(SuppressionCoordinate(coordinate_kind="record", coordinate_id=fanout_id),),
+                applied_at_unix=int(datetime.now(UTC).timestamp()),
+            ))
+            assert generic.diagnose_structured_recall(work).model_dump(mode="json") == {"status": "no_readable_fact"}
+    finally:
+        generic.close()
+
+
 def _analysis(kind: QueryTemporalKind, now: datetime) -> QueryAnalysis:
     frame_fields: dict[str, object] = {"temporal_kind": kind}
     if kind is QueryTemporalKind.HISTORICAL:

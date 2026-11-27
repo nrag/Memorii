@@ -8,6 +8,7 @@ from hashlib import sha256
 
 from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedHostIngress
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.integrations.catalog_read_binding import CatalogReadBinding
 
 
 @dataclass(frozen=True)
@@ -127,6 +128,7 @@ class HermesProviderRuntimeBinding:
     service: ProviderMemoryService
     issue_ingress: Callable[[object], AuthenticatedHostIngress]
     completed_turn_runtime: object | None = None
+    catalog_read: CatalogReadBinding | None = None
     absent_author_id: str = "memorii.hermes.author.absent.v1"
     revoke_structured_submission_grant: Callable[[str], None] | None = None
     activate_learned_candidate: Callable[[str], object] | None = None

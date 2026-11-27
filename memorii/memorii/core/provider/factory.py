@@ -34,6 +34,7 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedIngressContextResolver,
 )
 from memorii.core.memory_evolution.ingestion_time_clock import IngestionTimeClock
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.scoped_context.authority import ScopedHostReadAuthority
@@ -47,6 +48,7 @@ from memorii.core.semantic_ingestion.production_authority import (
 from memorii.core.semantic_ingestion.source_normalization_host import SourceNormalizationHostBundleBuilder
 from memorii.core.storage_administration.revoked_identity_view import (
     RevokedIdentityServingGate,
+    RevokedIdentityView,
 )
 from memorii.core.work_state.service import WorkStateService
 
@@ -88,6 +90,7 @@ def build_provider_memory_service_from_env(
     ontology_observer_capability: OntologyObserverCapability | None = None,
     ontology_observer_authorizer: Callable[[AuthenticatedIngressContext, ObserverBindingIdentity], bool] | None = None,
     revoked_view: RevokedIdentityServingGate,
+    catalog_read_suppression_view: Callable[[tuple[CanonicalMemoryRecord, ...]], RevokedIdentityView] | None = None,
 ) -> ProviderMemoryService:
     """Build the source-only governed-source admission provider composition without ambient model dependencies.
 
@@ -176,6 +179,7 @@ def build_provider_memory_service_from_env(
         ontology_observer_capability=ontology_observer_capability,
         ontology_observer_authorizer=ontology_observer_authorizer,
         revoked_view=revoked_view,
+        catalog_read_suppression_view=catalog_read_suppression_view,
     )
 
 

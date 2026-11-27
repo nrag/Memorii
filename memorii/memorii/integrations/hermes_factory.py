@@ -94,6 +94,7 @@ from memorii.core.user_context.preferences import (
     PreferenceHolderAuthority,
     PreferenceService,
 )
+from memorii.integrations.catalog_read_binding import bind_catalog_read
 from memorii.integrations.hermes_local_authority import (
     LocalLevel2AuthorityError,
     load_local_level2_authority,
@@ -473,6 +474,7 @@ def build_local_level2_authenticated_source_runtime(context: object) -> object:
     return build_authenticated_source_runtime(
         issue_ingress=issue_ingress,
         provider_service=binding.service,
+        catalog_read=binding.catalog_read,
         learned_ontology=AuthenticatedSourceLearnedOntologyBinding(
             activate_candidate=binding.activate_learned_candidate,
             approve_candidate=binding.approve_learned_candidate,
@@ -606,6 +608,7 @@ def _build_local_level2_runtime_binding(
         host_bootstrap_capability=capability,
         host_bootstrap_material_verifier=verifier,
         revoked_view=revoked_view,
+        catalog_read_suppression_view=revoked_view.sample_snapshot,
         scoped_read_authority=scoped_read_authority,
         ontology_observer_capability=observer,
         ontology_observer_authorizer=(lambda ingress, binding: (
@@ -928,10 +931,61 @@ def _build_local_level2_runtime_binding(
         completed_runtime._structured_authority_request = structured_resolver.issued_authority_request()
         return activation
 
+    raw_user_id = getattr(context, "user_id", None)
+
+    def current_catalog_read_opt_in() -> object:
+        opt_in = getattr(context, "catalog_read_opt_in", None)
+        return opt_in() if callable(opt_in) else opt_in
+
+    def current_catalog_read_session() -> object:
+        try:
+            if (
+                getattr(context, "user_id", None) != raw_user_id
+                or getattr(context, "storage_root", None) != storage_root
+                or getattr(context, "agent_identity", None) is None
+                or _canonical_agent_id(getattr(context, "agent_identity", None)) != agent_id
+                or _require_local_cli_context(context) != context_kind
+            ):
+                return None
+        except LocalLevel2AuthorityError:
+            return None
+        session = getattr(context, "catalog_read_session", None)
+        return session() if callable(session) else getattr(context, "session_id", None)
+
+    def catalog_read_installation_is_current() -> bool:
+        if context_kind != "primary" or not isinstance(raw_user_id, str) or not authority_is_current():
+            return False
+        try:
+            operator = json.loads((storage_root / "local-operator-context.json").read_bytes())
+        except (OSError, ValueError):
+            return False
+        raw_user_digest = sha256(
+            b"memorii.hermes.raw-user-consistency.v1\0" + raw_user_id.strip().encode("utf-8")
+        ).hexdigest()
+        return (
+            isinstance(operator, dict)
+            and operator.get("schema") == "memorii.hermes.local-operator-context.v1"
+            and operator.get("installation_id") == authorization.installation_id
+            and operator.get("raw_user_consistency_digest") == raw_user_digest
+        )
+
+    catalog_read = bind_catalog_read(
+        service=service,
+        authority=scoped_read_authority,
+        installation_id=authorization.installation_id,
+        storage_root=storage_root,
+        raw_user_id=raw_user_id,
+        authenticated=AuthenticatedPrincipalAgent(principal_id=operator_id, agent_id=agent_id),
+        current_opt_in=current_catalog_read_opt_in,
+        current_session=current_catalog_read_session,
+        installation_is_current=catalog_read_installation_is_current,
+        issue_ingress=ingress_resolver.issue,
+    )
     return HermesProviderRuntimeBinding(
         service=service,
         issue_ingress=ingress_resolver.issue,
         completed_turn_runtime=completed_runtime,
+        catalog_read=catalog_read,
         absent_author_id=operator_id,
         revoke_structured_submission_grant=(
             revoke_current_structured_grant if structured_resolver is not None else None

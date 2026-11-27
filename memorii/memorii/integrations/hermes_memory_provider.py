@@ -21,10 +21,15 @@ from agent.memory_provider import MemoryProvider  # pyright: ignore[reportMissin
 
 from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedHostIngress
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.semantic_ingestion.catalog_inspection import (
+    CatalogRelationInspectionResponse,
+    StructuredRecallDiagnosisResponse,
+)
 from memorii.core.semantic_ingestion.structured_fact_read import (
     StructuredFactReadRequest,
     StructuredFactReadResponse,
 )
+from memorii.integrations.catalog_read_binding import CatalogReadBinding, CatalogReadOptIn
 from memorii.integrations.hermes_provider import HermesMemoryProvider, build_started_hermes_memory_provider
 from memorii.integrations.hermes_runtime_binding import (
     HermesAuthenticatedForwardingReceipt,
@@ -50,6 +55,8 @@ class HermesProviderServiceContext:
     agent_context: object | None
     agent_workspace: object | None
     parent_session_id: object | None
+    catalog_read_opt_in: CatalogReadOptIn | Callable[[], CatalogReadOptIn | None] | None = None
+    catalog_read_session: Callable[[], str] | None = None
 
 
 @dataclass(frozen=True)
@@ -76,6 +83,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         self._agent_identity: object | None = None
         self._issue_ingress: Callable[[HermesIngressRequest], AuthenticatedHostIngress] | None = None
         self._completed_turn_runtime: object | None = None
+        self._catalog_read: CatalogReadBinding | None = None
         self._absent_author_id = "memorii.hermes.author.absent.v1"
         self._revoke_structured_submission_grant: Callable[[str], None] | None = None
         self._activate_learned_candidate: Callable[[str], object] | None = None
@@ -131,6 +139,8 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
                 # This is an execution-boundary marker, not user text.  Keep
                 # opaque host values intact so the factory can fail closed.
                 parent_session_id=kwargs.get("parent_session_id"),
+                catalog_read_opt_in=kwargs.get("catalog_read_opt_in"),
+                catalog_read_session=lambda: self._session_id if self._default_user_id == user_id else "",
             )
         )
         if type(binding) is not HermesProviderRuntimeBinding:
@@ -145,6 +155,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         self._agent_identity = kwargs.get("agent_identity")
         self._issue_ingress = binding.issue_ingress
         self._completed_turn_runtime = binding.completed_turn_runtime
+        self._catalog_read = binding.catalog_read
         self._absent_author_id = binding.absent_author_id
         self._revoke_structured_submission_grant = binding.revoke_structured_submission_grant
         self._activate_learned_candidate = binding.activate_learned_candidate
@@ -209,6 +220,16 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
             authenticated_author_id=self._absent_author_id,
             now=datetime.now(UTC),
         )
+
+    def inspect_catalog_relation(self, request: object) -> CatalogRelationInspectionResponse:
+        if self._catalog_read is None:
+            return CatalogRelationInspectionResponse.model_validate({"status": "unavailable"})
+        return self._catalog_read.inspect_catalog_relation(request)
+
+    def diagnose_structured_recall(self, request: object) -> StructuredRecallDiagnosisResponse:
+        if self._catalog_read is None:
+            return StructuredRecallDiagnosisResponse.model_validate({"status": "unavailable"})
+        return self._catalog_read.diagnose_structured_recall(request)
 
     def read_structured_facts(
         self, request: StructuredFactReadRequest, *, session_id: str = "",
@@ -486,6 +507,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
             self._agent_identity = None
             self._issue_ingress = None
             self._completed_turn_runtime = None
+            self._catalog_read = None
             self._absent_author_id = "memorii.hermes.author.absent.v1"
             self._revoke_structured_submission_grant = None
             self._origin_receipts.clear()

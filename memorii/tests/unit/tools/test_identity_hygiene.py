@@ -264,6 +264,114 @@ def test_behavioral_protocol_and_algorithm_names_pass(tmp_path: Path) -> None:
     assert scan_repository(root, allowlist_path=allowlist) == ()
 
 
+def test_catalog_read_protocol_identities_reject_planning_coordinates(tmp_path: Path) -> None:
+    root, allowlist = _root(tmp_path)
+    declaration = root / "memorii/memorii/core/semantic_ingestion/catalog_inspection.py"
+    relative_declaration = declaration.relative_to(root).as_posix()
+    contract = (REPO_ROOT / relative_declaration).read_text(encoding="utf-8")
+    declaration.parent.mkdir(parents=True)
+    caller = root / "memorii/tests/test_catalog_read.py"
+    fixtures = root / "memorii/tests/fixtures/semantic_ingestion"
+    fixtures.mkdir(parents=True)
+    for coordinate, _, _, _ in _COORDINATE_CASES:
+        mutant = contract
+        for original, replacement in (
+            ('kind: Literal["name"]', f"kind: Literal[{coordinate!r}]"),
+            ('value_type: Literal["LocalDate",', f"value_type: Literal[{coordinate!r},"),
+            ('MATCHED = "matched"', f"MATCHED = {coordinate!r}"),
+            ('FORWARD_ONLY = "forward_only"', f"FORWARD_ONLY = {coordinate!r}"),
+            ('CURRENT = "current"', f"CURRENT = {coordinate!r}"),
+        ):
+            assert mutant.count(original) == 1
+            mutant = mutant.replace(original, replacement)
+        declaration.write_text(
+            mutant + f"\n_LiteralEndpoint(value_type={coordinate!r})\n",
+            encoding="utf-8",
+        )
+        descriptor = {
+            "read_direction": coordinate,
+            "read_form": coordinate,
+            "object_endpoint": {"kind": "literal", "value_type": coordinate},
+        }
+        response = {"status": coordinate, "relations": [descriptor]}
+        caller.write_text(
+            "from memorii.core.semantic_ingestion.catalog_inspection import (\n"
+            "    CatalogRelationDescriptor, CatalogRelationInspectionRequest,\n"
+            "    CatalogRelationInspectionResponse as InspectionResult, StructuredRecallDiagnosisResponse,\n"
+            ")\n"
+            f"CatalogRelationInspectionRequest({{'kind': {coordinate!r}, 'name': 'bill due date'}})\n"
+            f"CatalogRelationDescriptor(read_form={coordinate!r}, read_direction={coordinate!r})\n"
+            f"InspectionResult.model_validate({response!r})\n"
+            f"StructuredRecallDiagnosisResponse(root={{'status': {coordinate!r}}})\n"
+            f"assert host.inspect_catalog_relation(request).model_dump() == {response!r}\n"
+            f"assert host.diagnose_structured_recall(request).status == {coordinate!r}\n",
+            encoding="utf-8",
+        )
+        fixture = fixtures / "catalog_relation_inspection_response.json"
+        fixture.write_text(json.dumps(response), encoding="utf-8")
+        status_fixture = fixtures / "structured_recall_diagnosis_response.yaml"
+        status_fixture.write_text(f"status: {coordinate}\n", encoding="utf-8")
+
+        by_path: dict[str, list[str]] = {
+            path.relative_to(root).as_posix(): [] for path in (declaration, caller, fixture, status_fixture)
+        }
+        for violation in scan_repository(root, allowlist_path=allowlist):
+            assert violation.value == coordinate
+            by_path[violation.path].append(violation.location)
+
+        assert [line.split(":")[2] for line in by_path[relative_declaration]] == [
+            "CURRENT", "FORWARD_ONLY", "MATCHED", "kind", "value_type", "value_type"
+        ]
+        caller_fields = [line.split(":")[2] for line in by_path[caller.relative_to(root).as_posix()]]
+        assert sorted(caller_fields) == sorted(
+            ["kind", "status", "status", "status", "status"]
+            + ["read_direction", "read_form"] * 3
+            + ["value_type"] * 2
+        )
+        assert set(by_path[fixture.relative_to(root).as_posix()]) == {
+            "structured:$.status",
+            "structured:$.relations[0].read_direction",
+            "structured:$.relations[0].read_form",
+            "structured:$.relations[0].object_endpoint.value_type",
+        }
+        assert by_path[status_fixture.relative_to(root).as_posix()] == ["structured:$.status"]
+
+
+def test_catalog_read_lookup_and_opaque_id_data_are_allowed(tmp_path: Path) -> None:
+    root, allowlist = _root(tmp_path)
+    fixtures = root / "memorii/tests/fixtures/semantic_ingestion"
+    fixtures.mkdir(parents=True)
+    caller = root / "memorii/tests/test_catalog_read.py"
+    for coordinate, _, _, _ in _COORDINATE_CASES:
+        lookup = {"kind": "name", "name": coordinate}
+        recall = {"kind": "exact", "predicate_id": "obligation_due_on", "subject_entity_id": coordinate}
+        descriptor = {
+            "read_direction": "forward_only",
+            "read_form": "current",
+            "definition": coordinate,
+            "object_endpoint": {"kind": "literal", "value_type": "LocalDate"},
+        }
+        caller.write_text(
+            "from memorii.core.semantic_ingestion import catalog_inspection as catalog\n"
+            f"catalog.CatalogRelationInspectionRequest.model_validate({lookup!r})\n"
+            f"catalog.StructuredRecallDiagnosisRequest.model_validate({recall!r})\n"
+            f"host.inspect_catalog_relation({lookup!r})\n"
+            f"host.diagnose_structured_recall(request={recall!r})\n"
+            f"catalog.CatalogRelationDescriptor.model_validate({descriptor!r})\n"
+            f"payload = {{'status': {coordinate!r}, 'read_form': {coordinate!r}, 'value_type': {coordinate!r}}}\n",
+            encoding="utf-8",
+        )
+        (fixtures / "catalog_relation_inspection_request.yaml").write_text(
+            f"kind: name\nname: {coordinate}\n", encoding="utf-8"
+        )
+        (fixtures / "structured_recall_diagnosis_request.json").write_text(
+            json.dumps(recall), encoding="utf-8"
+        )
+        (fixtures / "catalog_relation_descriptor.json").write_text(json.dumps(descriptor), encoding="utf-8")
+
+        assert scan_repository(root, allowlist_path=allowlist) == ()
+
+
 def test_retired_requirement_coordinates_are_rejected_in_durable_markdown_identities(
     tmp_path: Path,
 ) -> None:

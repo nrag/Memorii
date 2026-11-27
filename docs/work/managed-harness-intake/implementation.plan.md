@@ -171,3 +171,6 @@ meaning.
 ## Next action
 
 None. The selected native-source capture and restart recall scope is complete.
+
+The [managed solver selection and source capture debugging record](../runtime-overlay-and-capture/debugging.plan.md)
+tracks the subsequent solver fixture and capture-after-pause correction.

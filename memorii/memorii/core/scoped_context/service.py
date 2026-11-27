@@ -715,6 +715,7 @@ def _current_catalog_read_authority(
     records: tuple[CanonicalMemoryRecord, ...],
     authorities: tuple[object, ...],
     catalog_bundle_locator: CatalogBundleLocator,
+    required_predicate_id: str | None = None,
 ) -> bool:
     from memorii.core.semantic_ingestion.catalog_authority import (
         AuthenticatedPrincipalAgent,
@@ -749,6 +750,11 @@ def _current_catalog_read_authority(
             return False
         if selected_catalog.catalog_scope != binding.catalog_scope:
             return False
+        if required_predicate_id is not None:
+            from memorii.core.semantic_ingestion.catalog_capture_pin import SeedCatalogBundleLocator
+
+            if required_predicate_id not in SeedCatalogBundleLocator().locate().version.predicate_ids:
+                return False
     elif binding.schema_version == 2:
         if (
             binding.pin_memory_id is None
@@ -836,6 +842,10 @@ def _current_catalog_read_authority(
 
             if not DefaultCatalogProtectedReader.authorizes_version(selected_version_id=bundle.version.version_id):
                 return False
+        if required_predicate_id is not None and required_predicate_id not in getattr(
+            bundle.version, "predicate_ids", (),
+        ):
+            return False
     else:
         return False
     for authority in authorities:
@@ -870,6 +880,7 @@ def verify_structured_catalog_projection_for_read(
     records: tuple[CanonicalMemoryRecord, ...],
     authority: object,
     catalog_bundle_locator: CatalogBundleLocator,
+    required_predicate_id: str | None = None,
 ) -> bool:
     """Use the scoped-context catalog join for a direct structured read.
 
@@ -886,6 +897,7 @@ def verify_structured_catalog_projection_for_read(
         records,
         (authority,),
         catalog_bundle_locator,
+        required_predicate_id=required_predicate_id,
     )
 
 

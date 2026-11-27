@@ -1,8 +1,17 @@
 # Learned Ontology For Scoped Agent Memory
 
-**Status:** Design approved on 2026-09-25 under `docs/work/learned-ontology/design.plan.md`. Not implemented.
+**Status:** The original design was approved on 2026-09-25 under
+`docs/work/learned-ontology/design.plan.md`. Baseline implementation evidence is
+in `docs/work/learned-ontology/implementation.plan.md`. Sections 12 and 13
+specify the read workflow separately.
 
 **Product direction:** Memorii learns ontologies from scoped evidence supplied by agent integrations. The earlier Hermes trial recorded this direction; it does not own the ontology contract. Work and evidence: `docs/work/learned-ontology/design.plan.md`.
+
+[Catalog inspection](#13-catalog-inspection) and
+[structured recall diagnosis](#12-structured-recall-diagnosis) compose one
+read workflow. Design and evidence are in
+`docs/work/learned-ontology/design-catalog-inspection.plan.md`. The earlier
+diagnosis review is recorded in `docs/work/learned-ontology/design-recall-diagnosis.plan.md`.
 
 ## 1. Problem and first useful journey
 
@@ -29,6 +38,28 @@ Gap discovery is separate from fact extraction. The current three-ID model outpu
 The semantic observer accepts source content only when its authenticated origin, grant, and domain policy permit ontology discovery. Its closed output is `no_gap`, `unsupported_relation`, `unsupported_entity_type`, or `uncertain`. A relation gap cites exact assertion, subject, relation phrase, and object spans; a type gap cites exact entity mention and context spans plus a proposed registered parent type. Both carry the core-verified source lineage. The observer checks whether an active catalog relation, type, or alias already covers the meaning before opening a gap. Missing or malformed spans, a question, command, quotation, report, unsupported speaker attribution, or an untrusted tool result become `uncertain` or `no_gap` without a catalog candidate. Its outcome is diagnostic metadata attached to retained evidence; it cannot mutate fact lifecycle.
 
 The canonical source and memory-domain distinctions in `docs/design/memorii_spec.md`, `docs/design/memorii_storage_details.md`, `docs/design/event_model.md`, `docs/IMPLEMENTATION_RULES.md`, and `docs/design/semantic_ingestion_architecture.md` remain authoritative. A learned relation can describe semantic knowledge only when its domain policy permits it. User preferences, episodes, execution state, and solver observations need their own domain contracts. A model's fluent proposal is neither a catalog version nor a fact.
+
+### Current gap analysis for the read workflow
+
+The three-predicate profile above describes the original seed path. The
+installed default release now verifies 53 typed corpus relations plus its
+three inherited seed relations. Existing graph retrieval already carries
+ambiguity, abstention, lifecycle, and evidence, and protected context
+distinguishes a no-match from abstention. The installed structured path has
+a no-key test. The recurrence, paired evaluation, owner activation and
+replay path is implemented for the narrow `mentors` case. These are
+existing capabilities, with implementation breadth recorded in the WorkPlans.
+
+| Priority | Gap and supporting code | Response |
+| --- | --- | --- |
+| First | Hosts lack a scoped way to find and inspect active relation definitions before choosing a predicate ID. NVIDIA exposes concept lookup and definitions in its [MCP glossary code](https://github.com/NVIDIA/auto-ontology/blob/086b25ec1dbaa8f5911fb746f691d113654b650c/mcp/auto_ontology_mcp/tools.py#L60-L132). | Add deterministic catalog inspection and exercise it together with diagnosis. |
+| Same workflow | The direct reader recognizes predicates from a static corpus plus a learned special case. An unavailable read and an unsupported active-catalog predicate are indistinguishable there. The existing broader retrieval outcomes remain useful on their own surface. | Resolve the exact selected catalog and read authorized facts in one protected snapshot. Distinguish catalog support from readable fact availability. |
+| Later | Owners could inspect the existing candidate evaluation more easily. | Present a paired parent/candidate recall and a correct abstention using existing evidence and promotion gates. No review interface in this read contract. |
+
+NVIDIA's [coverage code](https://github.com/NVIDIA/auto-ontology/blob/086b25ec1dbaa8f5911fb746f691d113654b650c/auto_ontology/retrieval/entity_coverage/agents/coverage.py#L172-L209)
+measures matched columns for model-extracted concepts. Memorii's structured
+workflow checks exact declarations and authorized data directly. Inspection,
+recall, and evidence that warrants learning are separate decisions.
 
 ## 3. Base ontology shipped by default
 
@@ -299,3 +330,382 @@ The typed four-entry `PredicateProposalCatalog` feasibility check is locally ver
 ## 11. Alternatives and later scope
 
 A larger manually packaged catalog remains useful for bootstrapping but does not learn. Letting the model invent a predicate in a fact proposal would conflate two validation lifecycles and cannot preserve historical meaning. An additive, typed, scope-authorized catalog is the initial learning contract. Future edit protocols may add relation changes and new capabilities. Delegated or bot-channel sources use this same contract once their independent identity and scope bindings are implemented; the ontology design does not reserve learning for a particular harness.
+## 12. Structured recall diagnosis
+
+### User journey and authority
+
+A signed-in user asks for the due date of a bill or work item. A host with the
+canonical subject ID and predicate ID can ask Memorii for the current value
+and a reason if it cannot return one. If the host cannot resolve the reference,
+it can ask for clarification without probing unrelated entities. The same
+operation serves any authenticated agent integration. It works from local
+catalog and fact state with no model configured, no API key, and no outbound
+model traffic.
+
+This adapts NVIDIA Auto Ontology's
+[answerability check](https://github.com/NVIDIA/auto-ontology/blob/main/docs/architecture.md#check-answerability)
+to one structured semantic query. The catalog check and fact read form one
+operation. A coverage score, general natural language analysis, name search,
+catalog browsing, and candidate review UI are outside this contract. The
+retrieval planner still owns domain choice, and only semantic facts are in
+scope here, specifically current catalog-bound claims. Section 13 supplies
+deterministic relation-name lookup as a separate operation in this workflow.
+A host may interpret wording upstream. A caller with only a subject
+display name must resolve it upstream or report an unresolved reference.
+
+### Closed request and response
+
+`diagnose_structured_recall` takes a `StructuredRecallDiagnosisRequest` with
+one of these exact shapes. Fields are required and unknown fields, nulls, and
+mixed arms are invalid.
+
+| `kind` | Other fields | Meaning |
+| --- | --- | --- |
+| `exact` | `predicate_id`, `subject_entity_id`; optional `expected_catalog_version_digest` | Current protected read for one exact predicate and canonical subject ID |
+| `unresolved` | `reference` equal to `subject`, `relation`, or `both` | Host could not select a single reference; no catalog predicate or fact lookup executes |
+
+The predicate is 1 to 64 ASCII bytes, matching
+`[a-z][a-z0-9]*(?:_[a-z0-9]+)*` in full. Registry membership is a separate
+check. When supplied, `expected_catalog_version_digest` is exactly 64
+lowercase hexadecimal characters. Omission preserves a direct exact call;
+null is invalid. It is an assertion against the selected version and
+cannot select a version, scope, or grant. The subject is the opaque
+canonical ID already used by protected reads, compared byte for byte.
+Require a valid UTF-8 string of 1 to 1,024 bytes with no control characters
+or leading or trailing whitespace; reject the wildcard token `*`. Do not
+normalize, guess a type, accept an alias as a selector, or expand either
+selector into a search. Evaluation of an opaque subject ID does not disclose
+whether it names a known entity. A well-formed ID with no matching readable
+fact gives the same result whether or not the entity exists.
+
+`StructuredRecallDiagnosisResponse` is a closed union discriminated by
+`status`. Only `found` includes `items`, a nonempty ordered sequence of
+existing protected `StructuredFactReadItem` values. All other arms have
+exactly the discriminator.
+
+| `status` | Meaning |
+| --- | --- |
+| `found` | The authorized active catalog supports the predicate and the current protected read returned facts |
+| `no_readable_fact` | The supported current read completed and found no fact it could release |
+| `unsupported_predicate` | The valid predicate token is absent from the caller's verified effective catalog |
+| `catalog_changed` | The caller's expected version differs from the currently authorized and verified selected version |
+| `needs_clarification` | The authenticated request explicitly reports an unresolved reference |
+| `invalid_request` | Request fails the closed grammar |
+| `denied` | Authentication or a required current grant is absent or invalid |
+| `unavailable` | Required runtime, authorized catalog closure, or protected read could not be verified or completed |
+
+These outcomes describe one query. A host may say it has no recorded due
+date for a readable miss or ask which bill the user meant for clarification.
+An unsupported predicate says nothing about facts recorded under another
+catalog, historical data, or another memory domain. Neither errors nor
+unsupported requests are blank successful reads. Found items keep the
+existing protected item fields, including subject/predicate, authorized
+provenance, and the item's historical catalog version ID and digest.
+There is no separate selected-catalog metadata, count, input echo, or
+hidden-data reason at the response level.
+
+### Production path and consistency
+
+1. The packaged bridge's direct read surface (`MemoriiHermesMemoryProvider`)
+   and the generic `AuthenticatedSourceRuntime` expose the same method. Each
+   verified factory binds it to `ProviderMemoryService.diagnose_structured_recall`
+   with the request and server-issued `AuthenticatedHostIngress`, using the
+   host's signed-in account, agent binding and session. The generic builder
+   accepts this read binding directly, independent of a completed-turn
+   runtime. Use the existing scoped read authority pattern: the trusted
+   host binding resolves verified ingress to one installation partition,
+   one fact scope and a `ResolvedScopedReadGrant` with exact semantic rows
+   and one `StructuredFactReadAuthority` per applicable catalog coordinate.
+   At both factories the verified installation operator explicitly enables
+   this read-only binding in trusted host configuration. A retained grant
+   alone is not opt-in. The binding supplies the authorized installation,
+   account and agent, fact scope, semantic namespace rows, and exact
+   fact/catalog grant references (ID and version, including each catalog
+   coordinate) for the existing durable grant states. Pure ingress binds
+   the server-verified session to the same installation, account and agent.
+   The host read authority then issues a request-local scoped read handle
+   with trusted task/state labels, expiry and invalidation. Core resolves
+   that handle to the grant and checks the same handle, labels, expiry,
+   host/session binding and grant again at release, using the scoped read
+   authority's release check. Invalidate the handle when the request
+   completes or aborts. No adapter or request byte may pick the
+   rows, host labels, grants, source IDs, or catalog pointer. Missing opt-in,
+   session mismatch or absent durable grant denies on a composed port.
+   The binding cannot publish grants, register writer admission, or
+   authorize fact submission. Paired evaluation is outside this path.
+   The new port never consults write-tool authorization, current capture,
+   or the completed-turn read callback. The older read paths keep their
+   existing authority contracts.
+2. Core resolves ingress on the pure read path. With no read port, serving
+   gate, or authority owner it returns `unavailable`. Invalid ingress, an
+   invalid or expired host read grant, or no current same-scope grant pair
+   returns `denied` before an input diagnostic. The provider checks the
+   exact same-store grant identities and versions inside one
+   `MemoryPlaneService.read_snapshot_linearized` callback. Once authorized,
+   invalid shape returns `invalid_request` and unresolved shape returns
+   `needs_clarification`. Those two outcomes require any current grant pair
+   in the authorized chain. Neither consults selection pointers, the catalog
+   body, or facts. Exact requests continue to selection. An error opening
+   or validating the authoritative snapshot returns `unavailable`. A failed
+   host release authorization turns a pending result into `denied`.
+3. For an exact request, core applies Section 6 selection inside the same
+   callback. Start at the coordinate derived from the authenticated owner
+   chain. An absent child with no local selection state permits the authorized
+   parent. A coordinate with selection state requires its own current
+   visibility grant before version lookup. Grant denial never broadens the
+   query. With a current grant, an invalid pointer or missing version or
+   capability closure returns `unavailable`. The package-indexed locator
+   verifies the selected owner, immutable version, catalog digest and runtime
+   bundle. If the request carries a version expectation, compare it with
+   the verified selected version digest before checking membership or
+   looking up facts. A mismatch returns `catalog_changed` with no items
+   or version metadata after release authorization. It cannot override
+   denial or unavailable selection. Membership comes from the verified version's effective IDs
+   (`predicate_ids` for packaged versions, `relation_ids` for learned versions).
+   The corresponding verified declaration and registered capabilities
+   supply read policy. An absent predicate is `unsupported_predicate`.
+   A declared predicate with missing read support is `unavailable`. A
+   historical item may use another current visibility grant in the
+   authorized chain. Missing that item's grant excludes it.
+4. For a supported predicate, run the common protected reader with that same
+   snapshot, one subject and predicate, and a trusted UTC reference time.
+   Require current lifecycle and temporal eligibility in both claim-state
+   and native projection reads. Use the existing half-open validity rule:
+   start is inclusive, end is exclusive, and an absent bound is open.
+   Apply it before deriving either direction. Superseded, retracted, expired,
+   and future facts cannot answer the current question. Keep existing
+   ordering and symmetric read semantics.
+5. Apply the ordinary committed semantic namespace gate before loading
+   internal claim closures. Identify matching forward/reverse candidates,
+   then check verified fact scope and historical catalog owner with current
+   caller/agent visibility before a claim can affect the outcome. Resolve
+   schema-1 bound facts against the verified seed catalog and derive their
+   item version metadata from that seed. Schema-2 facts use their pinned
+   immutable version and runtime. Do not rewrite either. A truly unbound
+   pre-catalog projection is outside this query. Use the existing legacy
+   verifier and record shape to identify it in the same snapshot and keep
+   it on the separate path in Section 8. Missing binding alone does not
+   make a new-shaped claim legacy. Unrelated legacy and foreign records do
+   not enter the requested claim closure. For eligible catalog-bound claims,
+   reuse the scoped-context catalog verifier and its separate protected
+   provenance rules for the record, lifecycle, source and endpoint joins.
+   Record closure failures are pending until the serving check can exclude
+   known suppressed coordinates. A matching eligible claim still missing
+   required history or provenance after that check makes the whole result
+   `unavailable`.
+6. Reauthorize the same host grant for release under the partition read
+   fence, using scoped-context release reauthorization. At the final serving
+   check, sample the injected storage administration revoked-identity view
+   once. Test the request and candidate's verified record, claim, subject,
+   entity object and all required provenance/source coordinates. Exclude
+   suppressed claims in both directions, including before tombstone
+   publication. A revoked requested subject gives the same result as an
+   absent subject. Suppression of a known required coordinate excludes it
+   even when its artifact has already been removed. Unknown provenance or
+   history remains an integrity failure for an otherwise eligible match.
+   A configured empty view is valid. An unavailable view fails closed.
+   The partition fence orders same-store grant and selection changes.
+   Host reauthorization and the suppression journal retain their own
+   authority and ordering. Per Semantic Forgetting Section 6.7, refresh
+   through the serving owner with no control lock inside the partition
+   transaction. A suppression complete before the final view sample is
+   honored. A concurrent change after that sample governs the next call.
+   Release `found` only for authorized items and `no_readable_fact` only
+   after a successful empty read.
+
+Verified packaged catalogs are the first installed diagnosis path. For a
+learned catalog, the locator must verify its exact immutable parent closure
+under Section 6. Early installed overlays can have a flattened predicate
+list without an exact packaged parent version, while the seed and packaged
+child share a catalog digest. This shape returns `unavailable` for an exact
+diagnosis. The current base pointer and a hardcoded predicate inventory
+cannot supply the original parent. Existing authorized retrieval remains
+available through its own contract. Enabling diagnosis for a version without
+this proof requires a separately governed evidence-backed binding or rebase.
+
+The release linearizes the answer against one verified local snapshot.
+Do not compose a nested snapshot or reuse write preflight, lazy grant
+publication, installation repair, captured-turn pinning, or bootstrap.
+Repeated calls may see newer committed data or different authority; no
+operation ID, durable cache, write, or replay is created. A rollback can
+make a formerly active predicate unsupported for this operation. The
+existing protected historical read retains its historical authority rules
+and remains separately callable. No backfill or stored format change is
+required. A host without the new port retains its existing read surface.
+
+### Verification and learning boundary
+
+The diagnosis creates no source, observation, fact, candidate, or catalog
+record and invokes no model. An unsupported request can help a host explain
+a miss, but cannot open or increment a coverage group. Any later discovery
+uses the existing scoped source admission, verified assertion and recurrence
+rules of Section 5. Read diagnosis makes no claim about ontology confidence.
+
+Verify through two authenticated host compositions with local storage, no
+model configuration and outbound access blocked. Exercise a work-item due
+date and a bill due date, plus a known empty read, an authorized symmetric
+read, an inactive or unknown predicate, and an unresolved reference. Compare
+hidden-only data with absence for both a different signed-in account and a
+different agent under the same user, including reverse reads. Exercise missing
+and revoked grants, invalid selected or historical authority, pointer change
+and revocation across read release, rollback, and restart. Check that every
+outcome leaves durable state and learning counters unchanged. The contract is
+specified here; implementation and installed verification are separate work.
+
+## 13. Catalog inspection
+
+### Inspect, clarify, and recall
+
+An authenticated host can inspect a relation before calling structured recall.
+The host supplies an exact ID or a bounded catalog name, then uses the matching
+definition and typed endpoints to choose a relation. If the name has multiple
+matches, the host can clarify. For a work question, `project owner` returns
+both the seed's one-current-owner relation and the base corpus's set of
+accountable owners with broader endpoint types. For a household question,
+`bill due date` finds `obligation_due_on`. With the user's canonical bill ID,
+the host can then retrieve its date or explain that there is no readable date.
+The signed-in account remains the visibility boundary for household facts.
+
+The host sends the selected ID, canonical subject ID and the version digest
+returned by inspection to Section 12. If the selected version changed,
+`catalog_changed` prompts a new inspection and a new decision. If selection
+is unchanged, diagnosis uses the current authorized fact state from its
+own protected snapshot. Inspection confers no permission to read a fact.
+Both operations use local verified catalog and memory state without a
+Memorii API key, model, embeddings, outbound service or host-specific tool.
+The user or host supplies relation wording and subject identity separately.
+
+### Closed lookup contract
+
+`inspect_catalog_relation` accepts a `CatalogRelationInspectionRequest`.
+The exact allowed arms are `kind: predicate_id` with required `predicate_id`
+as in Section 12, or `kind: name` with required `name`. No extra fields,
+nulls, modes, or mixed arms are valid. Name input is 1 to 128 ASCII bytes
+containing only letters, digits, spaces, underscores, and hyphens, with at
+least one letter or digit. Lowercase it, replace each run of separators with
+one space, and strip leading and trailing spaces. Compare the entire
+normalized string against the same normalization of each visible label and
+lookup alias. The exact-ID arm remains case sensitive with no
+normalization or alias fallback. There is no prefix, substring, semantic
+ranking or direct free-text question parser.
+
+`CatalogRelationInspectionResponse` is a closed union:
+
+| `status` | Other required fields and exact meaning |
+| --- | --- |
+| `matched` | `catalog_version_digest` (64 lowercase hexadecimal characters), `relations` (exactly one descriptor) |
+| `ambiguous` | `catalog_version_digest`, `relations` (at least two distinct descriptors sorted by exact predicate ID) |
+| `no_match` | None. A verified selected catalog has no matching entry under the chosen lookup arm. |
+| `invalid_request` | None. The input fails the closed grammar. |
+| `denied` | None. Required authenticated read authority is absent, stale or revoked. |
+| `unavailable` | None. Required read composition, selected catalog, or complete descriptor projection cannot be verified. |
+
+The `CatalogRelationDescriptor` contains exactly `predicate_id`, `label`,
+`lookup_aliases`, `definition`, `subject_type_ids`, `object_endpoint`,
+`read_direction`, and `read_form`. The label is the predicate ID rendered
+with underscores replaced by spaces. Lookup aliases are sorted distinct
+normalized names. The definition is a nonempty catalog description up to
+4 KiB of UTF-8. Subject types form a nonempty sorted unique sequence of
+type tokens authorized by the descriptor's verified owning declaration.
+`object_endpoint` is a closed tagged value:
+`kind: entity` with a nonempty sorted unique `type_ids` sequence, or
+`kind: literal` with one registered `value_type`. `read_direction` is
+`forward_only` or `symmetric_view`, denoting existing read derivation.
+`read_form` is `set`, `current`, or `history`, describing the declaration's
+read policy. This metadata describes the relation and never supplies a
+subject ID, a fact, a claim count, a historical query, or a capability
+beyond the protected reader's existing rules. Metadata is data for the
+host to display or interpret, never executable instructions.
+
+### Declaration projection and authority
+
+The read service projects the exact active catalog accepted by Section 12.
+There is one descriptor per effective relation. It verifies completeness
+and unique canonical IDs and rejects the projection as a whole on missing,
+mismatched, or invalid declaration authority. A normalized name may point
+to several IDs. Multiple names for one ID yield one match. Include all
+matching IDs within the existing catalog size limit; never truncate an
+ambiguous result into a single match.
+
+| Verified catalog input | Authoritative descriptor source |
+| --- | --- |
+| Seed profile | Bind the three seed projections below to the exact seed profile manifest and verified seed version. Endpoint types come from the profile contract (`ProjectId` and `PersonName` retain their profile meanings). The seed policy is forward only and one current value. |
+| Default package | Inherit the exact seed projection. Project the additional 53 typed rows from the corpus whose bytes and digest the selected package verifies. Use `meaning`, typed endpoints, `read_derivation_policy` and `read_form`. Do not project acceptance cases, source text, or internal policy metadata. |
+
+Validate endpoint types against their original declaration authority. The
+seed profile and its verified adapter own the seed tokens below, including
+`ProjectId` and `PersonName`. These remain seed tokens within the verified
+default package and do not require entries in the default entity registry.
+The additional corpus rows use the verified corpus entity registry and
+registered literal policies. Both sources require their exact typed version
+bindings; do not translate seed types into corpus types.
+
+Seed definitions for this read projection are:
+
+| ID | Subject | Object | Definition |
+| --- | --- | --- | --- |
+| `project_owner` | `ProjectId` | entity `PersonName` | One current person named as the project's owner. |
+| `project_deadline` | `ProjectId` | literal `LocalDate` | One current calendar deadline for the project. |
+| `project_status` | `ProjectId` | literal `StatusText` | One current reported status for the project. |
+
+There are three presentation aliases, listed exhaustively: `project owner`
+for `project_owned_by`, `bill due date` for `obligation_due_on`, and
+`work item due date` for `work_item_due_on`. These are lookup labels bound
+to the verified default package's typed relations and inherited only through
+a proven exact parent. They never change source ingestion, the relation
+registry, learner equivalence, or exact recall selectors. The core
+projection owns these mappings and seed descriptions as closed,
+presentation-only definitions keyed to the verified immutable
+version/runtime tuple. They are not stored in catalog history or supplied
+by a host, acceptance example, or mutable glossary. Use the pinned
+declarations for type and policy. The verified catalog and runtime version,
+not a shared catalog digest or a display version label, establish which
+projection applies.
+
+The standalone historical four-relation artifact has no selectable capability
+closure and is not an inspection source. The default package's own
+`reports_to` row is covered by its verified package. Inspection initially
+serves the verified seed and default package only. An early learned catalog
+without an exact parent closure returns `unavailable` for both inspection and
+exact diagnosis. Diagnosis can use a verified learned closure as specified
+in Section 12. Serving learned descriptions in inspection also needs a
+separately verified projection of its added declarations, their authority
+and whether any description relies on suppressed evidence. Until that path
+is defined and configured, inspection returns `unavailable` for a selected
+learned catalog. No inactive, paired-evaluation or broader catalog can be
+substituted. Historical fact recall follows its existing contract.
+
+### Read binding and verification
+
+The same two verified host roots in Section 12 bind
+`ProviderMemoryService.inspect_catalog_relation` with the closed request and
+server-issued `AuthenticatedHostIngress`. The provider uses the same pure
+ingress, configured read authority, partition and semantic scope,
+`MemoryPlaneService.read_snapshot_linearized`, exact selected-catalog
+locator, and current host/grant release checks. Request bytes cannot
+choose a partition, catalog owner, version or grant. Authenticate before
+input diagnostics. A malformed request with a current pair in the caller's
+authorized chain returns `invalid_request` without checking selection or
+metadata. A valid request checks the required current selected-coordinate
+grant before reading the catalog body. Perform selection, projection and
+lookup in the same callback and reauthorize the same host grant before
+releasing any result. Apply the Section 12 rules for an absent child,
+denied child, broken closure, and release denial. The route uses no fact
+query, legacy read, transcript, or source/endpoint suppression probe. It
+discloses only verified catalog definitions to an authorized reader.
+
+The ports begin after existing authorized startup. Factory startup can
+select the default, recover work, or reject broken catalog state before a
+port exists. The per-call `unavailable` status applies to an already
+composed port; existing startup behavior has its own result. Verify the
+combined work and household path through both installed host surfaces
+using the verified default after reopening a provisioned, quiescent local
+store without model configuration, network, write tool or turn capture.
+Exercise unique, ambiguous, absent and denied lookup and break catalog
+authority after initialization to test the live `unavailable` result.
+Exercise the controlled same-store seed-to-default transition separately
+through the existing catalog installation owner. Its shared catalog digest
+and changed version digest distinguish the handoff guard without adding
+a rollout or rollback path. Both calls stay read only across success,
+denial, failure and retry. Neither records learning evidence or starts
+candidate creation.

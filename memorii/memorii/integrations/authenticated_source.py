@@ -13,6 +13,10 @@ from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.models import ProviderOperation, ProviderSyncResult
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.semantic_ingestion.catalog_inspection import (
+    CatalogRelationInspectionResponse,
+    StructuredRecallDiagnosisResponse,
+)
 from memorii.core.semantic_ingestion.production_authority import (
     VerifiedCapabilityMonitoringAuthority,
     VerifiedProductionHostAuthority,
@@ -25,6 +29,7 @@ from memorii.core.storage_administration.revoked_identity_view import (
     RevokedIdentityServingGate,
 )
 from memorii.domain.enums import SourceModality
+from memorii.integrations.catalog_read_binding import CatalogReadBinding
 
 
 class AuthenticatedSourceSubmission(BaseModel):
@@ -99,10 +104,12 @@ class AuthenticatedSourceRuntime:
         adapter: AuthenticatedSourceAdapter,
         issue_ingress: Callable[[AuthenticatedSourceSubmission], AuthenticatedHostIngress],
         learned_ontology: AuthenticatedSourceLearnedOntologyBinding | None = None,
+        catalog_read: CatalogReadBinding | None = None,
     ) -> None:
         self._adapter = adapter
         self._issue_ingress = issue_ingress
         self._learned_ontology = learned_ontology
+        self._catalog_read = catalog_read
 
     def submit(self, submission: AuthenticatedSourceSubmission) -> ProviderSyncResult:
         ingress = self._issue_ingress(submission)
@@ -130,6 +137,16 @@ class AuthenticatedSourceRuntime:
         if self._learned_ontology is None:
             return {"status": "unavailable"}
         return self._learned_ontology.status()
+
+    def inspect_catalog_relation(self, request: object) -> CatalogRelationInspectionResponse:
+        if self._catalog_read is None:
+            return CatalogRelationInspectionResponse.model_validate({"status": "unavailable"})
+        return self._catalog_read.inspect_catalog_relation(request)
+
+    def diagnose_structured_recall(self, request: object) -> StructuredRecallDiagnosisResponse:
+        if self._catalog_read is None:
+            return StructuredRecallDiagnosisResponse.model_validate({"status": "unavailable"})
+        return self._catalog_read.diagnose_structured_recall(request)
 
     def read_structured_facts(
         self, request: StructuredFactReadRequest,
@@ -159,6 +176,7 @@ def build_authenticated_source_runtime(
         VerifiedCapabilityMonitoringAuthority, ...
     ] = (),
     learned_ontology: AuthenticatedSourceLearnedOntologyBinding | None = None,
+    catalog_read: CatalogReadBinding | None = None,
 ) -> AuthenticatedSourceRuntime:
     """Build the public non-Hermes source root from verified host authority."""
 
@@ -188,6 +206,7 @@ def build_authenticated_source_runtime(
         adapter=AuthenticatedSourceAdapter(service),
         issue_ingress=issue_ingress,
         learned_ontology=learned_ontology,
+        catalog_read=catalog_read,
     )
 
 

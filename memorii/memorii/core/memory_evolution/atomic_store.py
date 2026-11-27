@@ -2656,6 +2656,7 @@ class SemanticIngestionAtomicStore:
         expected_fence = self._retention_seal_fence(
             delivery_key_digest=delivery_key_digest,
             operation_fence=operation_fence,
+            get_record=self._memory_plane.get_record,
         )
         if value.operation_fence_id != expected_fence.operation_fence_id:
             raise PreplanningStoreError("retention seal member is substituted")
@@ -2666,6 +2667,7 @@ class SemanticIngestionAtomicStore:
         *,
         delivery_key_digest: str,
         operation_fence: OperationFenceBinding,
+        get_record: Callable[[str], CanonicalMemoryRecord | None],
     ) -> OperationFenceBinding:
         """Resolve a retained operation back to its immutable capture fence.
 
@@ -2674,7 +2676,7 @@ class SemanticIngestionAtomicStore:
         admission index; it never receives a replacement seal under its own
         operation fence.
         """
-        index = self._memory_plane.get_record(
+        index = get_record(
             f"semantic_ingestion:admission:{delivery_key_digest}"
         )
         if index is None or index.source_kind != "semantic_ingestion_admission_index":
@@ -2687,11 +2689,11 @@ class SemanticIngestionAtomicStore:
             raise PreplanningStoreError("retention seal member is substituted") from exc
         if original_fence == operation_fence:
             return original_fence
-        link = self._memory_plane.get_record(
+        link = get_record(
             "semantic_ingestion:retained-source-operation:"
             + operation_fence.operation_fence_id
         )
-        source = self._memory_plane.get_record(operation_fence.source_id)
+        source = get_record(operation_fence.source_id)
         if (
             link is None
             or source is None
@@ -3625,9 +3627,11 @@ class SemanticIngestionAtomicStore:
 
     @staticmethod
     def _structured_grant_state_record_id(grant_kind: str, grant_id: str) -> str:
+        from memorii.core.semantic_ingestion.catalog_authority import structured_grant_state_record_id
+
         if grant_kind not in {"source", "fact", "catalog_visibility"} or not grant_id:
             raise PreplanningStoreError("structured submission grant coordinate is invalid")
-        return "semantic_ingestion:structured-grant:" + sha256((grant_kind + "\0" + grant_id).encode("utf-8")).hexdigest()
+        return structured_grant_state_record_id(grant_kind, grant_id)
 
     def _structured_grant_state_record(self, state: object, *, timestamp: datetime) -> CanonicalMemoryRecord:
         from memorii.core.semantic_ingestion.catalog_authority import (
@@ -4638,10 +4642,60 @@ class SemanticIngestionAtomicStore:
         structured operation without its claim binding must therefore never
         reach this compatibility path.
         """
+        del revision, grant
+        return self._verify_bootstrap_v3_runtime_projection(
+            projection, records=records, require_legacy=True, required_ids=set(),
+        )
+
+    def verify_catalog_bound_bootstrap_v3_runtime_projection(
+        self,
+        projection: CanonicalMemoryRecord,
+        *,
+        records: tuple[CanonicalMemoryRecord, ...],
+        endpoints: tuple[tuple[str, str], ...],
+        required_ids: set[str],
+    ) -> bool:
+        """Verify the committed claim history and its retained endpoint revisions."""
+        if self._verify_bootstrap_v3_runtime_projection(
+            projection, records=records, require_legacy=False, required_ids=required_ids,
+        ) != "verified":
+            return False
+        from memorii.core.memory_evolution.graph_records import EntityRevision
+        from memorii.core.semantic_ingestion.event_replay import decode_semantic_replay_state
+
+        replay_id = _semantic_replay_state_id()
+        required_ids.add(replay_id)
+        replay = next((row for row in records if row.memory_id == replay_id), None)
+        if (
+            replay is None or replay.domain is not MemoryDomain.EXECUTION
+            or replay.status is not CommitStatus.COMMITTED
+            or replay.visibility is not MemoryRecordVisibility.INTERNAL_CONTROL
+            or replay.source_kind != "semantic_ingestion_replay_state"
+        ):
+            return False
+        try:
+            state = decode_semantic_replay_state(bytes.fromhex(replay.content["canonical_hex"]))
+        except (KeyError, TypeError, ValueError):
+            return False
+        if replay.content.get("state_digest") != state.state_digest:
+            return False
+        revisions = {
+            item.record_id: item.record.logical_entity_id
+            for item in state.materialized_records if isinstance(item.record, EntityRevision)
+        }
+        return all(revisions.get(revision_id) == entity_id for revision_id, entity_id in endpoints)
+
+    def _verify_bootstrap_v3_runtime_projection(
+        self,
+        projection: CanonicalMemoryRecord,
+        *,
+        records: tuple[CanonicalMemoryRecord, ...],
+        require_legacy: bool,
+        required_ids: set[str],
+    ) -> Literal["verified", "not_legacy", "unavailable"]:
         # This reader deliberately uses the caller's assembled snapshot.  A
         # fresh store read here could validate a different image from the one
         # whose projection is about to be released.
-        del revision
         from memorii.core.memory_evolution.record_projection import (
             runtime_context_records_from_committed_claims,
         )
@@ -4694,17 +4748,18 @@ class SemanticIngestionAtomicStore:
         if len(candidates) != 1:
             return "unavailable"
         primary, request, reload = candidates[0]
+        required_ids.add(primary.memory_id)
         # Retained-source identities are minted only by the structured
         # submission admission path.  This durable operation coordinate keeps
         # a missing or damaged submission-link record from downgrading a new
         # claim into a pre-catalog legacy claim.
-        if request.source_operation_id.startswith("retained-source:v1:"):
+        if require_legacy and request.source_operation_id.startswith("retained-source:v1:"):
             return "not_legacy"
         retained_id = (
             "semantic_ingestion:retained-structured-submission:"
             + request.operation_fence_binding.operation_fence_id
         )
-        if retained_id in snapshot:
+        if require_legacy and retained_id in snapshot:
             return "not_legacy"
         try:
             core = reload.persisted_result.core
@@ -4722,6 +4777,35 @@ class SemanticIngestionAtomicStore:
                 return "unavailable"
             if reload.ledger_entry_id is None or reload.ledger_entry_digest is None:
                 return "unavailable"
+            expected_fanout_ids = {
+                _bootstrap_graph_v3_group_commit_fanout_id(
+                    request.source_operation_id, request.transaction_group_id,
+                    operation_id, request.request_ctv_digest,
+                )
+                for operation_id in request.operation_ids
+            }
+            required_ids.add(reload.ledger_entry_id)
+            if not require_legacy:
+                required_ids.update(expected_fanout_ids)
+                required_ids.update((
+                    _reference_integrity_ledger_id(),
+                    primary.memory_id + ":graph-revision-delta",
+                    "semantic_ingestion:admission:" + request.operation_fence_binding.delivery_key_digest,
+                ))
+                if reload.group_result_schema_version == 3:
+                    required_ids.add(group_commit_seal_member_id(primary.memory_id))
+                receipt = reload.native_projection_publication_receipt
+                if receipt is not None:
+                    from memorii.core.semantic_ingestion.bootstrap_graph_projection_publication import (
+                        native_projection_publication_receipt_id,
+                    )
+
+                    required_ids.update((
+                        _semantic_event_batch_id(receipt.canonical_event_batch.log_position.sequence),
+                        native_projection_publication_receipt_id(receipt.publication_identity_digest),
+                        receipt.replay_authority_evidence_id,
+                        receipt.replay_checkpoint_evidence_id,
+                    ))
             ledger_record = snapshot.get(reload.ledger_entry_id)
             if ledger_record is None:
                 return "unavailable"
@@ -4743,6 +4827,7 @@ class SemanticIngestionAtomicStore:
                 verified_primary=primary,
                 verified_request=request,
                 verified_reload=reload,
+                required_read_record_ids=None if require_legacy else required_ids,
             )
             if reload.group_result_schema_version == 3:
                 self._verify_group_commit_seal_snapshot(
@@ -4763,8 +4848,6 @@ class SemanticIngestionAtomicStore:
                 or admission_index is None
                 or admission_index.source_kind
                 != "semantic_ingestion_admission_index"
-                or admission_index.content.get("operation_fence_binding")
-                != request.operation_fence_binding.model_dump(mode="json")
                 or admission_index.content.get("principal_binding_digest")
                 != request.operation_fence_binding.delivery_principal_binding_digest
                 or admission_index.content.get("delivery_key_digest")
@@ -4774,11 +4857,21 @@ class SemanticIngestionAtomicStore:
                 or source.agent_id != projection.agent_id
             ):
                 return "unavailable"
+            fence = request.operation_fence_binding
+            if admission_index.content.get("operation_fence_binding") != fence.model_dump(mode="json"):
+                if require_legacy:
+                    return "unavailable"
+                required_ids.add("semantic_ingestion:retained-source-operation:" + fence.operation_fence_id)
+                self._retention_seal_fence(
+                    delivery_key_digest=fence.delivery_key_digest,
+                    operation_fence=fence,
+                    get_record=snapshot.get,
+                )
 
             # A marker is authoritative even when the corresponding binding
             # has been deleted or damaged.  Never reinterpret a new claim as
             # an old one merely because its new-reader evidence is absent.
-            if any(
+            if require_legacy and any(
                 record.source_kind == "semantic_ingestion_retained_structured_submission"
                 and record.content.get("operation_fence_binding")
                 == request.operation_fence_binding.model_dump(mode="json")
@@ -4793,13 +4886,6 @@ class SemanticIngestionAtomicStore:
             ]
             if len(fanouts) != len(request.operation_ids):
                 return "unavailable"
-            expected_fanout_ids = {
-                _bootstrap_graph_v3_group_commit_fanout_id(
-                    request.source_operation_id, request.transaction_group_id,
-                    operation_id, request.request_ctv_digest,
-                )
-                for operation_id in request.operation_ids
-            }
             if {record.memory_id for record in fanouts} != expected_fanout_ids:
                 return "unavailable"
             for fanout in fanouts:
@@ -4898,7 +4984,7 @@ class SemanticIngestionAtomicStore:
             ))
         except (PreplanningStoreError, TypeError, ValueError, KeyError):
             return "unavailable"
-        return "verified" if expected == actual and projection in expected else "unavailable"
+        return "verified" if projection in expected and (not require_legacy or expected == actual) else "unavailable"
 
     def _structured_submission_commit_fence_preconditions(self, request: object) -> tuple[MemoryPlanePrecondition, ...]:
         """Read current grants for a retained structured operation into the V3 CAS set."""
@@ -15891,6 +15977,7 @@ class SemanticIngestionAtomicStore:
         verified_primary: CanonicalMemoryRecord | None = None,
         verified_request: BootstrapGraphGroupCommitRequestV3 | None = None,
         verified_reload: BootstrapGraphGroupCommitReloadV3 | None = None,
+        required_read_record_ids: set[str] | None = None,
     ) -> None:
         """Join the immutable group result, audit and native signed checkpoint."""
         from memorii.core.memory_evolution.bootstrap_group_observation import (
@@ -16087,6 +16174,8 @@ class SemanticIngestionAtomicStore:
             raise PreplanningStoreError("native graph differs from sealed planner materialization")
         if tuple(expected_results) != core.ordered_operation_results:
             raise PreplanningStoreError("native group results differ from sealed materialization")
+        if required_read_record_ids is not None:
+            required_read_record_ids.update(record.memory_id for record in expected_effects)
         actual_effects = tuple(record for record in snapshot_records.values()
                                if record.source_kind == "semantic_ingestion_bootstrap_graph_v3_group_commit_effect"
                                and record.content.get("primary_id") == primary.memory_id)
