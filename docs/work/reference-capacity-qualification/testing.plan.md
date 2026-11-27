@@ -2,7 +2,7 @@
 
 - Work type: testing
 - Delivery fidelity: Level 3
-- Status: both dedicated ordinary-v8 Linux workloads meet the owner's revised 11 s budget. Exact-candidate native macOS qualification remains open.
+- Status: native capacity qualification passed for ordinary staged v8 on both Linux and macOS at the owner's approved 11 s acquisition budget.
 - Branch: `codex/durable-delivery-implementation`
 - Starting head: `ba1e7baab0626aaa32c36a350876c0c3b952b337`
 - Parent: [reference capacity milestone](../durable-delivery-implementation/milestones/reference-capacity.plan.md)
@@ -99,12 +99,19 @@ sizes, sample counts and other budgets remain unchanged. Sealed startup and
 further startup optimization are deferred. Fresh-v8 initialization and
 default promotion have their own gates.
 
+## Same-Wheel Native macOS Results
+
+The [dedicated native macOS run](macos/f5786d12/README.md) used the same
+`f5786d12` wheel and frozen driver as Linux. Verified startup acquisition
+was 8.06 s balanced and 9.01 s concentrated at p95, with zero sample errors
+or driver retries. Every other budgeted series passed. The [macOS verdict](macos/f5786d12/adjudication.json)
+and [Linux verdict](linux/f5786d12/adjudication.json) apply the owner-approved
+11 s policy to the original ten-sample series without changing the reports.
+All four workloads meet the capacity gate for this tested wheel.
+
 ## Next Action
 
-Qualify both dedicated native macOS workloads with the immutable Linux-tested
-`f5786d12` wheel and driver. Adjudicate acquisition against the approved
-11 s policy transparently, keeping the original tool output and candidate
-identity. The older Mac reports used a different wheel. Reusing the
-Linux-tested artifact avoids repeating the Linux measurements for a
-threshold-only change. The parent release conformance packet owns installed
-owner and harness journeys, exact artifact verification and release review.
+Carry this exact-wheel evidence into the [parent release conformance
+packet](../durable-memory-implementation/milestones/release-conformance.plan.md)
+for installed owner and harness journeys, artifact verification and release
+review. Fresh-v8 initialization and default promotion remain separate.

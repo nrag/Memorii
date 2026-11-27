@@ -1,0 +1,27 @@
+{
+  "candidate_revision": "f5786d127101ff5f828f9ababa40964f6915a503",
+  "distributions": {
+    "balanced": {
+      "original_report_sha256": "5fd357f5625219dc0a867815273ecdefc8d8d01442b7ad4d6a092ac720d487ed",
+      "original_status": "passed",
+      "other_failed_series": [],
+      "sample_errors": 0,
+      "startup_acquisition_p95_ms": 8062.437541,
+      "startup_acquisition_status": "passed",
+      "status": "passed"
+    },
+    "concentrated": {
+      "original_report_sha256": "c1dce5fd7c1997d2e9ab3b84f8931d61f8f541abcc636445e7e1bdaf3dc0dea5",
+      "original_status": "passed",
+      "other_failed_series": [],
+      "sample_errors": 0,
+      "startup_acquisition_p95_ms": 9005.13325,
+      "startup_acquisition_status": "passed",
+      "status": "passed"
+    }
+  },
+  "policy_revision": "9d661a3b22695a75b398b18ddccc58c1086b3ac7",
+  "profile": "macos",
+  "startup_acquisition_budget_ms": 11000,
+  "wheel_sha256": "2f227a683f722e4b9c30db16eb6ce29cc997f9047eed6f2bb87fdd3090683d3f"
+}
