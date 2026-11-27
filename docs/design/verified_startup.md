@@ -1,6 +1,6 @@
 # Verified Startup For Managed Storage
 
-**Proposed design.** The installed default remains v7. The first cold-start experiment covers owner-staged v8 named generations in read-only mode. The current acquisition remains the default path for a new process serving a writable generation.
+**Proposed design.** Fresh installations use ordinary v8. The first cold-start experiment covers owner-staged v8 named generations in read-only mode. The current acquisition remains the default path for a new process serving a writable generation.
 
 The [production custody proposal](sealed_startup_custody.md) specifies the enrolled storage owner, retained SQLite view, writer handoff and erasure protocol.
 
@@ -64,7 +64,7 @@ The raw scan, non-raw manifest and replay together took approximately 9 seconds 
 
 | ID | Requirement and source | Acceptance |
 | --- | --- | --- |
-| VS-01 | Preserve default and release authority. User request and current Tier A/B contract. | v7 initializes and opens through current paths. Exact authority/tuple checks remain before every release. Explicit audits execute the original logical verifier. |
+| VS-01 | Preserve default and release authority. User request and current Tier A/B contract. | Fresh v8 initializes and opens through the ordinary verified path. Exact authority/tuple checks remain before every release. Explicit audits execute the original logical verifier. |
 | VS-02 | Keep one verification owner for live harness reconnect. Existing managed sidecar and factory boundaries. | Two installed harness client processes restart against one acquired sidecar. A normal reconnect runs zero full scans. Revoked credentials, grant expiry, external publication and daemon death exercise current deny or reacquire behavior. |
 | VS-03 | Cold reuse proves the exact current image and profile. Current preserved-head detection boundary. | Both signed fixtures pass complete seal-time verification and reopen through byte authentication with zero raw, catalog rebuild, or replay calls during eligible startup. A single-byte mutation anywhere in a committed raw body, catalog/index, checkpoint, or event batch prevents ready. |
 | VS-04 | Preserve custody and ordinary failure behavior. Control, restore and SQLite contracts. | Use barriers at journal validation, hash-to-open, ready-to-read and transition-to-drain. Substitute a detached copy or a new inode. Test hidden journals, valid stale and malformed seals, authority changes including forget and key rotation, and ordinary pending-intent resolution. Crash each issuance boundary. Prove no writable request can inherit the seal or its handle and no erasure completes with a surviving managed view. |

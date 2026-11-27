@@ -66,6 +66,8 @@ def test_full_fixture_seals_boundary_and_replays_exact_single_event_tail(
     monkeypatch.setattr("tests.support.reference_capacity_fixture.EVENT_COUNT", 29)
     monkeypatch.setattr("tests.support.reference_capacity_fixture.CHECKPOINT_TAIL_COUNT", 2)
     expected_mandatory = 26 if raw_payloads else 25
+    if raw_payloads:
+        monkeypatch.setattr("memorii.stores.sqlite.partition.PARTITION_SCHEMA_VERSION", 7)
 
     def planned_fill(mandatory_count: int) -> list[EventFillInput]:
         assert mandatory_count == expected_mandatory
@@ -89,7 +91,7 @@ def test_full_fixture_seals_boundary_and_replays_exact_single_event_tail(
     with StorageAdministrationService(root) as service, pytest.raises(ReferenceFixtureError, match="expected reference partition"):
         _audit(
             service, "balanced", (_TASK,), expected_events=29, expected_tail=2,
-            expected_schema=PARTITION_SCHEMA_VERSION if raw_payloads else RAW_MEMORY_PAYLOAD_SCHEMA_VERSION,
+            expected_schema=7,
         )
 
 

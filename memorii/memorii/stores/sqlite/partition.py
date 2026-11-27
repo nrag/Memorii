@@ -32,23 +32,18 @@ if TYPE_CHECKING:
     from memorii.core.semantic_ingestion.ontology_index import OntologyIndexProjection
     from memorii.stores.sqlite.materialization_sql import MaterializationCapture, MaterializationForest
 
-PARTITION_SCHEMA_VERSION = 7
+PARTITION_SCHEMA_VERSION = RAW_MEMORY_PAYLOAD_SCHEMA_VERSION
+LEGACY_RUNTIME_UPGRADE_SCHEMA_VERSION = 7
 _INITIAL_PARTITION_SCHEMA_VERSION = 1
 _CONSOLIDATION_SCHEMA_VERSION = 2
 _DELIVERY_SCHEMA_VERSION = 3
 _RUNTIME_HISTORY_SCHEMA_VERSION = 4
 _RUNTIME_SOURCE_RELEASE_SCHEMA_VERSION = 5
 _RUNTIME_REPLAY_CHECKPOINT_SCHEMA_VERSION = 6
-_INCREMENTAL_MANIFEST_SCHEMA_VERSION = 7
+_INCREMENTAL_MANIFEST_SCHEMA_VERSION = LEGACY_RUNTIME_UPGRADE_SCHEMA_VERSION
 _DEFAULT_BUSY_TIMEOUT_MS = 5_000
 
-_SCHEMA_STATEMENTS = (
-    """
-    CREATE TABLE IF NOT EXISTS partition_schema (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-    )
-    """,
+_LEGACY_MEMORY_SCHEMA_STATEMENTS = (
     """
     CREATE TABLE IF NOT EXISTS memory_batches (
         revision INTEGER PRIMARY KEY,
@@ -87,6 +82,15 @@ _SCHEMA_STATEMENTS = (
     """
     CREATE INDEX IF NOT EXISTS memory_current_records_source_kind
         ON memory_current_records(source_kind)
+    """,
+)
+
+_SCHEMA_STATEMENTS = (
+    """
+    CREATE TABLE IF NOT EXISTS partition_schema (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    )
     """,
     """
     CREATE TABLE IF NOT EXISTS memory_revision_state (
@@ -1629,6 +1633,13 @@ class PartitionDataRepository:
                 return
             for statement in _SCHEMA_STATEMENTS:
                 connection.execute(statement)
+            if PARTITION_SCHEMA_VERSION == RAW_MEMORY_PAYLOAD_SCHEMA_VERSION:
+                from memorii.stores.sqlite.raw_memory_payloads import install_raw_schema
+
+                install_raw_schema(connection)
+            else:
+                for statement in _LEGACY_MEMORY_SCHEMA_STATEMENTS:
+                    connection.execute(statement)
             if PARTITION_SCHEMA_VERSION >= _CONSOLIDATION_SCHEMA_VERSION:
                 self._install_consolidation_catalog(connection)
             if PARTITION_SCHEMA_VERSION >= _DELIVERY_SCHEMA_VERSION:

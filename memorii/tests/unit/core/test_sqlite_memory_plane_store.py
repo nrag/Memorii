@@ -73,7 +73,7 @@ def test_record_versions_retain_every_batch(tmp_path: Path) -> None:
     connection = sqlite3.connect(partition_dir / "partition.sqlite3")
     try:
         versions = connection.execute(
-            "SELECT batch_revision, record_json FROM memory_record_versions"
+            "SELECT batch_revision, CAST(body AS TEXT) FROM memory_record_versions JOIN memory_payloads USING (payload_digest)"
             " WHERE memory_id = ? ORDER BY batch_revision",
             ("mem:one",),
         ).fetchall()
@@ -152,7 +152,7 @@ def test_tampered_batch_bytes_fail_closed_on_read_and_write(tmp_path: Path) -> N
 
     connection = sqlite3.connect(partition_dir / "partition.sqlite3")
     try:
-        connection.execute("UPDATE memory_batches SET batch_json = '{\"tampered\": true}' WHERE revision = 1")
+        connection.execute("UPDATE memory_payloads SET body = zeroblob(length(body))")
         connection.commit()
     finally:
         connection.close()
@@ -171,7 +171,7 @@ def test_tampered_checksum_column_fails_closed(tmp_path: Path) -> None:
 
     connection = sqlite3.connect(partition_dir / "partition.sqlite3")
     try:
-        connection.execute("UPDATE memory_batches SET checksum = '0' * 64 WHERE revision = 1")
+        connection.execute("UPDATE memory_batches SET checksum = printf('%064d', 0) WHERE revision = 1")
         connection.commit()
     finally:
         connection.close()
@@ -266,7 +266,7 @@ def test_batches_are_appended_without_rewriting_history(tmp_path: Path) -> None:
     connection = sqlite3.connect(partition_dir / "partition.sqlite3")
     try:
         first_row = connection.execute(
-            "SELECT rowid, batch_json FROM memory_batches WHERE revision = 1"
+            "SELECT rowid, * FROM memory_batches WHERE revision = 1"
         ).fetchone()
     finally:
         connection.close()
@@ -275,7 +275,7 @@ def test_batches_are_appended_without_rewriting_history(tmp_path: Path) -> None:
     connection = sqlite3.connect(partition_dir / "partition.sqlite3")
     try:
         first_row_after = connection.execute(
-            "SELECT rowid, batch_json FROM memory_batches WHERE revision = 1"
+            "SELECT rowid, * FROM memory_batches WHERE revision = 1"
         ).fetchone()
         count = connection.execute("SELECT COUNT(*) FROM memory_batches").fetchone()[0]
     finally:

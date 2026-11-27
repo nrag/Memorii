@@ -66,16 +66,13 @@ def _stage_current(
     return backups, owner, plan, staging
 
 
-def _activate_raw(service: StorageAdministrationService, workspace: Path) -> None:
-    backups, owner, plan, staging = _stage_current(service, workspace)
-    preview = backups.preview_staged_restore(capability=owner, plan=plan, staging_root=staging, raw_payloads=True)
-    assert backups.upgrade_current_runtime(
-        capability=owner, plan=plan, staging_root=staging, preview_digest=preview.digest(), raw_payloads=True,
-    ).phase == "finalized"
+@pytest.fixture
+def legacy_installation(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("memorii.stores.sqlite.partition.PARTITION_SCHEMA_VERSION", 7)
 
 
 def test_owner_upgrades_exact_reviewed_v7_and_reopens_raw_partition(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], legacy_installation: None,
 ) -> None:
     root = tmp_path / "installation"
     original = _record("memory:first", "first \u00e9vidence")
@@ -176,7 +173,7 @@ def test_owner_upgrades_exact_reviewed_v7_and_reopens_raw_partition(
 
 @pytest.mark.parametrize("write_selector", [False, True], ids=["before-selector", "after-selector"])
 def test_interrupted_raw_cutover_recovers_the_selected_signed_generation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, write_selector: bool,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, write_selector: bool, legacy_installation: None,
 ) -> None:
     root = tmp_path / "installation"
     record = _record("memory:existing", "retained on failed upgrade")
@@ -241,7 +238,6 @@ def test_preserved_head_raw_mutation_fails_fresh_acquisition(tmp_path: Path, pag
     with StorageAdministrationService(root) as service:
         service.initialize()
         service.publish_memory_plane_batch((_record("memory:existing", text),))
-        _activate_raw(service, tmp_path / "upgrade")
     with StorageAdministrationService(root) as converted:
         converted.acquire_verified_snapshot()
         db = converted.partition_path()
@@ -278,7 +274,6 @@ def test_independent_replay_index_mutation_refuses_raw_reopen(tmp_path: Path, ca
         RuntimeCommandService(service, client_namespace="host").dispatch(RuntimeCommandRequest(
             kind="start_task", operation_id="start", goal="Retain the signed replay indexes",
         ))
-        _activate_raw(service, tmp_path / "upgrade")
     with StorageAdministrationService(root) as converted:
         converted.acquire_verified_snapshot()
         db = converted.partition_path()
@@ -292,22 +287,35 @@ def test_independent_replay_index_mutation_refuses_raw_reopen(tmp_path: Path, ca
         reopened.acquire_verified_snapshot()
 
 
-def test_older_restore_keeps_the_attested_raw_format(tmp_path: Path) -> None:
+def test_fresh_install_uses_raw_format_across_restart_and_restore(tmp_path: Path) -> None:
     root = tmp_path / "installation"
     record = _record("memory:retained", "on the archived generation")
     newer = _record("memory:discarded", "published after the backup")
     with StorageAdministrationService(root) as service:
         service.initialize()
+        with service.partition().transaction(write=False) as connection:
+            assert service.partition().read_schema_version(connection) == 8
         service.publish_memory_plane_batch((record,))
-        _activate_raw(service, tmp_path / "upgrade")
 
     with StorageAdministrationService(root) as converted:
+        assert converted.memory_plane_store().get_record(record.memory_id) == record
         archive = tmp_path / "raw-archive"
         staging = tmp_path / "raw-stage"
         owner = mint_owner_capability(converted, "owner:payload-test")
-        backups = BackupRestoreOperator(StorageAdministrationOperator(converted))
+        operator = StorageAdministrationOperator(converted)
+        operator.change_mode(ModeChangeRequest(
+            target_mode="read_only", expected_control_revision=operator.status().control_revision, reason="backup",
+        ), capability=owner)
+        backups = BackupRestoreOperator(operator)
         backups.create_backup(capability=owner, archive_root=archive, reason="older raw restore", recovery_key=_RECOVERY_KEY)
-        converted.publish_memory_plane_batch((newer,), operation_binding="migrate")
+        backups.verify_backup(archive_root=archive)
+        operator.change_mode(ModeChangeRequest(
+            target_mode="active", expected_control_revision=operator.status().control_revision, reason="continue writing",
+        ), capability=owner)
+        converted.publish_memory_plane_batch((newer,))
+        operator.change_mode(ModeChangeRequest(
+            target_mode="read_only", expected_control_revision=operator.status().control_revision, reason="restore",
+        ), capability=owner)
         plan = backups.plan_restore(capability=owner, archive_root=archive, data_loss_acknowledged=True)
         backups.apply_restore(capability=owner, plan=plan, staging_root=staging, recovery_key=_RECOVERY_KEY)
         preview = backups.preview_staged_restore(capability=owner, plan=plan, staging_root=staging)
@@ -324,7 +332,7 @@ def test_older_restore_keeps_the_attested_raw_format(tmp_path: Path) -> None:
 
 
 def test_signed_noncanonical_batch_framing_refuses_upgrade_preview(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, legacy_installation: None,
 ) -> None:
     record = _record("memory:existing", "private framing fixture")
     original_encoder = PersistedBatch.model_dump_json

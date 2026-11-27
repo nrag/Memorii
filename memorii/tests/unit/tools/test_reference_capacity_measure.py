@@ -16,6 +16,8 @@ from tests.support.reference_capacity_measure import Measurement, _cold, _summar
 @pytest.fixture(params=[False, True], ids=["default-format", "staged-raw-format"])
 def capacity_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> Path:
     raw_payloads = request.param is True
+    if raw_payloads:
+        monkeypatch.setattr("memorii.stores.sqlite.partition.PARTITION_SCHEMA_VERSION", 7)
     monkeypatch.setattr(reference_capacity_fixture, "EVENT_COUNT", 29)
     monkeypatch.setattr(reference_capacity_fixture, "CHECKPOINT_TAIL_COUNT", 2)
     monkeypatch.setattr(reference_capacity, "COLD_SAMPLE_COUNT", 1)

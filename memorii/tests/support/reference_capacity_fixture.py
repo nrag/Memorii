@@ -406,6 +406,7 @@ def _audit(
     expected_events: int,
     expected_tail: int,
     expected_schema: int = PARTITION_SCHEMA_VERSION,
+    staged_raw_payloads: bool = False,
 ) -> ReferenceStorageAudit:
     graph_digest = hashlib.sha256()
     counts: Counter[str] = Counter()
@@ -425,7 +426,7 @@ def _audit(
                     holds.append(row)
                 elif row.catalog not in _SOURCE_RUNTIME_CATALOGS:
                     observed.append(row)
-            _verify_fixture_cutover(holds, finalized, expected_schema)
+            _verify_fixture_cutover(holds, finalized, staged_raw_payloads)
             observed.sort(key=lambda row: (row.catalog, row.key))
             _verify_graph(observed, allocations, expected_refs)
             for row in observed:
@@ -457,12 +458,11 @@ def _audit(
 
 
 def _verify_fixture_cutover(
-    holds: Sequence[RuntimeMaterializedRow], finalized: RuntimePublicationState, expected_schema: int,
+    holds: Sequence[RuntimeMaterializedRow], finalized: RuntimePublicationState, staged_raw_payloads: bool,
 ) -> None:
-    raw_payloads = expected_schema == RAW_MEMORY_PAYLOAD_SCHEMA_VERSION
-    if len(holds) != int(raw_payloads):
+    if len(holds) != int(staged_raw_payloads):
         raise ReferenceFixtureError("fixture must have exactly one restore hold after staging and none by default")
-    if raw_payloads:
+    if staged_raw_payloads:
         row, = holds
         hold = DeliveryRestoreHold.model_validate_json(row.record_json)
         if (
@@ -630,12 +630,16 @@ def _prepare(
 ) -> ReferenceStorageAudit:
     if root.exists():
         raise ReferenceFixtureError("fixture root already exists; supply a fresh path")
+    staged_raw_payloads = False
     if raw_payloads:
         with StorageAdministrationService(root) as service:
             service.initialize()
-            _stage_raw_payloads(service)
+            with service.partition().transaction(write=False) as connection:
+                staged_raw_payloads = not service.partition().uses_raw_memory_payloads(connection)
+            if staged_raw_payloads:
+                _stage_raw_payloads(service)
     with StorageAdministrationService(root) as service:
-        if raw_payloads:
+        if staged_raw_payloads:
             operator = StorageAdministrationOperator(service)
             operator.change_mode(ModeChangeRequest(
                 target_mode="active", expected_control_revision=operator.status().control_revision,
@@ -673,6 +677,7 @@ def _prepare(
         return _audit(
             service, distribution, allocations, expected_events=expected_events, expected_tail=expected_tail,
             expected_schema=RAW_MEMORY_PAYLOAD_SCHEMA_VERSION if raw_payloads else PARTITION_SCHEMA_VERSION,
+            staged_raw_payloads=staged_raw_payloads,
         )
 
 
@@ -708,7 +713,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--distribution", required=True, choices=("balanced", "concentrated"))
     parser.add_argument("--candidate-wheel", type=Path)
     parser.add_argument("--require-qualified", action="store_true")
-    parser.add_argument("--raw-payloads", action="store_true", help="stage and verify the v8 fixture format")
+    parser.add_argument("--raw-payloads", action="store_true", help="require the v8 fixture format")
     args = parser.parse_args(argv)
     if args.require_qualified:
         print(json.dumps({"status": "unavailable", "blockers": _QUALIFICATION_BLOCKERS}), file=sys.stderr)

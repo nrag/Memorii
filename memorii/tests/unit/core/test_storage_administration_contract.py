@@ -263,7 +263,7 @@ def test_row_tampering_with_preserved_head_quarantines(tmp_path: Path) -> None:
     connection = sqlite3.connect(root / "partition" / "partition.sqlite3")
     try:
         connection.execute(
-            "UPDATE memory_current_records SET record_json = '{\"tampered\": true}'"
+            "UPDATE memory_current_records SET payload_digest = zeroblob(32)"
             " WHERE memory_id = 'mem:one'"
         )
         connection.commit()
@@ -281,8 +281,8 @@ def test_row_tampering_with_preserved_head_quarantines(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "statement",
     [
-        "UPDATE memory_batches SET batch_json = '{\"tampered\": true}' WHERE revision = 1",
-        "UPDATE memory_record_versions SET record_json = '{\"tampered\": true}'"
+        "UPDATE memory_batches SET member_count = member_count + 1 WHERE revision = 1",
+        "UPDATE memory_record_versions SET payload_digest = zeroblob(32)"
         " WHERE memory_id = 'mem:one'",
     ],
 )
@@ -315,7 +315,7 @@ def test_publish_refuses_after_out_of_band_row_tampering(tmp_path: Path) -> None
     connection = sqlite3.connect(root / "partition" / "partition.sqlite3")
     try:
         connection.execute(
-            "UPDATE memory_current_records SET record_json = '{\"tampered\": true}'"
+            "UPDATE memory_current_records SET payload_digest = zeroblob(32)"
             " WHERE memory_id = 'mem:one'"
         )
         connection.commit()

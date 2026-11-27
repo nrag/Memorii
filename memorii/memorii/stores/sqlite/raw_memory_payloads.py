@@ -427,6 +427,11 @@ def _require_exact_legacy_rows(connection: sqlite3.Connection) -> None:
         raise sqlite3.DatabaseError("legacy current memory catalog is incomplete")
 
 
+def install_raw_schema(connection: sqlite3.Connection) -> None:
+    for sql in _SCHEMA.values():
+        connection.execute(sql.strip())
+
+
 def convert_v7(connection: sqlite3.Connection) -> None:
     """Replace the three legacy catalogs within the owner staging transaction."""
     version = connection.execute("SELECT value FROM partition_schema WHERE key='schema_version'").fetchone()
@@ -434,8 +439,7 @@ def convert_v7(connection: sqlite3.Connection) -> None:
         raise sqlite3.DatabaseError("raw payload conversion requires a staged format 7 transaction")
     for name in _LEGACY_TABLES:
         connection.execute(f"ALTER TABLE {name} RENAME TO legacy_{name}")
-    for sql in _SCHEMA.values():
-        connection.execute(sql.strip())
+    install_raw_schema(connection)
     for batch, created in _legacy_batches(connection, "legacy_memory_batches"):
         records = tuple((record, record.model_dump_json()) for record in batch.records)
         _append_validated_batch(connection, batch, created, records)

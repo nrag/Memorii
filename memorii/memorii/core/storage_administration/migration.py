@@ -309,11 +309,14 @@ def _import_batches(
     partition = service.partition()
     with partition.manual_write_transaction() as handle:
         connection = handle.connection
-        if partition.uses_raw_memory_payloads(connection):
-            raise LegacyMigrationError("legacy memory import requires a legacy-format staging generation")
-        connection.execute("DELETE FROM memory_record_versions")
+        raw_payloads = partition.uses_raw_memory_payloads(connection)
         connection.execute("DELETE FROM memory_current_records")
+        if raw_payloads:
+            connection.execute("DELETE FROM memory_batch_members")
+        connection.execute("DELETE FROM memory_record_versions")
         connection.execute("DELETE FROM memory_batches")
+        if raw_payloads:
+            connection.execute("DELETE FROM memory_payloads")
         connection.execute(
             "UPDATE memory_revision_state SET write_revision = 0, data_revision = 0"
             " WHERE id = 1"

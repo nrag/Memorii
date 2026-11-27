@@ -2,14 +2,14 @@
 
 - Work type: testing
 - Delivery fidelity: Level 3
-- Status: native capacity qualification passed for ordinary staged v8 on both Linux and macOS at the owner's approved 11 s acquisition budget.
+- Status: native capacity qualification passed for ordinary staged v8 on both Linux and macOS at the owner's approved 11 s acquisition budget. Fresh installations now use v8.
 - Branch: `codex/durable-delivery-implementation`
 - Starting head: `ba1e7baab0626aaa32c36a350876c0c3b952b337`
 - Parent: [reference capacity milestone](../durable-delivery-implementation/milestones/reference-capacity.plan.md)
 
 ## Objective And Completion Contract
 
-Qualify an exact installed wheel for owner-staged v8 on dedicated native Linux and macOS machines with local SSDs. Complete the balanced and concentrated workload on each host. Keep v7 as the installation default. Require one candidate SHA and matching wheel and driver identity in all four reports, audited fixture and checkpoint identities, the full warm, cold, contended, and growth series, error and retry accounting, and every design budget met. The capacity contract is in [the durable runtime design](../../design/durable_execution_and_solver_runtime.md#capacity-and-service-envelope).
+Qualify an exact installed wheel for owner-staged v8 on dedicated native Linux and macOS machines with local SSDs. Complete the balanced and concentrated workload on each host. The measured wheel initialized v7 before staging v8. Require one candidate SHA and matching wheel and driver identity in all four reports, audited fixture and checkpoint identities, the full warm, cold, contended, and growth series, error and retry accounting, and every design budget met. The capacity contract is in [the durable runtime design](../../design/durable_execution_and_solver_runtime.md#capacity-and-service-envelope).
 
 ## Scope And Invariants
 
@@ -93,11 +93,9 @@ including staged fixture generation, migration recovery, and operator
 controls. The revised reference driver passed 14 focused checks, including
 the exact acquisition-budget boundary.
 
-The release scope is ordinary v8 through owner-authorized staged upgrade.
-Keep v7 as the installation default. Tier A and Tier B integrity, workload
-sizes, sample counts and other budgets remain unchanged. Sealed startup and
-further startup optimization are deferred. Fresh-v8 initialization and
-default promotion have their own gates.
+The approval covered ordinary v8 through owner-authorized staged upgrade.
+Tier A and Tier B integrity, workload sizes, sample counts and other budgets
+remain unchanged. Sealed startup and further startup optimization are deferred.
 
 ## Same-Wheel Native macOS Results
 
@@ -109,9 +107,17 @@ and [Linux verdict](linux/f5786d12/adjudication.json) apply the owner-approved
 11 s policy to the original ten-sample series without changing the reports.
 All four workloads meet the capacity gate for this tested wheel.
 
+## Fresh-Install Default
+
+Fresh installations create the ordinary v8 catalogs directly. The small
+installed-wheel lifecycle checks cover the fresh default, restart, backup
+verification and restore. The native capacity reports above remain bound to
+the staged wheel. The current reference fixture driver can also populate
+fresh v8 without a legacy conversion event.
+
 ## Next Action
 
 Carry this exact-wheel evidence into the [parent release conformance
 packet](../durable-memory-implementation/milestones/release-conformance.plan.md)
 for installed owner and harness journeys, artifact verification and release
-review. Fresh-v8 initialization and default promotion remain separate.
+review.

@@ -566,7 +566,7 @@ def main(argv: list[str] | None = None) -> int:
         command.add_argument("--revision", required=True)
         command.add_argument("--profile", choices=("linux", "macos"), required=True)
         command.add_argument("--dedicated-idle", action="store_true")
-        command.add_argument("--raw-payloads", action="store_true", help="require the staged v8 fixture format")
+        command.add_argument("--raw-payloads", action="store_true", help="require the v8 fixture format")
     sample = commands.add_parser("sample")
     sample.add_argument("--base", type=Path, required=True)
     sample.add_argument("--operation", choices=COLD_OPERATIONS, required=True)

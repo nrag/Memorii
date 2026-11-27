@@ -75,7 +75,7 @@ from memorii.core.storage_administration.operator import (
 from memorii.core.storage_administration.service import StorageAdministrationError, StorageAdministrationService
 from memorii.stores.sqlite.control import ControlDatabase, ControlJournalChainError, ControlStateError
 from memorii.stores.sqlite.partition import (
-    PARTITION_SCHEMA_VERSION,
+    LEGACY_RUNTIME_UPGRADE_SCHEMA_VERSION,
     RAW_MEMORY_PAYLOAD_SCHEMA_VERSION,
     PartitionDataRepository,
 )
@@ -199,7 +199,7 @@ class RestoreInventoryDelta(BaseModel):
 class RawPayloadUpgradePreview(BaseModel):
     """Reviewed physical format and workspace inputs for an opt-in upgrade."""
 
-    source_schema_version: int = Field(ge=4, le=PARTITION_SCHEMA_VERSION)
+    source_schema_version: int = Field(ge=4, le=LEGACY_RUNTIME_UPGRADE_SCHEMA_VERSION)
     target_schema_version: Literal[8] = RAW_MEMORY_PAYLOAD_SCHEMA_VERSION
     source_partition_bytes: int = Field(gt=0)
     estimated_workspace_bytes: int = Field(gt=0)
@@ -913,7 +913,7 @@ class BackupRestoreOperator:
                     with closing(sqlite3.connect(uri, uri=True)) as staged:
                         staged.row_factory = sqlite3.Row
                         version = PartitionDataRepository.read_schema_version(staged)
-                        if not 4 <= version <= PARTITION_SCHEMA_VERSION:
+                        if not 4 <= version <= LEGACY_RUNTIME_UPGRADE_SCHEMA_VERSION:
                             raise OperatorError(
                                 "unsupported_configuration: raw payload upgrade requires storage format 4 through 7"
                             )
@@ -1160,7 +1160,7 @@ class BackupRestoreOperator:
             PartitionDataRepository(working, require_existing=True) as staged,
             staged.transaction(write=True) as connection,
         ):
-            upgrade_needed = staged.read_schema_version(connection) < PARTITION_SCHEMA_VERSION
+            upgrade_needed = staged.read_schema_version(connection) < LEGACY_RUNTIME_UPGRADE_SCHEMA_VERSION
             staged.stage_runtime_recovery_upgrade(connection, source_digest=source.payload_digest())
             if raw_payloads:
                 staged.stage_raw_memory_payload_upgrade(connection)
