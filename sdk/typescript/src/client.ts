@@ -250,7 +250,11 @@ export class RuntimeStateClient {
       // Remote binding is disabled by the sidecar; refuse client-side.
       throw new Error("runtime client only binds loopback sidecar URLs");
     }
-    this.baseUrl = options.baseUrl.replace(/\/+$/, "");
+    let end = options.baseUrl.length;
+    while (options.baseUrl[end - 1] === "/") {
+      end -= 1;
+    }
+    this.baseUrl = options.baseUrl.slice(0, end);
     this.credential = options.credential;
     this.timeoutMs = options.timeoutMs ?? 10_000;
   }

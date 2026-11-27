@@ -112,7 +112,7 @@ test("submitEvent posts the closed command and parses the intake record", async 
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   server.unref();
   const client = new RuntimeStateClient({
-    baseUrl: `http://127.0.0.1:${server.address().port}`,
+    baseUrl: `http://127.0.0.1:${server.address().port}///`,
     credential: "credential:one",
   });
   const record = await client.submitEvent(

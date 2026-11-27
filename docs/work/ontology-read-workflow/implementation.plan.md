@@ -505,6 +505,31 @@ and correctly rejected reopen. That run supplies no acceptance evidence.
 Targeted review cleared the private-pipe, exported-helper and v7 fixture
 changes. The package manifest was refreshed against the changed module bytes.
 
+The gate fixes and final acceptance assertions were committed as
+`798a221e` and pushed on the same v8 branch. Merge commit `fc2ec3dc`
+adds current main ancestry without changing the tested source tree.
+[PR Gates](https://github.com/nrag/Memorii/actions/runs/46080568307) is
+running for that head. The final focused set passed 104 tests, including
+the architecture checker and both explicit v7 storage fixtures. Local
+Linux Package Smoke passed on byte-identical package inputs, with all
+1,955 pins verified.
+
+The shared release branch advanced to `53da8b53` for Pi and OpenClaw
+logger changes. They touch no pinned Package Smoke input. Monitor
+[the shared-head PR Gates run](https://github.com/nrag/Memorii/actions/runs/46080796484)
+for this revision.
+
+The frozen managed-host test passed with the final claim-state carrier,
+scope isolation and validity boundary checks. Hosted Durable Storage and
+Benchmark Contract Tests passed on `fc2ec3dc`. The first hosted Scoped
+Context Integration exhausted its 10-minute job limit after collecting all
+146 cases. Its [linked testing plan](scoped-context-ci-budget.plan.md)
+records the increase to 20 minutes and confirms that job selection and
+assertions are intact. The workflow pin was refreshed. CodeQL then
+reported polynomial trailing-slash trimming in the TypeScript client on
+`53da8b53`. Replacing it with a backward character scan preserved request
+URLs. TypeScript checking, all 10 tests and the installed SDK check passed.
+
 No unresolved approved-design choice. The bill workflow and package gate
 have local verification. Milestone closure still requires the remaining
 acceptance witnesses and scope-required checks, including actual PR runner
@@ -514,8 +539,8 @@ as branch-level gate evidence.
 
 ## Next Action
 
-Finish the bounded Level 2 acceptance witnesses and reconcile the exact
-GitHub gate run before milestone closure.
+Reconcile the frozen host tests and current GitHub gate run before
+milestone closure.
 
 ## Outcome and Retrospective
 
