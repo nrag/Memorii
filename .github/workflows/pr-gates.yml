@@ -637,6 +637,7 @@ jobs:
           tests/integration/test_managed_candidate_delivery.py
           tests/integration/test_legacy_outbox_reconciliation.py
           tests/integration/test_runtime_source_authority.py
+          tests/integration/test_native_source_capture.py
           tests/integration/test_managed_work_projection_recall.py
           tests/unit/core/test_runtime_journal.py
           tests/integration/test_forget_enforcement_publication.py

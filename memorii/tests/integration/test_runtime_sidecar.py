@@ -8,7 +8,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-
 from memorii.core.harness_state.consumer import ManagedRuntimeSpool
 from memorii.core.harness_state.credentials import SidecarCredentialStore
 from memorii.core.harness_state.service import RuntimeReadGrant

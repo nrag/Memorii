@@ -71,9 +71,12 @@ class PublishedMemoryPlaneStore:
         self,
         administration: StorageAdministrationService,
         inner: SqliteMemoryPlaneStore,
+        *,
+        validate_authority: Callable[[], None] | None = None,
     ) -> None:
         self._administration = administration
         self._inner = inner
+        self._validate_authority = validate_authority
 
     @property
     def durable(self) -> bool:
@@ -117,6 +120,7 @@ class PublishedMemoryPlaneStore:
             store=self._inner,
             expected_revision=None,
             authorization=authorization,
+            validate_authority=self._validate_authority,
         ).data_revision
 
     def apply_batch(
@@ -137,6 +141,7 @@ class PublishedMemoryPlaneStore:
             preconditions=preconditions,
             authorization=authorization,
             transaction_precondition=transaction_precondition,
+            validate_authority=self._validate_authority,
         ).data_revision
 
     def revision(self) -> int:

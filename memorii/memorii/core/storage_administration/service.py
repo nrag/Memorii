@@ -762,6 +762,7 @@ class StorageAdministrationService:
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
         authorization: MemoryPlaneWriteAuthorization | None = None,
         transaction_precondition: Callable[[], None] | None = None,
+        validate_authority: Callable[[], None] | None = None,
         operation_binding: str = "memory_plane_batch",
         derived_semantic_index: object | None = None,
         derived_ontology_index: object | None = None,
@@ -775,6 +776,10 @@ class StorageAdministrationService:
         state; each replaces its derived index generation inside the same
         publication transaction so the signed manifest covers the records
         and the derived rows together.
+
+        `validate_authority` runs after verification under the publication
+        fence, before the write transaction, so it may read the partition.
+        The fence stays held through publication.
         """
         state = self._require_operational()
         if state.mode == "read_only" and operation_binding != "migrate":
@@ -805,6 +810,8 @@ class StorageAdministrationService:
             # last signed tuple, never unverified rows (anti-laundering rule).
             self._verified_snapshot_locked()
             state = self._require_operational()
+            if validate_authority is not None:
+                validate_authority()
             partition = self.partition()
             with partition.manual_write_transaction() as handle:
                 connection = handle.connection

@@ -21,6 +21,11 @@ from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.persistence.factory import PublishedMemoryPlaneStore
 from memorii.core.provider.models import ProviderEvent, ProviderOperation
+from memorii.core.semantic_ingestion.contracts import (
+    GovernanceCarrierArtifact,
+    MessageAdmissionCarrierSet,
+    SegmentGovernanceCarrierSet,
+)
 from memorii.core.semantic_ingestion.source_authority_retention import retain_source_authority_evidence
 from memorii.core.storage_administration.revoked_identity_view import RefreshingRevokedIdentityView
 from memorii.core.storage_administration.service import StorageAdministrationService
@@ -39,9 +44,9 @@ def retain_native_source(
 ) -> CanonicalMemoryRecord:
     """Retain one authorized delivery without starting extraction or graph work.
 
-    The host owner supplies a live enrollment check scoped to this event
-    and ingress. It must use the current authority without reacquiring the
-    publication fence or opening a partition transaction.
+    The host owner supplies a live enrollment and task check scoped to this
+    event and ingress. Its partition read runs before the write transaction
+    under the same publication fence. It must not reacquire that fence.
     """
     principal = ingress.delivery_principal_binding.principal_subject_id
     authority = ingress.semantic_source_authority
@@ -70,16 +75,17 @@ def retain_native_source(
     fence = OperationFenceBinding.create(
         operation_id=event.event_id, source_id=source_id, source_digest=source_digest, delivery_identity=identity,
     )
-    plane = MemoryPlaneService(
-        record_store=PublishedMemoryPlaneStore(administration, administration.memory_plane_store()),
-    )
-    admissions = GovernedSourceAdmissionService(plane)
     revoked = RefreshingRevokedIdentityView(administration.installation_root / "control")
 
     def verify_authority() -> None:
         check_current()
         if revoked.is_revoked_task(task_id) or revoked.is_revoked_source(source_id) or revoked.is_revoked_record(source_id):
             raise ValueError("native source is suppressed")
+
+    plane = MemoryPlaneService(record_store=PublishedMemoryPlaneStore(
+        administration, administration.memory_plane_store(), validate_authority=verify_authority,
+    ))
+    admissions = GovernedSourceAdmissionService(plane)
 
     def build_source(retained_at: datetime) -> CanonicalMemoryRecord:
         governance = derive_source_governance_material(
@@ -88,14 +94,23 @@ def retain_native_source(
         ).material
         if governance is None:
             raise ValueError("native source governance is unavailable")
+        segments = governance.segment_governance_carriers
+        messages = governance.message_admission_carriers
+        artifact = governance.governance_carrier_artifact
+        if not (
+            isinstance(segments, SegmentGovernanceCarrierSet)
+            and isinstance(messages, MessageAdmissionCarrierSet)
+            and isinstance(artifact, GovernanceCarrierArtifact)
+        ):
+            raise ValueError("native source governance material is invalid")
         request = normalized.bind_bootstrap_language_evidence(
             ingress=ingress,
             source_id=source_id,
             source_digest=source_digest,
-            segment_governance_set_digest=governance.segment_governance_carriers.carrier_set_digest,
-            governance_carrier_artifact_digest=governance.governance_carrier_artifact.artifact_digest,
-            segment_governance_carriers_digest=governance.segment_governance_carriers.carrier_set_digest,
-            message_admission_carriers_digest=governance.message_admission_carriers.carrier_set_digest,
+            segment_governance_set_digest=segments.carrier_set_digest,
+            governance_carrier_artifact_digest=artifact.artifact_digest,
+            segment_governance_carriers_digest=segments.carrier_set_digest,
+            message_admission_carriers_digest=messages.carrier_set_digest,
         )
         source = build_admitted_source_record(
             request=request, source_id=source_id, retained_at=retained_at,
@@ -139,9 +154,7 @@ def retain_native_source(
     writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest())
     binding = writers.commit_binding(writers.current())
     try:
-        SemanticIngestionAtomicStore(plane, writers).publish_admitted_source(
-            prepared=prepared, writer_binding=binding, transaction_precondition=verify_authority,
-        )
+        SemanticIngestionAtomicStore(plane, writers).publish_admitted_source(prepared=prepared, writer_binding=binding)
     except PreplanningStoreError:
         # Another publication may have retained the same delivery at its own server time.
         retained = read_exact_source()

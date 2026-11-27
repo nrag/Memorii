@@ -1,10 +1,9 @@
-"""Recovery of a signed native observation across a sidecar outage."""
+"""Authority and recovery for signed native observations."""
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-
 from memorii.core.harness_state import native_sources
 from memorii.core.harness_state.consumer import ManagedRuntimeSpool
 from memorii.core.harness_state.credentials import SidecarCredentialStore
@@ -33,9 +32,9 @@ from memorii.domain.execution_graph.nodes import ExecutionNode
 from memorii.tools.runtime_consume import main as drain
 
 
-@pytest.mark.parametrize("revoked", [False, True])
-def test_managed_owner_resolves_native_observation_after_sidecar_loss(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], revoked: bool,
+@pytest.mark.parametrize("interruption", ["sidecar_loss", "grant_revoked", "task_paused"])
+def test_native_capture_respects_interrupted_delivery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], interruption: str,
 ) -> None:
     scope = NativeSourceScope(kind="pi", session_id="local-session")
     root = tmp_path / "installation"
@@ -85,6 +84,29 @@ def test_managed_owner_resolves_native_observation_after_sidecar_loss(
             service.capture("unknown", capture.model_copy(update={"task_id": "task:unbound"}))
         assert list(grant_directory.glob("capture-*.lock")) == []
 
+        if interruption == "task_paused":
+            commands = authenticated_host_commands(administration, credentials, secret)
+            pause = RuntimeCommandRequest(
+                kind="pause_task", task_id=task.task_id, operation_id="pause-before-native-retention",
+                expected_revision=task.version, pause_reason="handoff",
+            )
+            original = administration.publish_memory_plane_batch
+            pause_head = []
+
+            def pause_before_publication(*args, **kwargs):
+                assert commands.dispatch(pause, operation_origin=commands.prepare(pause)).status == "committed"
+                pause_head.append(administration.acquire_verified_snapshot())
+                return original(*args, **kwargs)
+
+            monkeypatch.setattr(administration, "publish_memory_plane_batch", pause_before_publication)
+            with pytest.raises(RuntimeCommandError, match="denied"):
+                service.capture(secret, capture)
+            assert pause_head == [administration.acquire_verified_snapshot()]
+            assert administration.memory_plane_store().list_records(source_kind="semantic_ingestion_source") == []
+            assert spool.pending() == ()
+            assert service.recall(secret, recall).messages == ()
+            return
+
         def unavailable(*args, **kwargs) -> None:
             raise RuntimeCommandError("unavailable: simulated loss after durable intake")
 
@@ -100,14 +122,14 @@ def test_managed_owner_resolves_native_observation_after_sidecar_loss(
             administration, lambda connection, repository: repository.apply_task(connection, changed_task),
             operation_binding="native_source_test_task",
         )
-        if revoked:
+        if interruption == "grant_revoked":
             ManagedHostCommandAuthority(administration).revoke(enrollment.grant_id, capability=capability)
 
     status = drain(["--installation-root", str(root), "--managed", "--drain"])
     output = capsys.readouterr()
     with StorageAdministrationService(root) as reopened:
         service = NativeSourceService(reopened, credentials, spool, read_grant)
-        if revoked:
+        if interruption == "grant_revoked":
             assert status == 3 and "denied" in output.err and output.out == ""
             with pytest.raises(RuntimeCommandError, match="denied"):
                 service.recall(secret, recall)

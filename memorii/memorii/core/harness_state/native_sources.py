@@ -272,13 +272,15 @@ class NativeSourceService:
                 timestamp=datetime.now(UTC),
             )
 
-            def check_current() -> None:
+            def current_task_version() -> int:
                 state, current = administration.current_publication_in_fence()
                 resolved = self._authorize(secret, request, state, current)
                 if resolved != grant:
                     raise _denied()
-                if state.mode != "active":
-                    raise _denied()
+                return self._require_active_task(request.task_id, grant, state)
+
+            def check_current() -> None:
+                current_task_version()
 
             try:
                 record = retain_native_source(administration, event=event, ingress=ingress, check_current=check_current)
@@ -289,9 +291,8 @@ class NativeSourceService:
             except ValueError as exc:
                 raise _denied() from exc
             digest = source_admission_source_digest(record)
-            with administration.verified_operation_context() as (state, current):
-                check_current()
-                task_version = self._require_active_task(request.task_id, grant, state)
+            with administration.verified_operation_context() as (_, current):
+                task_version = current_task_version()
                 command = RuntimeCommandRequest(
                     kind="record_observation", task_id=request.task_id, operation_id=operation_id,
                     source_digest=digest, expected_revision=task_version,
