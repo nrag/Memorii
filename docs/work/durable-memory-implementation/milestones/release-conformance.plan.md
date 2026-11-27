@@ -34,6 +34,9 @@ The installation owner supplies the approved backup and signing configuration th
 
 ## Supported Hosts And Capacity
 
+The [installed release rehearsal](../../installed-release-rehearsal/testing.plan.md)
+records the current pinned-host and operator results on the clean v8-default wheel.
+
 **DUR-06, DUR-11, DUR-13, DUR-17.** Reuse the existing pinned journeys for OpenClaw, Pi and Hermes. Confirm the final artifact and version for each. Add or confirm the OpenClaw forwarded-input assertion in the real journey. For Hermes, prefer a supported surface that demonstrably sends completed-turn evidence. Certify automatic capture across two turns and restart on that surface. If the pinned primary CLI still omits the callback and no supported alternative passes, obtain an explicit scope decision before advertising automatic capture and make the limitation visible in the support table and quickstart.
 
 Run the design reference workload on Linux and macOS and publish workload sizes, latency percentiles, replay and reopen times, verification acquisition, backup pause and storage growth. Use the existing 200-task test as a regression check. If the full reference workload misses a published budget, optimize and retest or obtain explicit approval for a smaller measured support envelope and update the design and release claims. Record environment, fixture version and artifacts for comparison.

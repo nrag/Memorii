@@ -1,5 +1,9 @@
+import json
+import subprocess
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Literal
 
 import pytest
 from memorii.core.consolidation.runtime_outputs import ArchivePackage, EpisodicSummary
@@ -38,15 +42,28 @@ from memorii.core.provider.runtime_source_authority import (
     RuntimeSourceTaskBinding,
     resolve_runtime_source,
 )
-from memorii.core.provider.runtime_source_release import RuntimeSourceReleaseAuthority
+from memorii.core.provider.runtime_source_release import (
+    RuntimeSourceReleaseAuthority,
+    RuntimeSourceReleaseGrant,
+    list_runtime_released_sources,
+)
 from memorii.core.semantic_ingestion.hermes_completed_turn_admission import (
     HermesCompletedTurnAdmissionRequest,
     HermesCompletedTurnAdmissionService,
     HermesCompletedTurnMessage,
     canonical_transcript_digest,
 )
-from memorii.core.storage_administration.operator import mint_owner_capability
-from memorii.core.storage_administration.revoked_identity_view import RevokedIdentities, RevokedIdentityView
+from memorii.core.storage_administration.operator import (
+    ModeChangeRequest,
+    StorageAdministrationOperator,
+    mint_owner_capability,
+)
+from memorii.core.storage_administration.operator_backup import BackupRestoreOperator
+from memorii.core.storage_administration.revoked_identity_view import (
+    RefreshingRevokedIdentityView,
+    RevokedIdentities,
+    RevokedIdentityView,
+)
 from memorii.core.storage_administration.service import StorageAdministrationService
 from memorii.core.storage_administration.suppression_journal import (
     SuppressionCoordinate,
@@ -91,7 +108,7 @@ def _request(installation_id: str) -> HermesCompletedTurnAdmissionRequest:
     )
 
 
-@pytest.mark.parametrize("revoke_at", ["source_suppression", "pause", "decision", "effect", "delivered"])
+@pytest.mark.parametrize("revoke_at", ["source_suppression", "pause", "decision", "effect", "delivered", "restore"])
 def test_managed_runtime_source_requires_exact_provider_admission_and_live_scope(
     tmp_path: Path, revoke_at: str,
 ) -> None:
@@ -235,6 +252,10 @@ def test_managed_runtime_source_requires_exact_provider_admission_and_live_scope
 
     with StorageAdministrationService(root) as reopened:
         assert reopened.acquire_verified_snapshot() == observed
+        if revoke_at == "restore":
+            assert release_id is not None
+            _exercise_revocation_across_restore(root, tmp_path, task.task_id, release_id, user.source_id)
+            return
         if revoke_at != "source_suppression":
             assert release_id is not None
             _exercise_durable_offer(
@@ -257,6 +278,77 @@ def test_managed_runtime_source_requires_exact_provider_admission_and_live_scope
         with pytest.raises(RuntimeCommandError, match="verified provider admission is unavailable"):
             runtime.dispatch(command, operation_origin=proof)
         assert reopened.acquire_verified_snapshot() == observed
+
+
+def _exercise_revocation_across_restore(
+    root: Path, workspace: Path, task_id: str, grant_id: str, source_id: str,
+) -> None:
+    archive, stage = workspace / "archive", workspace / "stage"
+    key = b"k" * 32
+
+    def set_mode(service: StorageAdministrationService, mode: Literal["active", "read_only"]) -> None:
+        operator = StorageAdministrationOperator(service)
+        operator.change_mode(ModeChangeRequest(
+            target_mode=mode, expected_control_revision=operator.status().control_revision,
+            reason="rehearse grant revocation across restore",
+        ), capability=mint_owner_capability(service, "runtime:one"))
+
+    def visible_sources(service: StorageAdministrationService) -> tuple[str, ...]:
+        with service.verified_operation_context():
+            repository = RuntimeStateRepository(service.partition())
+            with repository.partition.transaction(write=False) as connection:
+                return tuple(ref.source_id for ref in list_runtime_released_sources(
+                    connection, repository, task_id=task_id, principal="runtime:one",
+                    now=datetime.now(UTC), revoked=RefreshingRevokedIdentityView(root / "control"),
+                ))
+
+    def stored_grant(service: StorageAdministrationService) -> RuntimeSourceReleaseGrant:
+        with service.partition().transaction(write=False) as connection:
+            raw = service.partition().read_runtime_source_release_grant(connection, grant_id)
+        assert raw is not None
+        return RuntimeSourceReleaseGrant.model_validate_json(raw)
+
+    with StorageAdministrationService(root) as service:
+        assert visible_sources(service) == (source_id,)
+        set_mode(service, "read_only")
+        owner = mint_owner_capability(service, "runtime:one")
+        backups = BackupRestoreOperator(StorageAdministrationOperator(service))
+        backups.create_backup(capability=owner, archive_root=archive, reason="before grant revocation", recovery_key=key)
+        backups.verify_backup(archive_root=archive)
+        set_mode(service, "active")
+        result = subprocess.run([
+            sys.executable, "-m", "memorii.tools.runtime_operator",
+            "--installation-root", str(root), "--owner-principal", owner.owner_principal,
+            "--capability-digest", owner.capability_digest, "runtime-source-grant", "revoke", "--grant-id", grant_id,
+        ], capture_output=True, text=True, check=True, timeout=30)
+        receipt = json.loads(result.stdout)
+        assert receipt["grant_id"] == grant_id and receipt["status"] == "revoked"
+        assert visible_sources(service) == ()
+
+    with StorageAdministrationService(root) as service:
+        assert visible_sources(service) == ()
+        revoked = stored_grant(service)
+        assert (revoked.status, revoked.version) == ("revoked", 2)
+        set_mode(service, "read_only")
+        owner = mint_owner_capability(service, "runtime:one")
+        backups = BackupRestoreOperator(StorageAdministrationOperator(service))
+        plan = backups.plan_restore(capability=owner, archive_root=archive, data_loss_acknowledged=True)
+        backups.apply_restore(capability=owner, plan=plan, staging_root=stage, recovery_key=key)
+        preview = backups.preview_staged_restore(capability=owner, plan=plan, staging_root=stage)
+        restored = backups.activate_older_restore(
+            capability=owner, plan=plan, staging_root=stage, preview_digest=preview.digest(),
+        )
+        assert restored.phase == "finalized"
+
+    with StorageAdministrationService(root) as service:
+        assert service.acquire_verified_snapshot().tuple_digest == restored.candidate_publication.payload_digest()
+        assert service.memory_plane_store().get_record(source_id) is not None
+        with service.partition().transaction(write=False) as connection:
+            assert service.partition().read_schema_version(connection) == 8
+        archived = stored_grant(service)
+        assert archived.status == "active" and archived.binding.generation_id == revoked.binding.generation_id
+        assert restored.candidate_publication.data_generation_id != archived.binding.generation_id
+        assert visible_sources(service) == ()
 
 
 def _exercise_durable_offer(
