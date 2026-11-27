@@ -14,11 +14,21 @@ case. In [PR run 46079693423](https://github.com/nrag/Memorii/actions/runs/46079
 dependency setup left 8 minutes 12 seconds before the job was canceled
 at its 10-minute limit. Pytest had collected all 146 cases.
 
-Set the job limit to 20 minutes, the same budget as Durable Storage
-Integration. Keep its Python version, pytest arguments, job identity,
-selection, warnings-as-errors policy, triggers and aggregate dependencies.
+The initial trial used 20 minutes. The repository's workflow-structure
+contract caps this job at 15 minutes. Set the final limit to 15 minutes
+and record 780 seconds of budget with 120 seconds of headroom in the
+dedicated timing-owner ledger. Keep the Python version, pytest arguments,
+job identity, selection, warnings-as-errors policy, triggers and
+aggregate dependencies.
 This dedicated integration job owns installed-host evidence outside the
 duration-balanced unit shards. Refresh the workflow pin for Package Smoke.
+
+The [hosted timing trial](https://github.com/nrag/Memorii/actions/runs/46082294793/job/140783782353)
+at `95a95749` passed all 146 cases in 615.20 seconds. The complete job
+took 12 minutes 32 seconds, leaving 148 seconds under the 15-minute cap.
+The updated timing ledger and workflow-structure checks passed locally.
+Independent review confirmed unchanged test selection, warning handling
+and aggregation.
 
 ## Next action
 

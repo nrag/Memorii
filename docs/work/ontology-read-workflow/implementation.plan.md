@@ -554,13 +554,27 @@ the assertion. The Package Smoke workflow pin was refreshed and all
 
 The unit prerequisites and legacy fixtures were pushed at `b90153de`.
 [PR Gates run 46081796388](https://github.com/nrag/Memorii/actions/runs/46081796388)
-is the current hosted acceptance run for PR #126.
+was superseded by the managed factory test repair.
 
 The first Unit Test Shard 2 run found a managed factory test that wrote
 directly to the underlying SQLite store. Signed publication correctly
 refused the unsigned materialization. The test now writes through the
 managed factory's published memory plane and verifies both records and
 the signed data revision. All eight factory cases passed locally.
+The repair was pushed at `95a95749`. [PR Gates run 46082294793](https://github.com/nrag/Memorii/actions/runs/46082294793)
+is the hosted acceptance run for that head. The older PR runs were
+canceled after their relevant failures were captured, freeing runner
+capacity for the current head.
+
+Static Analysis, Durable Storage Integration and Package Smoke passed at
+`95a95749`. The workflow-structure suite caught the trial timeout above
+the existing 15-minute cap and a stale timing owner. The [testing plan](scoped-context-ci-budget.plan.md)
+records the narrower setting and ledger update. The 28 local tooling and
+factory checks passed, and independent review confirmed unchanged test
+selection, warning mode and aggregation. The hosted Scoped Context
+Integration job passed all 146 cases in 615.20 seconds. With setup and
+cleanup, it took 12 minutes 32 seconds against a final cap of 15 minutes.
+The same head passed Benchmark Contracts and CodeQL.
 
 No unresolved approved-design choice. All Level 2 acceptance witnesses
 have local verification. Milestone closure requires current GitHub
