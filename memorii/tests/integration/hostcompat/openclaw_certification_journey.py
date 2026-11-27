@@ -1,14 +1,4 @@
-"""In-container OpenClaw certification journey: the real gateway end to end.
-
-Runs inside memorii-openclaw-validation:pr from clean image state. Installs
-the Memorii plugin into the extensions home (OpenClaw's ownership and
-allowlist gates satisfied in-container as root), configures the stub model
-provider and gateway token auth, boots the stub provider and the loopback
-sidecar with an intake binding, seeds the provisioned task, drives real
-gateway agent turns (fresh session, then same-session continuation), drains
-the spool through memorii-consume --drain, and asserts committed runtime
-state.
-"""
+"""Run pinned OpenClaw gateway turns against installed managed v8 intake and drain."""
 from __future__ import annotations
 
 import json
@@ -18,75 +8,17 @@ import socket
 import subprocess
 import sys
 import time
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, "/opt/memorii-src/memorii")
 sys.path.insert(0, "/opt/memorii-src/memorii/tests/integration/hostcompat")
 
-from memorii.core.harness_state.consumer import LocalDurableSpool
-from memorii.core.harness_state.service import RuntimeReadGrant
-from memorii.core.harness_state.sidecar import (
-    HostIntakeBinding,
-    RuntimeSidecar,
-    serve_loopback,
-)
-from memorii.core.persistence.runtime_contracts import TaskRecord
-from memorii.core.persistence.runtime_repository import (
-    RuntimeStateRepository,
-    publish_runtime_change,
-)
-from memorii.core.storage_administration.service import StorageAdministrationService
+from managed_host_journey import ManagedHostJourney
 from stub_openai_provider import serve_stub_provider
 
-PRODUCER = "host:principal:a"
 GATEWAY_TOKEN = "cert-token-1"
-root = Path("/tmp/memorii-journey")
-administration = StorageAdministrationService(root / "installation")
-administration.initialize()
-task_id = "task:openclaw-session"
-
-def seed(connection, repo) -> None:
-    repo.apply_task(
-        connection,
-        TaskRecord(
-            task_id=task_id,
-            principal="principal:a",
-            goal="OpenClaw certification journey",
-            created_at=datetime(2026, 10, 1, tzinfo=UTC),
-            root_execution_node_id="exec:root",
-        ),
-    )
-
-publish_runtime_change(administration, seed, operation_binding="openclaw_seed")
-
-def grant_for(principal: str) -> RuntimeReadGrant:
-    return RuntimeReadGrant(
-        grant_id=f"openclaw:{principal}",
-        principal=principal,
-        allowed_task_ids=(task_id,),
-        epoch=1,
-        expires_at=datetime.now(UTC) + timedelta(hours=1),
-    )
-
-spool_directory = root / "spool"
-repository = RuntimeStateRepository(administration.partition())
-sidecar = RuntimeSidecar(
-    repository=repository,
-    credentials={"credential:one": "principal:a"},
-    grant_factory=grant_for,
-    intake_factory=lambda principal: HostIntakeBinding(
-        spool=LocalDurableSpool(spool_directory),
-        producer_binding=f"host:{principal}",
-        allowlisted_producers=(f"host:{principal}",),
-    ),
-)
-
-credential_path = Path("/run/memorii/openclaw-plugin.credential")
-credential_path.parent.mkdir(parents=True, exist_ok=True)
-os.chmod(credential_path.parent, 0o700)
-credential_path.write_text("credential:one")
-os.chmod(credential_path, 0o600)
+journey = ManagedHostJourney(Path("/tmp/memorii-journey"), "openclaw")
+base_env = dict(os.environ, **journey.environment, OPENCLAW_GATEWAY_TOKEN=GATEWAY_TOKEN)
 
 # Plugin into the extensions home: root-owned (OpenClaw blocks foreign-uid
 # plugin files), with openclaw resolvable for the plugin-sdk import.
@@ -102,8 +34,6 @@ subprocess.run(
 )
 
 stub_url, stub_server = serve_stub_provider()
-sidecar_url, sidecar_server = serve_loopback(sidecar, port=8762)
-print("stub:", stub_url, "sidecar:", sidecar_url, flush=True)
 
 def config_set(path: str, value: str) -> None:
     result = subprocess.run(
@@ -129,11 +59,14 @@ config_set("gateway.auth.token", GATEWAY_TOKEN)
 subprocess.run(["pkill", "-f", "openclaw-gateway"], capture_output=True, check=False)
 time.sleep(3)
 gateway_log = open("/tmp/gateway-journey.log", "w")  # noqa: SIM115 - inherited by the gateway child
-gateway = subprocess.Popen(
-    ["openclaw", "gateway", "--bind", "loopback"],
-    stdout=gateway_log, stderr=subprocess.STDOUT,
-    start_new_session=True,
-)
+def start_gateway() -> subprocess.Popen:
+    return subprocess.Popen(
+        ["openclaw", "gateway", "--bind", "loopback"],
+        stdout=gateway_log, stderr=subprocess.STDOUT, start_new_session=True, env=base_env,
+    )
+
+
+gateway = start_gateway()
 
 
 def wait_for_loopback_port(port: int, timeout_seconds: int = 180) -> bool:
@@ -148,98 +81,50 @@ def wait_for_loopback_port(port: int, timeout_seconds: int = 180) -> bool:
             time.sleep(2)
     return False
 
-gateway_up = wait_for_loopback_port(18789)
-print("gateway listening:", gateway_up, flush=True)
-if not gateway_up:
-    gateway_log.flush()
-    print(Path("/tmp/gateway-journey.log").read_text()[-600:])
-
-base_env = dict(
-    os.environ,
-    MEMORII_SIDECAR_URL=sidecar_url,
-    MEMORII_CREDENTIAL_PATH=str(credential_path),
-    MEMORII_TASK_ID=task_id,
-    OPENCLAW_GATEWAY_TOKEN=GATEWAY_TOKEN,
-)
-
 def run_agent(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["openclaw", "agent", "--json", "--model", "stub/stub-model", *args],
         capture_output=True, text=True, env=base_env, timeout=240,
     )
 
-def drain() -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [
-            "/opt/memorii-venv/bin/memorii-consume",
-            "--installation-root", str(root / "installation"),
-            "--spool-directory", str(spool_directory),
-            "--drain",
-            "--allowlisted-producers", PRODUCER,
-        ],
-        capture_output=True, text=True, timeout=300,
-    )
+def stop_gateway() -> None:
+    gateway.terminate()
+    try:
+        gateway.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        gateway.kill()
+        gateway.wait(timeout=30)
 
-failures: list[str] = []
+
 try:
-    first = run_agent("--session-id", "cert-session", "-m", "record this certification turn")
-    print("turn1 rc:", first.returncode, (first.stdout or first.stderr)[:200].replace("\n", " "))
-    drain1 = drain()
-    print("drain1 rc:", drain1.returncode, drain1.stdout.strip().replace("\n", " | ")[:400])
+    assert wait_for_loopback_port(18789), Path("/tmp/gateway-journey.log").read_text()[-2000:]
+    baseline = journey.read()
+    first_prompt = "record this certification turn"
+    first = run_agent("--session-id", "cert-session", "-m", first_prompt)
+    assert first.returncode == 0, first.stderr
+    first_receipt = journey.prove_turn(first_prompt)
 
-    # Restart the gateway between turns: the new process adopts the SAME
-    # session, proving continuation survives a host restart.
-    gateway.terminate()
-    try:
-        gateway.wait(timeout=30)
-    except subprocess.TimeoutExpired:
-        gateway.kill()
-    gateway = subprocess.Popen(
-        ["openclaw", "gateway", "--bind", "loopback"],
-        stdout=gateway_log, stderr=subprocess.STDOUT,
-        start_new_session=True,
-    )
-    print("gateway restarted:", wait_for_loopback_port(18789), flush=True)
+    stop_gateway()
+    journey.stop()
+    journey.start()
+    gateway = start_gateway()
+    assert wait_for_loopback_port(18789), Path("/tmp/gateway-journey.log").read_text()[-2000:]
+    reopened = journey.read()
+    assert reopened.goal == journey.goal and reopened.revision > baseline.revision
+    assert reopened.task_version == baseline.task_version
+    assert reopened.revision != reopened.task_version
+    print("Reopened gateway and sidecar recalled the provisioned task and committed runtime revision", flush=True)
 
-    second = run_agent("--session-id", "cert-session", "-m", "continue the same session")
-    print("turn2 rc:", second.returncode, (second.stdout or second.stderr)[:200].replace("\n", " "))
-    drain2 = drain()
-    print("drain2 rc:", drain2.returncode, drain2.stdout.strip().replace("\n", " | ")[:400])
+    second_prompt = "continue the same session"
+    second = run_agent("--session-id", "cert-session", "-m", second_prompt)
+    assert second.returncode == 0, second.stderr
+    second_receipt = journey.prove_turn(second_prompt)
+    assert second_receipt.operation_id != first_receipt.operation_id
+    assert journey.read().revision > reopened.revision
+    print("JOURNEY: PASS (managed resume and runtime state read)")
 finally:
-    gateway.terminate()
-    try:
-        gateway.wait(timeout=30)
-    except subprocess.TimeoutExpired:
-        gateway.kill()
+    stop_gateway()
+    gateway_log.close()
     stub_server.shutdown()
     stub_server.server_close()
-    sidecar_server.shutdown()
-    sidecar_server.server_close()
-
-records = [json.loads(line) for line in (spool_directory / "intake.jsonl").read_text().splitlines()]
-kinds = [record["operation_id"].split(":")[1] for record in records]
-committed = [r for r in records if r["state"] == "committed"]
-print("SPOOL:", kinds, "committed:", len(committed), "of", len(records))
-
-status, payload = sidecar.handle_state_request(
-    bearer_token="credential:one",
-    origin=None,
-    body=json.dumps({"protocol_version": 1, "task_id": task_id, "view": "summary"}).encode(),
-)
-envelope = json.loads(payload)
-print("task status:", status, envelope.get("status"), "revision", envelope.get("revision"))
-
-checks = {
-    "both turns ran": first.returncode == 0 and second.returncode == 0,
-    "user messages captured": kinds.count("observe") >= 2,
-    "sessions resumed the provisioned task": kinds.count("resume") >= 2,
-    "drain committed everything": len(committed) == len(records) and len(records) > 0,
-    "runtime serves the task": status == 200,
-}
-for name, ok in checks.items():
-    print(("PASS " if ok else "FAIL ") + name)
-    if not ok:
-        failures.append(name)
-
-print("JOURNEY:", "PASS" if not failures else "FAIL", failures)
-sys.exit(0 if not failures else 1)
+    journey.stop()

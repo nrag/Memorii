@@ -72,6 +72,7 @@ class SidecarRequest(BaseModel):
     task_id: str = Field(min_length=1)
     view: Literal["execution", "solver", "summary", "history", "neighborhood"] = "summary"
     cursor: str | None = None
+    include_task_version: bool = False
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -291,6 +292,7 @@ class RuntimeSidecar:
                     cursor=request.cursor,
                     checkpoint_ref=checkpoint_ref,
                     installation_binding=installation_binding,
+                    include_task_version=request.include_task_version,
                 )
                 if self._principal_for(bearer_token or "") != principal:
                     return _error(401, "unauthenticated", None)
@@ -301,7 +303,8 @@ class RuntimeSidecar:
             return _error(500, "integrity_error", None)
         except (OSError, StorageAdministrationError):
             return _error(503, "unavailable", None)
-        return 200, envelope.model_dump_json().encode("utf-8")
+        excluded = {"task_version"} if envelope.task_version is None else None
+        return 200, envelope.model_dump_json(exclude=excluded).encode("utf-8")
 
     def handle_intake_request(
         self,

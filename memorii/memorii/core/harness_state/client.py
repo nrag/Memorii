@@ -50,10 +50,12 @@ class RuntimeStateClient:
         task_id: str,
         *,
         view: Literal["execution", "solver", "summary", "history", "neighborhood"] = "summary",
+        include_task_version: bool = False,
     ) -> HarnessStateEnvelope:
-        request = SidecarRequest(task_id=task_id, view=view)
+        request = SidecarRequest(task_id=task_id, view=view, include_task_version=include_task_version)
+        excluded = None if include_task_version else {"include_task_version"}
         return HarnessStateEnvelope.model_validate_json(
-            self._post("/v1/runtime/state", request.model_dump_json())
+            self._post("/v1/runtime/state", request.model_dump_json(exclude=excluded))
         )
 
     def prepare_operation(self, command: RuntimeCommandRequest | WritebackDecisionRequest) -> OperationOrigin:

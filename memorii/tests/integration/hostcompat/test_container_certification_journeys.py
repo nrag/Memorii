@@ -27,6 +27,9 @@ JOURNEYS = {
         "script": "pi_certification_journey.py",
         "venv": "/opt/memorii-venv/bin/python",
         "refresh": (
+            "memorii/core/harness_state/client.py",
+            "memorii/core/harness_state/envelope.py",
+            "memorii/core/harness_state/service.py",
             "memorii/core/harness_state/sidecar.py",
             "memorii/core/harness_state/consumer.py",
             "memorii/tools/runtime_consume.py",
@@ -42,6 +45,9 @@ JOURNEYS = {
         "script": "openclaw_certification_journey.py",
         "venv": "/opt/memorii-venv/bin/python",
         "refresh": (
+            "memorii/core/harness_state/client.py",
+            "memorii/core/harness_state/envelope.py",
+            "memorii/core/harness_state/service.py",
             "memorii/core/harness_state/sidecar.py",
             "memorii/core/harness_state/consumer.py",
             "memorii/tools/runtime_consume.py",
@@ -113,7 +119,7 @@ def _run_journey(host: str) -> None:
              "/opt/memorii-src/memorii/tests/integration/hostcompat"],
             capture_output=True, check=True, timeout=120,
         )
-        for name in (spec["script"], "stub_openai_provider.py", "hermes_chat_pty.py"):
+        for name in (spec["script"], "stub_openai_provider.py", "hermes_chat_pty.py", "managed_host_journey.py"):
             subprocess.run(
                 ["docker", "cp", f"{REPO_ROOT}/memorii/tests/integration/hostcompat/{name}",
                  f"{container}:/opt/memorii-src/memorii/tests/integration/hostcompat/{name}"],

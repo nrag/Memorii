@@ -2,15 +2,16 @@
  * Memorii memory plugin for OpenClaw (native plugin shape).
  *
  * Host contract: openclaw-memory-plugin/v1 (major pinned; the plugin fails
- * closed when the host surface does not match). Only user messages become
- * source evidence — forwarded and system inputs are classified out. Channel
- * account/sender identity travels in the event flow, never as authority:
- * the bearer credential decides the producer binding server-side. Hosts
+ * closed when the host surface does not match). Only user messages are
+ * candidates for source evidence. The bearer credential decides the
+ * producer binding server-side and the source owner must approve any
+ * observation before intake. Hosts
  * never mint tasks: the session hook resumes the operator-provisioned task
  * or fails closed. The credential is read from an owner-only file and never
  * appears in argv or logs.
  */
 
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 
@@ -19,7 +20,6 @@ const SIDECAR_URL = process.env.MEMORII_SIDECAR_URL ?? "http://127.0.0.1:8762";
 const CREDENTIAL_PATH =
   process.env.MEMORII_CREDENTIAL_PATH ?? "/run/memorii/openclaw-plugin.credential";
 const TASK_ID = process.env.MEMORII_TASK_ID ?? "task:openclaw-session";
-let operationCounter = 0;
 
 function bearerToken() {
   const raw = readFileSync(CREDENTIAL_PATH, "utf8").trim();
@@ -32,11 +32,14 @@ function bearerToken() {
 async function readState() {
   const response = await fetch(`${SIDECAR_URL}/v1/runtime/state`, {
     method: "POST",
+    redirect: "error",
     headers: {
       "content-type": "application/json",
       authorization: `Bearer ${bearerToken()}`,
     },
-    body: JSON.stringify({ protocol_version: 1, task_id: TASK_ID, view: "summary" }),
+    body: JSON.stringify({
+      protocol_version: 1, task_id: TASK_ID, view: "summary", include_task_version: true,
+    }),
   });
   if (response.status === 404) {
     return null;
@@ -45,7 +48,10 @@ async function readState() {
     throw new Error(`memorii state read failed: ${response.status}`);
   }
   const envelope = await response.json();
-  return typeof envelope.revision === "number" ? envelope.revision : 0;
+  if (!Number.isSafeInteger(envelope.task_version) || envelope.task_version < 1) {
+    throw new Error("memorii state omitted the task version");
+  }
+  return envelope.task_version;
 }
 
 async function sha256Hex(text) {
@@ -55,12 +61,35 @@ async function sha256Hex(text) {
     .join("");
 }
 
-async function submitCommand(command) {
+async function prepareCommand(command) {
+  const headers = {
+    "content-type": "application/json",
+    authorization: `Bearer ${bearerToken()}`,
+  };
+  const prepared = await fetch(`${SIDECAR_URL}/v1/operations/prepare`, {
+    method: "POST",
+    redirect: "error",
+    headers,
+    body: JSON.stringify(command),
+  });
+  if (!prepared.ok) {
+    throw new Error(`memorii prepare rejected ${command.kind}: ${prepared.status}`);
+  }
+  const proof = (await prepared.text()).replace(
+    /[^\x00-\x7f]/g,
+    (unit) => `\\u${unit.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
+  return { command, proof };
+}
+
+async function submitCommand({ command, proof }) {
   const response = await fetch(`${SIDECAR_URL}/v1/runtime/intake`, {
     method: "POST",
+    redirect: "error",
     headers: {
       "content-type": "application/json",
       authorization: `Bearer ${bearerToken()}`,
+      "Memorii-Operation-Origin": proof,
     },
     body: JSON.stringify({ protocol_version: 1, command }),
   });
@@ -68,11 +97,6 @@ async function submitCommand(command) {
     throw new Error(`memorii intake rejected ${command.kind}: ${response.status}`);
   }
   await response.json();
-}
-
-function nextOperationId(prefix) {
-  operationCounter += 1;
-  return `openclaw:${prefix}:${process.pid}:${operationCounter}`;
 }
 
 /** Classify one host input per the pinned contract; forwarded and system
@@ -86,24 +110,32 @@ export function classifyInput(input) {
   return { eligible: kind === "user_message", kind, sender };
 }
 
-let resumedThisProcess = false;
+let pendingResume;
+let preparedResume;
+
+async function resumeTask() {
+  if (!preparedResume) {
+    const revision = await readState();
+    if (revision === null) {
+      throw new Error(`no provisioned task ${TASK_ID} for this host session`);
+    }
+    preparedResume = await prepareCommand({
+      kind: "resume_task",
+      operation_id: `openclaw:resume:${randomUUID()}`,
+      task_id: TASK_ID,
+      expected_revision: revision,
+    });
+  }
+  // The sidecar may admit the operation before its HTTP response is lost.
+  await submitCommand(preparedResume);
+}
 
 async function onSessionStart() {
-  if (resumedThisProcess) {
-    return undefined;
-  }
-  resumedThisProcess = true;
-  const revision = await readState();
-  if (revision === null) {
-    throw new Error(`no provisioned task ${TASK_ID} for this host session`);
-  }
-  await submitCommand({
-    kind: "resume_task",
-    operation_id: nextOperationId("resume"),
-    task_id: TASK_ID,
-    expected_revision: revision,
+  pendingResume ??= resumeTask().catch((error) => {
+    pendingResume = undefined;
+    throw error;
   });
-  return undefined;
+  await pendingResume;
 }
 
 async function onTranscriptWrite(context) {
@@ -116,40 +148,18 @@ async function onTranscriptWrite(context) {
   if (context?.message?.role !== "user") {
     return undefined;
   }
-  if (!resumedThisProcess) {
-    await onSessionStart();
-  }
-  const text = typeof context?.message?.content === "string" ? context.message.content : "";
-  const revision = (await readState()) ?? 0;
-  await submitCommand({
+  await onSessionStart();
+  const text = context.message.content;
+  if (typeof text !== "string" || !text.trim()) return undefined;
+  const revision = await readState();
+  if (revision === null) throw new Error("memorii observation task is unavailable");
+  await submitCommand(await prepareCommand({
     kind: "record_observation",
-    operation_id: nextOperationId("observe"),
+    operation_id: `openclaw:observe:${randomUUID()}`,
     task_id: TASK_ID,
     expected_revision: revision,
     source_digest: await sha256Hex(text),
-  });
-  return undefined;
-}
-
-async function onBeforeToolCall() {
-  const revision = (await readState()) ?? 0;
-  await submitCommand({
-    kind: "record_action_dispatch",
-    operation_id: nextOperationId("dispatch"),
-    task_id: TASK_ID,
-    expected_revision: revision,
-  });
-  return undefined;
-}
-
-async function onAfterToolCall() {
-  const revision = (await readState()) ?? 0;
-  await submitCommand({
-    kind: "record_action_result",
-    operation_id: nextOperationId("result"),
-    task_id: TASK_ID,
-    expected_revision: revision,
-  });
+  }));
   return undefined;
 }
 
@@ -166,7 +176,5 @@ export default definePluginEntry({
     // supported registration surface for them.
     api.on("session_start", onSessionStart);
     api.on("before_message_write", onTranscriptWrite);
-    api.on("before_tool_call", onBeforeToolCall);
-    api.on("after_tool_call", onAfterToolCall);
   },
 });

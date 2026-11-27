@@ -90,6 +90,7 @@ class HarnessStateService:
         cursor: str | None = None,
         checkpoint_ref: str | None = None,
         installation_binding: tuple[str, int] | None = None,
+        include_task_version: bool = False,
     ) -> HarnessStateEnvelope:
         if self._grant_registry is not None:
             try:
@@ -251,6 +252,7 @@ class HarnessStateService:
             protocol_version=1,
             task_id=task_id,
             revision=revision,
+            task_version=task.version if include_task_version else None,
             checkpoint_ref=checkpoint_ref,
             status=status,
             goal=task.goal,

@@ -58,6 +58,7 @@ export interface HarnessStateEnvelope {
   protocol_version: 1;
   task_id: string;
   revision: number;
+  task_version?: number | null;
   checkpoint_ref?: string | null;
   status: EnvelopeStatus;
   goal?: string | null;
@@ -256,13 +257,14 @@ export class RuntimeStateClient {
 
   async getState(
     taskId: string,
-    options: { view?: RuntimeView; cursor?: string } = {},
+    options: { view?: RuntimeView; cursor?: string; includeTaskVersion?: boolean } = {},
   ): Promise<HarnessStateEnvelope> {
     const body = JSON.stringify({
       protocol_version: 1,
       task_id: taskId,
       view: options.view ?? "summary",
       ...(options.cursor !== undefined ? { cursor: options.cursor } : {}),
+      ...(options.includeTaskVersion ? { include_task_version: true } : {}),
     });
     return this.post<HarnessStateEnvelope>("/v1/runtime/state", body);
   }

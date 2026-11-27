@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+
 from memorii.core.harness_state.consumer import ManagedRuntimeSpool
 from memorii.core.harness_state.credentials import SidecarCredentialStore
 from memorii.core.harness_state.service import RuntimeReadGrant
@@ -151,7 +152,18 @@ def test_authorized_request_serves_envelope(tmp_path: Path) -> None:
     assert status == 200
     envelope = json.loads(payload)
     assert envelope["task_id"] == task_id
-    assert envelope["status"] in ("ready", "revalidate_required", "reconcile_required")
+    assert envelope["status"] in ("ready", "revalidation_required", "reconcile_required")
+    assert "task_version" not in envelope
+
+    status, payload = sidecar.handle_state_request(
+        bearer_token="credential:one",
+        origin=None,
+        body=SidecarRequest(task_id=task_id, include_task_version=True).model_dump_json().encode(),
+    )
+    assert status == 200
+    versioned = json.loads(payload)
+    assert versioned["task_version"] == 1
+    assert versioned["revision"] == envelope["revision"]
 
 
 def test_browser_origin_rejected_before_any_task_data(tmp_path: Path) -> None:
@@ -247,6 +259,8 @@ def test_python_client_speaks_the_same_protocol(tmp_path: Path) -> None:
         client = RuntimeStateClient(url, credential="credential:one")
         envelope = client.get_state(task_id)
         assert envelope.task_id == task_id
+        assert envelope.task_version is None
+        assert client.get_state(task_id, include_task_version=True).task_version == 1
         denied_client = RuntimeStateClient(url, credential="credential:wrong")
         with pytest.raises(RuntimeClientError, match="401 unauthenticated"):
             denied_client.get_state(task_id)

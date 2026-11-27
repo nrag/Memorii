@@ -1078,6 +1078,19 @@
             "title": "Task Id",
             "type": "string"
           },
+          "task_version": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Task Version"
+          },
           "unexplained_evidence": {
             "default": [],
             "items": {
@@ -2063,6 +2076,11 @@
             ],
             "default": null,
             "title": "Cursor"
+          },
+          "include_task_version": {
+            "default": false,
+            "title": "Include Task Version",
+            "type": "boolean"
           },
           "protocol_version": {
             "const": 1,
