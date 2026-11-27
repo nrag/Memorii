@@ -133,10 +133,10 @@ async function resumeBoundSession(_event, context) {
   await pendingResume;
 }
 
-function onTranscriptWrite(event, context) {
+function onTranscriptWrite(event, context, logger) {
   if (context?.sessionKey !== SESSION_KEY || event?.message?.role !== "user") return;
   void resumeBoundSession(undefined, context).catch(() => {
-    console.error("memorii session resume unavailable");
+    logger.warn("Memorii session resume unavailable");
   });
   const { content, idempotencyKey } = event.message;
   if (typeof content !== "string" || !content.trim() || typeof idempotencyKey !== "string") return;
@@ -148,7 +148,7 @@ function onTranscriptWrite(event, context) {
   pendingUserMessages.set(idempotencyKey, content);
 }
 
-async function sourceRequest(action, fields = {}) {
+async function sourceRequest(logger, action, fields = {}) {
   try {
     const response = await fetch(`${SIDECAR_URL}/v1/runtime/source/${action}`, {
       method: "POST",
@@ -164,15 +164,15 @@ async function sourceRequest(action, fields = {}) {
       }),
     });
     if (response.ok) return response;
-    console.error(`memorii source ${action} denied: ${response.status}`);
+    logger.warn(`Memorii source ${action} rejected (HTTP ${response.status})`);
   } catch {
-    console.error(`memorii source ${action} unavailable`);
+    logger.warn(`Memorii source ${action} unavailable`);
   }
   return undefined;
 }
 
-async function recalledUserData(currentId) {
-  const response = await sourceRequest("recall", currentId ? { exclude_delivery_id: currentId } : {});
+async function recalledUserData(logger, currentId) {
+  const response = await sourceRequest(logger, "recall", { exclude_delivery_id: currentId });
   if (!response) return undefined;
   try {
     const messages = (await response.json())?.messages;
@@ -185,20 +185,20 @@ async function recalledUserData(currentId) {
   } catch {
     // A malformed response can contain sensitive user data.
   }
-  console.error("memorii source recall returned an invalid response");
+  logger.warn("Memorii source recall returned an invalid response");
   return undefined;
 }
 
-async function onBeforePromptBuild(event, context) {
+async function onBeforePromptBuild(event, context, logger) {
   if (context?.sessionKey !== SESSION_KEY) return;
   await resumeBoundSession(event, context);
   if (context.trigger !== "user" || context.channel || context.messageProvider || context.inputProvenance) return;
   if (typeof context.runId !== "string" || !context.runId) return;
   const deliveryId = `${context.runId}:user`;
-  const historical = await recalledUserData(deliveryId);
+  const historical = await recalledUserData(logger, deliveryId);
   const text = pendingUserMessages.get(deliveryId);
   if (text !== undefined) {
-    const captured = await sourceRequest("capture", { delivery_id: deliveryId, text });
+    const captured = await sourceRequest(logger, "capture", { delivery_id: deliveryId, text });
     if (captured) pendingUserMessages.delete(deliveryId);
   }
   return historical === undefined ? undefined : { prependContext: historical };
@@ -217,7 +217,7 @@ export default definePluginEntry({
       throw new Error("memorii requires an operator-selected MEMORII_OPENCLAW_SESSION_KEY");
     }
     api.on("session_start", resumeBoundSession);
-    api.on("before_prompt_build", onBeforePromptBuild);
-    api.on("before_message_write", onTranscriptWrite);
+    api.on("before_prompt_build", (event, context) => onBeforePromptBuild(event, context, api.logger));
+    api.on("before_message_write", (event, context) => onTranscriptWrite(event, context, api.logger));
   },
 });

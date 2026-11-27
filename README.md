@@ -243,6 +243,7 @@ owner-only permissions.
 - For Pi 0.99.2, select the session with `pi --session-id <id>` and set
   `MEMORII_PI_SESSION_ID` to that exact ID before loading the extension. The
   extension checks the native session ID again after a restart or fork.
+  For headless Pi diagnostics, set `NODE_DEBUG=memorii`.
 - For OpenClaw 2026.9.7, set `MEMORII_OPENCLAW_SESSION_KEY` in the gateway
   environment and target that same key with `openclaw agent --session-key
   agent:<agent-id>:<session-key>`. Restart the gateway after changing the pin.

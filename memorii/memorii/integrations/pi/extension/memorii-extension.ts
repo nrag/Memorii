@@ -13,6 +13,7 @@
 
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { debuglog } from "node:util";
 
 const HOST_CONTRACT = "pi-coding-agent-extension/v1";
 const SIDECAR_URL = process.env.MEMORII_SIDECAR_URL ?? "http://127.0.0.1:8762";
@@ -20,6 +21,7 @@ const CREDENTIAL_PATH =
   process.env.MEMORII_CREDENTIAL_PATH ?? "/run/memorii/pi-extension.credential";
 const TASK_ID = process.env.MEMORII_TASK_ID ?? "task:pi-session";
 const SESSION_ID = process.env.MEMORII_PI_SESSION_ID;
+const log = debuglog("memorii");
 
 function bearerToken(): string {
   const raw = readFileSync(CREDENTIAL_PATH, "utf8").trim();
@@ -102,10 +104,17 @@ interface PiMessage {
 }
 
 interface PiSessionContext {
+  hasUI: boolean;
+  ui: { notify(message: string, type: "warning"): void };
   sessionManager: {
     getSessionId(): string;
     getBranch(): { type: string; id: string; message?: PiMessage }[];
   };
+}
+
+function warn(context: PiSessionContext, message: string): void {
+  log("%s", message);
+  if (context.hasUI) context.ui.notify(message, "warning");
 }
 
 function requireBoundSession(context: PiSessionContext): void {
@@ -129,6 +138,7 @@ export function userMessageText(event: PiMessageEvent): string | undefined {
 }
 
 async function sourceRequest(
+  context: PiSessionContext,
   action: "capture" | "recall",
   fields: Record<string, string> = {},
 ): Promise<Response | undefined> {
@@ -147,15 +157,15 @@ async function sourceRequest(
       }),
     });
     if (response.ok) return response;
-    console.error(`memorii source ${action} denied: ${response.status}`);
+    warn(context, `Memorii source ${action} rejected (HTTP ${response.status})`);
   } catch {
-    console.error(`memorii source ${action} unavailable`);
+    warn(context, `Memorii source ${action} unavailable`);
   }
   return undefined;
 }
 
-async function recalledUserData(): Promise<string | undefined> {
-  const response = await sourceRequest("recall");
+async function recalledUserData(context: PiSessionContext): Promise<string | undefined> {
+  const response = await sourceRequest(context, "recall");
   if (!response) return undefined;
   try {
     const envelope = (await response.json()) as { messages?: { text?: unknown }[] } | null;
@@ -168,7 +178,7 @@ async function recalledUserData(): Promise<string | undefined> {
   } catch {
     // A malformed response can contain sensitive user data.
   }
-  console.error("memorii source recall returned an invalid response");
+  warn(context, "Memorii source recall returned an invalid response");
   return undefined;
 }
 
@@ -224,16 +234,16 @@ export default function memoriiExtension(pi: unknown): void {
       if (text === undefined) continue;
       const entries = branch.filter((entry) => entry.type === "message" && entry.message === message);
       if (entries.length !== 1 || !entries[0].id) {
-        console.error("memorii source capture requires a unique native Pi message entry");
+        warn(context, "Memorii source capture requires a unique native Pi message entry");
         continue;
       }
-      await sourceRequest("capture", { delivery_id: entries[0].id, text });
+      await sourceRequest(context, "capture", { delivery_id: entries[0].id, text });
     }
   });
 
   host.on("context", async (event: { messages: PiMessage[] }, context: PiSessionContext) => {
     requireBoundSession(context);
-    const text = await recalledUserData();
+    const text = await recalledUserData(context);
     if (text === undefined) return undefined;
     const history = { role: "user", content: [{ type: "text", text }], timestamp: Date.now() };
     return { messages: [history, ...event.messages] };
