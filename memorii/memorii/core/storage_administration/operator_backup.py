@@ -25,7 +25,7 @@ from collections.abc import Iterator
 from contextlib import ExitStack, closing, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Literal, Self
+from typing import TYPE_CHECKING, Annotated, Literal, Self
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from pydantic import (
@@ -97,7 +97,11 @@ _SIGNING_PURPOSE = "memorii.installation-backup-manifest.v1"
 _CHUNK = 1 << 20
 _SQLITE_BACKUP_TIMEOUT_SECONDS = 300
 _ALLOWED_PARTICIPANTS = ("control", "partition")
+_MANAGED_SPOOL_PARTICIPANT = "managed-spool"
 _Digest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+
+if TYPE_CHECKING:
+    from memorii.core.harness_state.managed_spool_store import ManagedSpoolSnapshot
 
 
 class BackupParticipant(BaseModel):
@@ -113,10 +117,18 @@ class BackupParticipant(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class BackupSpoolWatermark(BaseModel):
+    """Signed identity and sequence cut of an enrolled intake store."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    store_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    high_water_mark: int = Field(ge=0, strict=True)
+
+
 class InstallationBackupManifest(BaseModel):
     """Closed backup manifest; secrets and signing keys are never included."""
 
-    manifest_version: Literal[1, 2] = 1
+    manifest_version: Literal[1, 2, 3] = 1
     installation_id: str = Field(min_length=1)
     created_at_unix: int = Field(ge=0)
     control_revision: int = Field(ge=1)
@@ -126,6 +138,7 @@ class InstallationBackupManifest(BaseModel):
     memory_data_revision: int = Field(ge=0)
     publication_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     control_tip_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    managed_spool: BackupSpoolWatermark | None = None
     participants: tuple[BackupParticipant, ...] = Field(min_length=1)
     wrapped_content_key: str = Field(min_length=1)
     key_wrap_nonce: str = Field(min_length=16, max_length=32)
@@ -136,12 +149,21 @@ class InstallationBackupManifest(BaseModel):
 
     @model_validator(mode="after")
     def exact_watermark(self) -> Self:
-        if self.manifest_version == 2:
+        if self.manifest_version >= 2:
             if self.publication_digest is None or self.control_tip_digest is None:
                 raise ValueError("backup manifest requires its signed publication and control tip")
         elif self.publication_digest is not None or self.control_tip_digest is not None:
             raise ValueError("legacy backup manifest cannot include an exact watermark")
+        if (self.manifest_version == 3) != (self.managed_spool is not None):
+            raise ValueError("managed spool backup version and watermark must agree")
         return self
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, serialize: SerializerFunctionWrapHandler) -> dict[str, object]:
+        data = serialize(self)
+        if self.managed_spool is None:
+            data.pop("managed_spool", None)
+        return data
 
     def unsigned_digest(self) -> str:
         excluded = {"manifest_digest", "manifest_signature"}
@@ -185,6 +207,7 @@ class RestoreStagingAttestation(BaseModel):
     control_snapshot_digest: _Digest
     partition_snapshot_digest: _Digest
     suppression_snapshot_digest: _Digest
+    spool_snapshot_digest: _Digest | None = None
     signer_key_id: str = Field(min_length=1)
     signature: str = Field(pattern=r"^[0-9a-f]{128}$")
 
@@ -193,6 +216,13 @@ class RestoreStagingAttestation(BaseModel):
     def unsigned_digest(self) -> str:
         payload = self.model_dump(mode="json", exclude={"signature"})
         return _canonical_digest(payload)
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, serialize: SerializerFunctionWrapHandler) -> dict[str, object]:
+        data = serialize(self)
+        if self.spool_snapshot_digest is None:
+            data.pop("spool_snapshot_digest", None)
+        return data
 
 
 class RestoreInventoryDelta(BaseModel):
@@ -207,7 +237,7 @@ class RestoreInventoryDelta(BaseModel):
 class RawPayloadUpgradePreview(BaseModel):
     """Reviewed physical format and workspace inputs for an opt-in upgrade."""
 
-    source_schema_version: int = Field(ge=4, le=LEGACY_RUNTIME_UPGRADE_SCHEMA_VERSION)
+    source_schema_version: int = Field(ge=4, le=RAW_MEMORY_PAYLOAD_SCHEMA_VERSION)
     target_schema_version: Literal[8] = RAW_MEMORY_PAYLOAD_SCHEMA_VERSION
     source_partition_bytes: int = Field(gt=0)
     estimated_workspace_bytes: int = Field(gt=0)
@@ -534,6 +564,9 @@ class BackupRestoreOperator:
         reason: str,
         recovery_key: bytes,
     ) -> InstallationBackupManifest:
+        from memorii.core.harness_state.consumer import ConsumerDeliveryError
+        from memorii.core.storage_administration.managed_spool_selection import open_managed_spool
+
         service = self._operator._administration
         require_owner_capability(service, capability)
         if not reason.strip():
@@ -560,6 +593,7 @@ class BackupRestoreOperator:
             require_private_directory(copies)
             encrypted = Path(scratch) / "encrypted"
             ensure_private_directory(encrypted)
+            spool_snapshot: ManagedSpoolSnapshot | None = None
             try:
                 with ExitStack() as snapshots:
                     with service.verified_operation_context() as (state, finalized):
@@ -570,10 +604,15 @@ class BackupRestoreOperator:
                                 " (change mode to read_only first)"
                             )
                         authority, control, partition = _pin_backup_sources(service, state, finalized, snapshots)
+                        if service._control.read_managed_spool_binding() is not None:
+                            spool = open_managed_spool(service)
+                            spool_snapshot = snapshots.enter_context(spool.pin_snapshot())
                     _sqlite_backup(control, copies / "control.sqlite3")
                     _sqlite_backup(partition, copies / "partition.sqlite3")
+                    if spool_snapshot is not None:
+                        _sqlite_backup(spool_snapshot.connection, copies / f"{_MANAGED_SPOOL_PARTICIPANT}.sqlite3")
             except (
-                ControlJournalChainError, ControlStateError, OSError, sqlite3.Error,
+                ConsumerDeliveryError, ControlJournalChainError, ControlStateError, OSError, sqlite3.Error,
                 StorageAdministrationError, ValidationError,
             ) as exc:
                 raise OperatorError("unavailable: could not capture pinned backup snapshots") from exc
@@ -583,7 +622,14 @@ class BackupRestoreOperator:
             wrapped_key = AESGCM(recovery_key).encrypt(
                 key_wrap_nonce, content_key, None
             )
-            for participant_id in _ALLOWED_PARTICIPANTS:
+            participant_ids = _ALLOWED_PARTICIPANTS
+            spool_watermark = None
+            if spool_snapshot is not None:
+                participant_ids += (_MANAGED_SPOOL_PARTICIPANT,)
+                spool_watermark = BackupSpoolWatermark(
+                    store_id=spool_snapshot.store_id, high_water_mark=spool_snapshot.high_water_mark,
+                )
+            for participant_id in participant_ids:
                 nonce = os.urandom(12)
                 snapshot_path = encrypted / f"{participant_id}.sqlite3.enc"
                 digest, size = encrypt_backup_participant(
@@ -601,7 +647,7 @@ class BackupRestoreOperator:
                 )
 
             manifest = InstallationBackupManifest(
-                manifest_version=2,
+                manifest_version=3 if spool_watermark is not None else 2,
                 installation_id=state.installation_id,
                 created_at_unix=int(time.time()),
                 control_revision=state.control_revision,
@@ -611,6 +657,7 @@ class BackupRestoreOperator:
                 memory_data_revision=finalized.vector.memory_data_revision,
                 publication_digest=finalized.payload_digest(),
                 control_tip_digest=authority.journal_tip,
+                managed_spool=spool_watermark,
                 participants=tuple(participants),
                 wrapped_content_key=base64.b64encode(wrapped_key).decode("ascii"),
                 key_wrap_nonce=base64.b64encode(key_wrap_nonce).decode("ascii"),
@@ -669,6 +716,11 @@ class BackupRestoreOperator:
             try:
                 with service._publication_fence():
                     _require_backup_authority(service, capability, authority)
+                    current_binding = service._control.read_managed_spool_binding()
+                    if (None if current_binding is None else current_binding.store_id) != (
+                        None if spool_watermark is None else spool_watermark.store_id
+                    ):
+                        raise OperatorError("conflict: managed spool selection changed before backup publication")
                     os.replace(encrypted, archive_root)
                     _sync_directory(archive_root.parent)
             except (
@@ -710,6 +762,9 @@ class BackupRestoreOperator:
                 "integrity_error: backup manifest signature mismatch"
                 " (tampered or foreign archive)"
             )
+        expected_ids: set[str] = set(_ALLOWED_PARTICIPANTS)
+        if manifest.managed_spool is not None:
+            expected_ids.add(_MANAGED_SPOOL_PARTICIPANT)
         seen_ids: set[str] = set()
         for participant in manifest.participants:
             filename = _validate_participant(participant)
@@ -718,7 +773,7 @@ class BackupRestoreOperator:
                     f"invalid_request: duplicate participant id"
                     f" {participant.participant_id}"
                 )
-            if participant.participant_id not in _ALLOWED_PARTICIPANTS:
+            if participant.participant_id not in expected_ids:
                 raise OperatorError(
                     f"invalid_request: unknown participant"
                     f" {participant.participant_id}"
@@ -740,7 +795,7 @@ class BackupRestoreOperator:
                     f"integrity_error: participant {participant.participant_id}"
                     " digest mismatch"
                 )
-        if seen_ids != set(_ALLOWED_PARTICIPANTS):
+        if seen_ids != expected_ids:
             raise OperatorError("integrity_error: backup participant inventory is incomplete")
         return manifest
 
@@ -834,6 +889,10 @@ class BackupRestoreOperator:
             source = _verify_staged_backup(service, staging, manifest)
             control_snapshot_digest = _snapshot_digest(staging / "control.sqlite3")
             partition_snapshot_digest = _snapshot_digest(staging / "partition.sqlite3")
+            spool_snapshot_digest = (
+                _snapshot_digest(staging / f"{_MANAGED_SPOOL_PARTICIPANT}.sqlite3")
+                if manifest.managed_spool is not None else None
+            )
             with service.verified_operation_context() as (state, finalized):
                 self._require_restore_watermark(service, plan, state, finalized)
                 if not plan.data_loss_acknowledged and source.publication.payload_digest() != finalized.payload_digest():
@@ -861,6 +920,7 @@ class BackupRestoreOperator:
                     control_snapshot_digest=control_snapshot_digest,
                     partition_snapshot_digest=partition_snapshot_digest,
                     suppression_snapshot_digest=suppression_snapshot_digest,
+                    spool_snapshot_digest=spool_snapshot_digest,
                     signer_key_id=service._signer_key_id,
                     signature="0" * 128,
                 )
@@ -913,6 +973,12 @@ class BackupRestoreOperator:
                 or _suppression_snapshot_digest(staging_root / "suppressions") != attestation.suppression_snapshot_digest
             ):
                 raise OperatorError("integrity_error: staged restore bytes differ from the attestation")
+            spool_snapshot = staging_root / f"{_MANAGED_SPOOL_PARTICIPANT}.sqlite3"
+            if attestation.spool_snapshot_digest is not None:
+                if _snapshot_digest(spool_snapshot) != attestation.spool_snapshot_digest:
+                    raise OperatorError("integrity_error: staged managed intake differs from its attestation")
+            elif spool_snapshot.exists() or spool_snapshot.is_symlink():
+                raise OperatorError("integrity_error: staged managed intake is outside its attestation")
             with service.verified_operation_context() as (state, finalized):
                 self._require_restore_watermark(service, plan, state, finalized)
                 self._require_staging_suppression(service, attestation)
@@ -942,11 +1008,15 @@ class BackupRestoreOperator:
                     with closing(sqlite3.connect(uri, uri=True)) as staged:
                         staged.row_factory = sqlite3.Row
                         version = PartitionDataRepository.read_schema_version(staged)
-                        if not 4 <= version <= LEGACY_RUNTIME_UPGRADE_SCHEMA_VERSION:
+                        if version == RAW_MEMORY_PAYLOAD_SCHEMA_VERSION:
+                            if not PartitionDataRepository.needs_verified_read_selectors(staged):
+                                raise OperatorError("conflict: v8 read selectors are already installed")
+                        elif 4 <= version <= LEGACY_RUNTIME_UPGRADE_SCHEMA_VERSION:
+                            validate_upgrade_framing(staged)
+                        else:
                             raise OperatorError(
-                                "unsupported_configuration: raw payload upgrade requires storage format 4 through 7"
+                                "unsupported_configuration: raw payload upgrade requires storage format 4 through 8"
                             )
-                        validate_upgrade_framing(staged)
                     source_size = snapshot.stat().st_size
                     # Working copy plus transient conversion and compaction pages.
                     raw_upgrade = RawPayloadUpgradePreview(
@@ -1185,14 +1255,19 @@ class BackupRestoreOperator:
             source_publication_digest=source.payload_digest(), live_publication_digest=live.payload_digest(),
             preview_digest=preview_digest,
         )
+        converted_raw_payloads = False
         with (
             PartitionDataRepository(working, require_existing=True, protected_storage_root=working.parent) as staged,
             staged.transaction(write=True) as connection,
         ):
             upgrade_needed = staged.read_schema_version(connection) < LEGACY_RUNTIME_UPGRADE_SCHEMA_VERSION
             staged.stage_runtime_recovery_upgrade(connection, source_digest=source.payload_digest())
-            if raw_payloads:
+            if raw_payloads and not staged.uses_raw_memory_payloads(connection):
                 staged.stage_raw_memory_payload_upgrade(connection)
+                converted_raw_payloads = True
+                upgrade_needed = True
+            elif (raw_payloads or not require_upgrade) and staged.needs_verified_read_selectors(connection):
+                staged.stage_verified_read_selectors(connection, source_digest=source.payload_digest())
                 upgrade_needed = True
             previous = source.model_copy(update={"data_generation_id": generation_id})
             revision = staged.bump_runtime_revision(connection)
@@ -1230,7 +1305,7 @@ class BackupRestoreOperator:
             )
             if not service._matches_materialization(connection, publication, partition=staged):
                 raise OperatorError("integrity_error: restored generation does not replay to its signed tuple")
-        if raw_payloads:
+        if converted_raw_payloads:
             with closing(sqlite3.connect(working)) as connection:
                 connection.execute("VACUUM")
             with (
@@ -1307,6 +1382,9 @@ class BackupRestoreOperator:
 def _verify_staged_backup(
     service: StorageAdministrationService, staging: Path, manifest: InstallationBackupManifest,
 ) -> _VerifiedBackup:
+    from memorii.core.harness_state.consumer import ConsumerDeliveryError
+    from memorii.core.harness_state.managed_spool_store import verify_managed_spool_snapshot
+
     """Verify the decrypted pair against one signed backup watermark."""
     try:
         with (
@@ -1315,6 +1393,7 @@ def _verify_staged_backup(
         ):
             control.validate_journal()
             state = control.read_control_state()
+            spool_binding = control.read_managed_spool_binding()
             repository = f"{manifest.installation_id}:default-partition"
             finalized = control.read_publication_state(repository)
             control_tip_digest = control.next_journal_position()[1]
@@ -1369,8 +1448,21 @@ def _verify_staged_backup(
                         if finalized.checkpoint_digest is not None else None
                     ),
                 )
+            if (None if spool_binding is None else spool_binding.store_id) != (
+                None if manifest.managed_spool is None else manifest.managed_spool.store_id
+            ):
+                raise OperatorError("integrity_error: backup spool does not match signed participant authority")
+            if manifest.managed_spool is not None:
+                verify_managed_spool_snapshot(
+                    staging / f"{_MANAGED_SPOOL_PARTICIPANT}.sqlite3",
+                    store_id=manifest.managed_spool.store_id,
+                    high_water_mark=manifest.managed_spool.high_water_mark,
+                    installation_id=finalized.installation_id,
+                    repository_id=finalized.repository_id,
+                    verify_origin=service.verify_operation_origin,
+                )
             return _VerifiedBackup(publication=finalized, control_tip_digest=control_tip_digest)
-    except (ControlJournalChainError, RuntimeJournalError, ValidationError, sqlite3.DatabaseError) as exc:
+    except (ConsumerDeliveryError, ControlJournalChainError, RuntimeJournalError, ValidationError, sqlite3.DatabaseError) as exc:
         raise OperatorError("integrity_error: staged backup verification failed") from exc
 
 

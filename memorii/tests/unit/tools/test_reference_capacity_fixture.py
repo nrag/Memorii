@@ -21,8 +21,10 @@ _TASK = TaskAllocation(
 
 
 def test_signed_fixture_retains_sources_and_exact_graph_counts(tmp_path: Path) -> None:
-    first = _prepare(tmp_path / "first", "balanced", (_TASK,))
+    first = _prepare(tmp_path / "first", "balanced", (_TASK,), require_fresh_v8=True)
     second = _prepare(tmp_path / "second", "balanced", (_TASK,))
+    assert first.partition_schema_version == 8
+    assert first.fixture_origin == "fresh-default"
     assert first.partition_tuple_digest != second.partition_tuple_digest
     assert first.graph_digest == second.graph_digest
     assert first.sources_digest == second.sources_digest
@@ -40,6 +42,15 @@ def test_signed_fixture_retains_sources_and_exact_graph_counts(tmp_path: Path) -
     assert first.checkpoint_digest is None
     assert first.checkpoint_tail_count == 0
     assert first.qualification_blockers
+
+
+def test_fresh_default_qualification_refuses_legacy_installed_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("tests.support.reference_capacity_fixture.PARTITION_SCHEMA_VERSION", 7)
+    with pytest.raises(ReferenceFixtureError, match="fresh default-v8"):
+        _prepare(tmp_path / "fixture", "balanced", (_TASK,), require_fresh_v8=True)
+    assert not (tmp_path / "fixture").exists()
 
 
 def test_solver_edge_owner_refuses_an_endpoint_outside_the_run(tmp_path: Path) -> None:

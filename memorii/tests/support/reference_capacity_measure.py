@@ -452,8 +452,12 @@ def _preflight(args: argparse.Namespace) -> int:
         with tempfile.TemporaryDirectory(prefix="memorii-capacity-preflight-", dir=args.work_root) as scratch:
             root = Path(scratch) / "probe"
             probe = TaskAllocation("concentrated", 0, 2, 2, 0, 0, 1)
-            audit = _prepare(root, "concentrated", (probe,), raw_payloads=args.raw_payloads)
+            audit = _prepare(
+                root, "concentrated", (probe,), raw_payloads=args.raw_payloads,
+                require_fresh_v8=args.require_fresh_v8,
+            )
             report["partition_schema_version"] = audit.partition_schema_version
+            report["fixture_origin"] = audit.fixture_origin
             with StorageAdministrationService(root) as service:
                 with service.partition().transaction(write=False) as connection:
                     if not service.partition().supports_runtime_replay_checkpoints(connection):
@@ -503,6 +507,8 @@ def _qualify_frozen(
             expected_events=EVENT_COUNT, expected_tail=CHECKPOINT_TAIL_COUNT,
             expected_schema=RAW_MEMORY_PAYLOAD_SCHEMA_VERSION if args.raw_payloads else PARTITION_SCHEMA_VERSION,
         )
+        if args.require_fresh_v8 and (audit.partition_schema_version != 8 or audit.fixture_origin != "fresh-default"):
+            raise ReferenceFixtureError("qualification requires a fresh default-v8 fixture")
         if (audit.source_count, audit.source_body_bytes) != (SOURCE_COUNT, SOURCE_COUNT * SOURCE_BODY_BYTES):
             raise ReferenceFixtureError("the frozen fixture does not have the approved native source size")
         with service.partition().transaction(write=False) as connection:
@@ -566,7 +572,9 @@ def main(argv: list[str] | None = None) -> int:
         command.add_argument("--revision", required=True)
         command.add_argument("--profile", choices=("linux", "macos"), required=True)
         command.add_argument("--dedicated-idle", action="store_true")
-        command.add_argument("--raw-payloads", action="store_true", help="require the v8 fixture format")
+        formats = command.add_mutually_exclusive_group()
+        formats.add_argument("--raw-payloads", action="store_true", help="require the v8 fixture format")
+        formats.add_argument("--require-fresh-v8", action="store_true", help="require a fresh default-v8 fixture")
     sample = commands.add_parser("sample")
     sample.add_argument("--base", type=Path, required=True)
     sample.add_argument("--operation", choices=COLD_OPERATIONS, required=True)

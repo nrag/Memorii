@@ -24,11 +24,13 @@ jobs:
         with:
           python-version: "3.12"
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
 
       - name: Install package + test deps
         working-directory: memorii
-        run: pip install -e '.[local,dev]'
+        run: pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
 
       - name: Verify exact mode-parity collection count
         working-directory: memorii
@@ -58,11 +60,13 @@ jobs:
         with:
           python-version: "3.12"
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
 
       - name: Install package + test deps
         working-directory: memorii
-        run: pip install -e '.[local,dev]'
+        run: pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
 
       - name: Verify exact admission-limits collection count
         working-directory: memorii

@@ -1347,9 +1347,10 @@ def learned_catalog_pointer_memory_id(scope: AgentLocalCatalogScope) -> str:
     )
 
 
-def learned_catalog_version_memory_id(version: OntologyCatalogVersion) -> str:
+def learned_catalog_version_memory_id(version: OntologyCatalogVersion | str) -> str:
     """Return the persisted coordinate for one immutable learned version."""
-    return "learned-catalog-version:" + version.version_digest
+    digest = version if isinstance(version, str) else version.version_digest
+    return "learned-catalog-version:" + digest
 
 
 def locate_selected_learned_catalog(
@@ -1395,7 +1396,7 @@ def locate_historical_learned_catalog(
     """Resolve a pinned learned version without consulting the current head."""
     _require_agent_owner(scope=scope, authenticated=authenticated)
     record = _require_control_record(
-        _record_for(records, "learned-catalog-version:" + version_digest), source_kind=_KIND_VERSION,
+        _record_for(records, learned_catalog_version_memory_id(version_digest)), source_kind=_KIND_VERSION,
     )
     try:
         version = OntologyCatalogVersion.model_validate(record.content["version"])

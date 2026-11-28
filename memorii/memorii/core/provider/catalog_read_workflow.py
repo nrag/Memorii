@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, overload
@@ -14,15 +14,18 @@ from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedIngre
 from memorii.core.memory_evolution.writer_admission import CatalogBundleLocator
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
-from memorii.core.memory_plane.store import MemoryPlaneCorruptionError
+from memorii.core.memory_plane.store import CatalogMetadataSnapshot, MemoryPlaneCorruptionError
 from memorii.core.scoped_context.authority import ScopedHostReadAuthority
 from memorii.core.semantic_ingestion.catalog_authority import (
     AgentLocalCatalogAuthorityScope,
     AuthenticatedPrincipalAgent,
     CatalogAuthorityError,
     CatalogAuthorityScope,
+    CatalogSelectionPointer,
     StructuredFactReadAuthority,
     StructuredGrantState,
+    catalog_selection_pointer_memory_id,
+    catalog_version_memory_id,
     structured_grant_state_record_id,
 )
 from memorii.core.semantic_ingestion.catalog_inspection import (
@@ -38,9 +41,11 @@ from memorii.core.semantic_ingestion.catalog_inspection import (
     project_catalog_relations,
 )
 from memorii.core.semantic_ingestion.learned_relation import (
+    CatalogPointer,
     OntologyActivation,
     OntologyCatalogVersion,
     learned_catalog_pointer_memory_id,
+    learned_catalog_version_memory_id,
 )
 from memorii.core.semantic_ingestion.structured_fact_read import (
     CatalogBoundProjectionReadVerifier,
@@ -91,11 +96,12 @@ def _current_grant_states(
 
 
 def _has_agent_local_catalog_control(
-    records: tuple[CanonicalMemoryRecord, ...], scope: AgentLocalCatalogAuthorityScope,
+    records: Iterable[CanonicalMemoryRecord], scope: AgentLocalCatalogAuthorityScope,
 ) -> bool:
-    if any(record.memory_id == learned_catalog_pointer_memory_id(scope) for record in records):
-        return True
+    pointer_id = learned_catalog_pointer_memory_id(scope)
     for record in records:
+        if record.memory_id == pointer_id:
+            return True
         if record.source_kind == "learned_ontology_activation_attempt_v1":
             try:
                 attempt = OntologyActivation.model_validate(record.content.get("activation"))
@@ -104,6 +110,26 @@ def _has_agent_local_catalog_control(
             if attempt.catalog_scope == scope and attempt.status == "selected":
                 return True
     return False
+
+
+def _selected_metadata_records(
+    snapshot: CatalogMetadataSnapshot,
+    scope: CatalogAuthorityScope | AgentLocalCatalogAuthorityScope,
+) -> tuple[CanonicalMemoryRecord, ...]:
+    if isinstance(scope, AgentLocalCatalogAuthorityScope):
+        learned_pointer = snapshot.record(learned_catalog_pointer_memory_id(scope))
+        if learned_pointer is None:
+            return ()
+        pointer = CatalogPointer.model_validate(learned_pointer.content.get("pointer"))
+        version = snapshot.record(learned_catalog_version_memory_id(pointer.selected_version_digest))
+        attempt = snapshot.record(pointer.selected_attempt_id)
+        return tuple(record for record in (learned_pointer, version, attempt) if record is not None)
+    base_pointer = snapshot.record(catalog_selection_pointer_memory_id(scope))
+    if base_pointer is None:
+        return ()
+    selection = CatalogSelectionPointer.model_validate(base_pointer.content.get("catalog_selection_pointer"))
+    version = snapshot.record(catalog_version_memory_id(selection.selected_version_digest))
+    return (base_pointer,) if version is None else (base_pointer, version)
 
 
 @overload
@@ -180,8 +206,10 @@ def read_catalog_workflow(
     ):
         return empty(CatalogReadStatus.DENIED)
 
-    def read(revision: int, records: tuple[CanonicalMemoryRecord, ...]):
-        by_id = {record.memory_id: record for record in records}
+    def read(
+        revision: int, records: tuple[CanonicalMemoryRecord, ...], *,
+        metadata: CatalogMetadataSnapshot | None = None,
+    ):
         child = AgentLocalCatalogAuthorityScope(
             principal_id=authenticated.principal_id, agent_id=authenticated.agent_id,
         )
@@ -193,6 +221,16 @@ def read_catalog_workflow(
             and authority.catalog_visibility_grant.catalog_scope in (base, child)
             and authority.paired_evaluation_authority is None
         )
+        by_id = {record.memory_id: record for record in records}
+        if metadata is not None:
+            for authority in authorities:
+                for kind, grant_id in (
+                    ("fact", authority.fact_grant.grant_id),
+                    ("catalog_visibility", authority.catalog_visibility_grant.grant_id),
+                ):
+                    memory_id = structured_grant_state_record_id(kind, grant_id)
+                    if (record := metadata.record(memory_id)) is not None:
+                        by_id[memory_id] = record
         states = _current_grant_states(by_id, authorities)
         current = {
             authority.catalog_visibility_grant.catalog_scope: authority for authority in authorities
@@ -208,7 +246,7 @@ def read_catalog_workflow(
         def finish(status: CatalogReadStatus):
             return empty(status if released() else CatalogReadStatus.DENIED)
 
-        if len(by_id) != len(records):
+        if metadata is None and len(by_id) != len(records):
             return finish(CatalogReadStatus.UNAVAILABLE)
         if not current:
             return finish(CatalogReadStatus.DENIED)
@@ -229,11 +267,19 @@ def read_catalog_workflow(
         if exact is not None and exact.kind == "unresolved":
             return finish(CatalogReadStatus.NEEDS_CLARIFICATION)
 
-        scope = child if _has_agent_local_catalog_control(records, child) else base
+        has_child_control = (
+            _has_agent_local_catalog_control(records, child) if metadata is None else
+            metadata.record(learned_catalog_pointer_memory_id(child)) is not None
+            or _has_agent_local_catalog_control(metadata.activation_attempts(
+                principal_id=child.principal_id, agent_id=child.agent_id,
+            ), child)
+        )
+        scope = child if has_child_control else base
         if scope not in current:
             return finish(CatalogReadStatus.DENIED)
         try:
-            bundle, _ = locator.locate_selected(records, scope=scope, authenticated=authenticated)
+            selected_records = records if metadata is None else _selected_metadata_records(metadata, scope)
+            bundle, _ = locator.locate_selected(selected_records, scope=scope, authenticated=authenticated)
             # Early learned versions identify a parent catalog digest, which
             # cannot distinguish the seed from the packaged child version.
             if isinstance(bundle.version, OntologyCatalogVersion):
@@ -300,7 +346,13 @@ def read_catalog_workflow(
         })
 
     try:
-        result = memory_plane.read_snapshot_linearized(read)
+        if operation in {"browse", "inspect"}:
+            result = memory_plane.read_catalog_metadata_linearized(
+                lambda revision, snapshot: read(revision, (), metadata=snapshot),
+                compatibility=read,
+            )
+        else:
+            result = memory_plane.read_snapshot_linearized(read)
     except (
         CatalogAuthorityError, ManagedPartitionError, MemoryPlaneCorruptionError, StorageAdministrationError,
         OSError, sqlite3.Error, ValueError,

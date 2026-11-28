@@ -71,6 +71,7 @@ from memorii.stores.sqlite.private_storage import (
 
 _CONTROL_FORMAT_VERSION = 1
 DEFAULT_SIGNER_KEY_ID = "installation-control"
+REPLACEMENT_RECOVERY_QUARANTINE = "replacement recovery pending independent seal"
 _UNINITIALIZED = "uninitialized"
 _KNOWN_LAYOUT = frozenset(
     {"control", "partition", ".init.lock", ".publication.lock"}
@@ -181,6 +182,10 @@ class StorageAdministrationService:
         self._partition: PartitionDataRepository | None = None
         self._partition_recovery = threading.local()
         self._verified_tuples: dict[str, VerificationCookie] = {}
+        opened_state = self._control.read_control_state()
+        self._replacement_activation_pending = (
+            opened_state is not None and opened_state.quarantined_reason == REPLACEMENT_RECOVERY_QUARANTINE
+        )
         # Wired by the governance enforcement entry: re-emits one journal
         # entry's revocation directive. Until wired, pending enforcements
         # are reported (never silently dropped) by the drain.
@@ -261,10 +266,12 @@ class StorageAdministrationService:
         return self._root / "control" / "control.sqlite3"
 
     def partition_path(self) -> Path:
+        self._require_replacement_activation()
         path, _ = self._active_partition_selection()
         return path
 
     def partition(self) -> PartitionDataRepository:
+        self._require_replacement_activation()
         if self._partition is None:
             path, selected = self._active_partition_selection()
             identity = self._partition_file_identity(path) if path.exists() else None
@@ -277,6 +284,7 @@ class StorageAdministrationService:
                 raise InstallationIntegrityError(message)
 
             def require_current_generation(connection: sqlite3.Connection) -> None:
+                self._require_replacement_activation()
                 active_path, active = self._active_partition_selection()
                 if path != active_path or self._partition_file_identity(path) != identity:
                     raise StorageAdministrationError("unavailable: partition selection changed; reopen the installation")
@@ -424,6 +432,12 @@ class StorageAdministrationService:
         if state.quarantined_reason is not None:
             raise InstallationQuarantinedError(state.quarantined_reason)
         return state
+
+    def _require_replacement_activation(self) -> None:
+        # The old control model understands quarantine. Keep direct partition
+        # access closed as well as normal verified factory and serving reads.
+        if self._replacement_activation_pending:
+            raise InstallationQuarantinedError(REPLACEMENT_RECOVERY_QUARANTINE)
 
     def _repository_id(self) -> str:
         return f"{self._control_state().installation_id}:default-partition"
@@ -936,6 +950,7 @@ class StorageAdministrationService:
 
     def resolve_pending_publication(self) -> Resolution:
         """Recover a prepared intent: exact-old aborts, exact-new finalizes."""
+        self._require_replacement_activation()
         repository_id = self._repository_id()
         change = self._control.read_generation_change(repository_id)
         if change is not None and change.phase == "prepared":
@@ -1097,6 +1112,19 @@ class StorageAdministrationService:
             raise InstallationIntegrityError("current publication tuple is missing")
         return state, finalized
 
+    @contextmanager
+    def publication_release_context(self) -> Iterator[tuple[InstallationControlState, RuntimePublicationState]]:
+        """Pin current authority for one nonblocking release of already verified bytes."""
+        with self._publication_fence(blocking=False):
+            state, finalized = self.current_publication_in_fence()
+            change = self._control.read_generation_change(finalized.repository_id)
+            if (
+                (change is not None and change.phase == "prepared")
+                or self._control.read_pending_intent(finalized.repository_id) is not None
+            ):
+                raise StorageAdministrationError("publication recovery must finish before release")
+            yield state, finalized
+
     def sign_operation_origin(self, coordinate: OperationOriginCoordinate) -> OperationOrigin:
         """Sign a resolved operation coordinate using the installation key owner."""
         return OperationOrigin(
@@ -1241,8 +1269,8 @@ class StorageAdministrationService:
     # --- internal ------------------------------------------------------
 
     @contextmanager
-    def _publication_fence(self):
-        with locked_file(self._root / ".publication.lock", exclusive=True, private=True):
+    def _publication_fence(self, *, blocking: bool = True):
+        with locked_file(self._root / ".publication.lock", exclusive=True, private=True, blocking=blocking):
             yield
 
     def _ensure_signing_key(self) -> str:

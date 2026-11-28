@@ -77,6 +77,7 @@ def test_backup_refuses_a_linked_lifetime_lock(
     outside = tmp_path / "unrelated"
     outside.write_bytes(b"unchanged")
     lifetime_lock = installation / "control" / ".backup-lifetime.lock"
+    lifetime_lock.unlink(missing_ok=True)
     lifetime_lock.symlink_to(outside)
     archive = tmp_path / "archive"
     with StorageAdministrationService(installation) as service:

@@ -19,6 +19,7 @@ from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.sqlite_store import SqliteMemoryPlaneStore
 from memorii.core.memory_plane.store import (
+    CatalogMetadataSnapshot,
     CheckpointSignatureAuthority,
     GovernedWritePolicy,
     JsonlMemoryPlaneStore,
@@ -155,6 +156,12 @@ class PublishedMemoryPlaneStore:
         callback: Callable[[int, tuple[CanonicalMemoryRecord, ...]], object],
     ) -> object:
         return self._inner.read_snapshot_linearized(callback)
+
+    def read_catalog_metadata_linearized(
+        self, callback: Callable[[int, CatalogMetadataSnapshot], object],
+    ) -> object:
+        with self._administration.verified_operation_context() as (_, finalized):
+            return self._inner.read_verified_catalog_metadata(callback, signed_manifest_digest=finalized.manifest_digest)
 
     def read_write_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
         return self._inner.read_write_snapshot()

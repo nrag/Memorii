@@ -21,6 +21,7 @@ from memorii.core.consolidation.runtime_outputs import (
 )
 from memorii.core.harness_state.credentials import SidecarCredentialStore
 from memorii.core.harness_state.grant_registry import GrantEpochRegistry, GrantRegistryError
+from memorii.core.harness_state.managed_enrollment import HostEnrollmentError, ManagedHostEnrollment
 from memorii.core.harness_state.paging import (
     DEFAULT_CURSOR_LIFETIME,
     HarnessCursorError,
@@ -136,14 +137,16 @@ class ConsolidationReadService:
         *,
         credentials: SidecarCredentialStore,
         secret: str,
-        grant_factory: Callable[[str], RuntimeReadGrant],
+        grant_factory: Callable[[str], RuntimeReadGrant] | None,
         decision_reader: DecisionReader | None = None,
+        enrollment: ManagedHostEnrollment | None = None,
     ) -> None:
         self._administration = administration
         self._credentials = credentials
         self._secret = secret
         self._grant_factory = grant_factory
         self._decision_reader = decision_reader
+        self._enrollment = enrollment
 
     def read(self, request: ConsolidationReadRequest) -> ConsolidationReadPage:
         with self._administration.verified_operation_context() as (state, finalized):
@@ -220,7 +223,17 @@ class ConsolidationReadService:
         credential = credentials.credential_for(self._secret)
         if credential is None:
             raise ConsolidationReadError("unauthenticated")
-        grant = self._grant_factory(credential.principal)
+        if self._enrollment is not None:
+            try:
+                grant = self._enrollment.resolve_read(
+                    credential=credential, task_id=request.task_id, state=state, finalized=finalized,
+                )
+            except HostEnrollmentError as exc:
+                raise ConsolidationReadError("denied") from exc
+        elif self._grant_factory is not None:
+            grant = self._grant_factory(credential.principal)
+        else:
+            raise ConsolidationReadError("denied")
         if (
             grant.principal != credential.principal
             or request.task_id not in grant.allowed_task_ids
@@ -441,9 +454,11 @@ def authenticated_consolidation_reader(
     administration: StorageAdministrationService,
     credentials: SidecarCredentialStore,
     secret: str,
-    grant_factory: Callable[[str], RuntimeReadGrant],
+    grant_factory: Callable[[str], RuntimeReadGrant] | None,
+    *, enrollment: ManagedHostEnrollment | None = None,
 ) -> ConsolidationReadService:
     """Compose a reader for this request's authenticated host credential."""
     return ConsolidationReadService(
         administration, credentials=credentials, secret=secret, grant_factory=grant_factory,
+        enrollment=enrollment,
     )

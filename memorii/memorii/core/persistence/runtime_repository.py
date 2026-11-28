@@ -216,11 +216,10 @@ class RuntimeStateRepository:
         self, connection: sqlite3.Connection, task_id: str,
     ) -> frozenset[tuple[str, str]]:
         """Bound the unique admitted source/digest pairs needed by task archival."""
-        rows = connection.execute(
-            "SELECT DISTINCT json_extract(record_json, '$.source_admission.source_id') AS source_id,"
-            " json_extract(record_json, '$.source_admission.source_record_digest') AS source_digest"
-            " FROM runtime_command_receipts WHERE json_extract(record_json, '$.source_admission.task_id') = ? LIMIT ?",
-            (task_id, MAX_CONSOLIDATION_SOURCE_REFERENCES + 1),
+        from memorii.stores.sqlite.native_receipts import task_observation_source_keys
+
+        rows = task_observation_source_keys(
+            connection, task_id=task_id, limit=MAX_CONSOLIDATION_SOURCE_REFERENCES + 1,
         )
         return frozenset((str(row["source_id"]), str(row["source_digest"])) for row in rows)
 

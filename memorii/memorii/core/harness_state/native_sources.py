@@ -11,8 +11,9 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from memorii.core.harness_state.consumer import HostEventDelivery, ManagedRuntimeSpool
-from memorii.core.harness_state.credentials import SidecarCredentialStore
+from memorii.core.harness_state.credentials import IssuedCredential, SidecarCredentialStore
 from memorii.core.harness_state.grant_registry import GrantEpochRegistry, GrantRegistryError
+from memorii.core.harness_state.managed_enrollment import HostEnrollmentError, ManagedHostEnrollment
 from memorii.core.harness_state.service import RuntimeReadGrant
 from memorii.core.harness_state.write_authority import (
     HostCommandAuthorityError,
@@ -56,10 +57,12 @@ from memorii.core.storage_administration.service import (
     RuntimePublicationState,
     StorageAdministrationService,
 )
+from memorii.stores.sqlite.native_receipts import has_native_receipt_indexes, native_recall_candidates
 
 _OBSERVATION_PREFIX = "native-source:"
 _OPERATION_ID = re.compile(r"native-source:[0-9a-f]{64}\Z")
 _RECALL_LIMIT = 4
+_RECALL_CANDIDATE_LIMIT = 256
 
 
 class NativeSourceRequest(BaseModel):
@@ -196,13 +199,15 @@ def resolve_enrolled_runtime_source(
 class NativeSourceService:
     def __init__(
         self, administration: StorageAdministrationService, credentials: SidecarCredentialStore,
-        spool: ManagedRuntimeSpool, read_grant: Callable[[str], RuntimeReadGrant],
+        spool: ManagedRuntimeSpool, read_grant: Callable[[str], RuntimeReadGrant] | None,
+        *, enrollment: ManagedHostEnrollment | None = None,
     ) -> None:
         self._administration = administration
         self._credentials = credentials
         self._grants = ManagedHostCommandAuthority(administration)
         self._spool = spool
         self._read_grant = read_grant
+        self._enrollment = enrollment
         self._control = administration.installation_root / "control"
         self._grant_epochs = GrantEpochRegistry(self._control / "grants")
         self._revoked = RefreshingRevokedIdentityView(self._control)
@@ -241,6 +246,9 @@ class NativeSourceService:
         administration = self._administration
         with administration.verified_operation_context() as (state, finalized):
             authorized = self._authorize(secret, request, state, finalized)
+            with administration.partition().transaction(write=False) as connection:
+                if not has_native_receipt_indexes(connection):
+                    raise RuntimeCommandError("unavailable: native capture requires verified observation indexes")
         # Two source requests for one task must obtain their CAS versions in
         # order. The publication fence separately serializes other writers.
         lock = self._control / "runtime-write-grants" / f"capture-{canonical_runtime_digest(request.task_id)}.lock"
@@ -251,17 +259,19 @@ class NativeSourceService:
                     raise _denied()
                 ingress = _ingress(grant, request.task_id)
                 operation_id = native_operation_id(ingress, request.delivery_id)
-            for pending in self._spool.pending():
+            for pending in self._spool.pending_resumes(
+                installation_id=grant.installation_id,
+                repository_id=finalized.repository_id,
+                generation_id=grant.data_generation_id,
+                principal=grant.principal,
+                client_namespace=grant.client_namespace,
+                task_id=request.task_id,
+            ):
                 origin = pending.operation_origin
-                command = pending.delivery.command
-                if (
-                    command.kind == "resume_task" and command.task_id == request.task_id
-                    and origin.coordinate.principal == grant.principal
-                    and origin.coordinate.client_namespace == grant.client_namespace
-                    and origin.coordinate.generation_id == grant.data_generation_id
-                ):
-                    spooled_host_commands(administration, origin).dispatch(command, operation_origin=origin)
-                    self._spool.mark_committed(pending)
+                receipt = spooled_host_commands(administration, origin).dispatch(
+                    pending.delivery.command, operation_origin=origin,
+                )
+                self._spool.mark_committed(pending, receipt=receipt)
             with administration.verified_operation_context() as (state, finalized):
                 if self._authorize(secret, request, state, finalized) != grant:
                     raise _denied()
@@ -321,7 +331,7 @@ class NativeSourceService:
             if entry.delivery.command.source_digest != digest:
                 raise RuntimeCommandError("conflict: native delivery changed")
             receipt = commands.dispatch(entry.delivery.command, operation_origin=entry.operation_origin)
-            self._spool.mark_committed(entry)
+            self._spool.mark_committed(entry, receipt=receipt)
             return receipt
 
     def _require_active_task(
@@ -340,7 +350,7 @@ class NativeSourceService:
                 None if request.exclude_delivery_id is None
                 else native_operation_id(_ingress(grant, request.task_id), request.exclude_delivery_id)
             )
-            read = self._read_grant(grant.principal)
+            read = self._resolve_read_grant(request, grant, state, finalized)
             try:
                 self._grant_epochs.require_current(read.grant_id, read.epoch)
             except GrantRegistryError as exc:
@@ -357,15 +367,13 @@ class NativeSourceService:
                 task = repository.get_task_in(connection, request.task_id)
                 if task is None or task.principal != grant.principal:
                     raise _denied()
-                rows = connection.execute(
-                    "SELECT record_json FROM runtime_command_receipts"
-                    " WHERE client_namespace = ? AND operation_id >= ? AND operation_id < ?"
-                    " AND json_extract(record_json, '$.source_admission.task_id') = ?"
-                    " ORDER BY json_extract(record_json, '$.source_admission.source_write_revision') DESC",
-                    (namespace, _OBSERVATION_PREFIX, "native-source;", request.task_id),
+                rows = native_recall_candidates(
+                    connection, namespace=namespace, task_id=request.task_id, stop_after=_RECALL_CANDIDATE_LIMIT + 1,
                 )
                 messages: list[RecalledNativeMessage] = []
-                for row in rows:
+                for index, row in enumerate(rows):
+                    if index == _RECALL_CANDIDATE_LIMIT:
+                        raise RuntimeCommandError("unavailable: native recall candidate budget is exhausted")
                     receipt = RuntimeCommandReceipt.model_validate_json(row["record_json"])
                     origin, admitted = receipt.operation_origin, receipt.source_admission
                     if origin is None or admitted is None or receipt.status != "committed":
@@ -393,10 +401,11 @@ class NativeSourceService:
                     messages.append(RecalledNativeMessage(source_id=record.memory_id, text=record.text))
                     if len(messages) == _RECALL_LIMIT:
                         break
-            self._authorize(secret, request, state, finalized)
+            if self._authorize(secret, request, state, finalized) != grant:
+                raise _denied()
             try:
                 with self._grant_epochs.current_read(read.grant_id, read.epoch):
-                    current_read = self._read_grant(grant.principal)
+                    current_read = self._resolve_read_grant(request, grant, state, finalized)
                     if (
                         current_read.grant_id != read.grant_id or current_read.epoch != read.epoch
                         or current_read.principal != grant.principal or not current_read.authorizes(request.task_id)
@@ -406,9 +415,28 @@ class NativeSourceService:
             except GrantRegistryError as exc:
                 raise _denied() from exc
 
+    def _resolve_read_grant(
+        self, request: NativeSourceRecallRequest, grant: ResolvedHostCommandAuthority,
+        state: InstallationControlState, finalized: RuntimePublicationState,
+    ) -> RuntimeReadGrant:
+        if self._enrollment is not None:
+            try:
+                return self._enrollment.resolve_read(
+                    credential=IssuedCredential(
+                        credential_id=grant.credential_id, principal=grant.principal,
+                    ),
+                    task_id=request.task_id, source=request.source, state=state, finalized=finalized,
+                )
+            except HostEnrollmentError as exc:
+                raise _denied() from exc
+        if self._read_grant is None:
+            raise _denied()
+        return self._read_grant(grant.principal)
+
 
 def enroll_native_source(
-    administration: StorageAdministrationService, request: HostCommandGrantRequest, *, capability: OwnerCapability,
+    administration: StorageAdministrationService, request: HostCommandGrantRequest, *,
+    capability: OwnerCapability, expected_generation_id: str | None = None,
 ) -> HostCommandGrant:
     """Provision the existing provider writer as owner and issue a finite source enrollment."""
     from memorii.core.memory_evolution.writer_admission import (
@@ -434,4 +462,6 @@ def enroll_native_source(
         )
     else:
         writers.current()
-    return ManagedHostCommandAuthority(administration).issue(request, capability=capability)
+    return ManagedHostCommandAuthority(administration).issue(
+        request, capability=capability, expected_generation_id=expected_generation_id,
+    )

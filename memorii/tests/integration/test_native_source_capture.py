@@ -2,10 +2,10 @@
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from memorii.core.harness_state import native_sources
-from memorii.core.harness_state.consumer import ManagedRuntimeSpool
 from memorii.core.harness_state.credentials import SidecarCredentialStore
 from memorii.core.harness_state.grant_registry import GrantEpochRegistry
 from memorii.core.harness_state.managed_ingress import authenticated_host_commands
@@ -25,17 +25,23 @@ from memorii.core.harness_state.write_authority import (
 from memorii.core.persistence.runtime_api import ManagedRuntimeCommandService, RuntimeCommandError
 from memorii.core.persistence.runtime_contracts import RuntimeCommandReceipt, RuntimeCommandRequest, TaskRecord
 from memorii.core.persistence.runtime_repository import RuntimeStateRepository, publish_runtime_change
-from memorii.core.storage_administration.operator import mint_owner_capability
+from memorii.core.storage_administration.managed_spool_selection import open_managed_spool, register_managed_spool
+from memorii.core.storage_administration.operator import (
+    ModeChangeRequest,
+    StorageAdministrationOperator,
+    mint_owner_capability,
+)
 from memorii.core.storage_administration.service import StorageAdministrationService
 from memorii.domain.enums import ExecutionNodeStatus, ExecutionNodeType
 from memorii.domain.execution_graph.nodes import ExecutionNode
 from memorii.tools.runtime_consume import main as drain
 
 
+@pytest.mark.parametrize("registered_spool", [False, True])
 @pytest.mark.parametrize("interruption", ["sidecar_loss", "grant_revoked", "task_paused"])
 def test_native_capture_respects_interrupted_delivery(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], interruption: str,
-    caplog: pytest.LogCaptureFixture,
+    caplog: pytest.LogCaptureFixture, registered_spool: bool,
 ) -> None:
     scope = NativeSourceScope(kind="pi", session_id="local-session")
     root = tmp_path / "installation"
@@ -55,7 +61,21 @@ def test_native_capture_respects_interrupted_delivery(
 
     with StorageAdministrationService(root) as administration:
         administration.initialize()
-        spool = ManagedRuntimeSpool(root / "spool" / "managed")
+        capability = mint_owner_capability(administration, "owner")
+        if registered_spool:
+            operator = StorageAdministrationOperator(administration)
+            for mode in ("read_only", "active"):
+                operator.change_mode(
+                    ModeChangeRequest(
+                        target_mode=mode,
+                        expected_control_revision=operator.status().control_revision,
+                        reason="select stopped native spool",
+                    ),
+                    capability=capability,
+                )
+                if mode == "read_only":
+                    register_managed_spool(administration, capability=capability, store_id=uuid4().hex)
+        spool = open_managed_spool(administration)
         task = TaskRecord(
             task_id=capture.task_id, principal=credential.principal, goal="continue",
             created_at=now, root_execution_node_id="exec:root",
@@ -72,7 +92,6 @@ def test_native_capture_respects_interrupted_delivery(
             )
 
         publish_runtime_change(administration, seed, operation_binding="native_source_test_task")
-        capability = mint_owner_capability(administration, "owner")
         enrollment = enroll_native_source(
             administration, HostCommandGrantRequest(
                 grant_id="capture", credential_id=credential.credential_id, principal=credential.principal,
@@ -150,6 +169,10 @@ def test_native_capture_respects_interrupted_delivery(
         second = service.capture(secret, capture.model_copy(update={"delivery_id": "message-2"}))
         assert second != receipt
         assert [item.text for item in service.recall(secret, recall).messages] == ["precise", "precise"]
+        with monkeypatch.context() as budget:
+            budget.setattr(native_sources, "_RECALL_CANDIDATE_LIMIT", 1)
+            with pytest.raises(RuntimeCommandError, match="candidate budget is exhausted"):
+                service.recall(secret, recall)
         owner = mint_owner_capability(reopened, "owner")
         for observation in (receipt, second):
             assert observation.operation_origin is not None

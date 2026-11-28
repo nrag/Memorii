@@ -256,6 +256,66 @@ for the remaining evaluation and operational requirements.
 
 ### Managed Task Resume And Memory In Pi And OpenClaw
 
+The installed operator can create a task and enroll one native source from a
+new private installation. These commands assume the operator and local host
+can securely access their respective private credential files.
+
+```bash
+mkdir -m 700 "$HOME/memorii-local"
+root="$HOME/memorii-local"
+memorii-operator --installation-root "$root/installation" --owner-principal owner:local \
+  init --capability-output "$root/owner.cap"
+
+# Choose a future ISO-8601 time and the exact native session in your host.
+expires_at="2030-01-01T00:00:00+00:00"
+memorii-operator --installation-root "$root/installation" --owner-principal owner:local \
+  --capability-file "$root/owner.cap" runtime-grant enroll-native \
+  --operation-id provision-personal-pi --principal local:pi \
+  --native-source '{"kind":"pi","session_id":"personal-pi"}' \
+  --expires-at "$expires_at" --goal "Retain context for this task" \
+  --credential-output "$root/pi.credential"
+
+memorii-operator --installation-root "$root/installation" --owner-principal owner:local \
+  --capability-file "$root/owner.cap" serve
+```
+
+Use a short expiry appropriate for the session. The enrollment receipt gives
+the task ID and command grant ID. Set the host's credential path to the private
+file and use the task ID in the host environment. For OpenClaw, enroll a
+separate exact gateway session with `"kind":"openclaw"` and its own credential
+output. Use the ready loopback URL printed by `serve`. Run the foreground
+command under a local supervisor for restart.
+
+Repeat the same enrollment arguments after an interrupted setup. The stored
+operation ID rejects changed arguments. If an active credential file is
+lost or needs rotation, issue a new operation with the same task and source
+and `--replaces-grant-id`, using a new private file. The prior namespace stays
+revoked, and its native recall and pending proofs require separate owner
+reconciliation. The task itself remains the same. Stop and restart the local
+sidecar without recreating its grant or task state.
+
+The installed initializer registers a private SQLite intake spool on a new
+installation. For an existing installation using the old intake files, stop
+all sidecars, drains and older readers, enter `read_only` mode, and run
+`memorii-operator runtime-spool register` with the same owner credentials.
+Verify the registration before resuming. The supported backup command
+includes the registered spool and its exact admitted sequence.
+
+Use `memorii-operator status` to inspect readiness, effective mode, verified
+generation and queue counts. Add `--backup-archive PATH` to verify the selected
+archive and see its age. A root awaiting publication recovery reports offline.
+
+If a development v8 installation predates the bounded native and catalog
+selectors, take an exact-current backup in `read_only` mode. Stage it and use
+`backup restore-preview-stage --raw-payloads` to review the backfill, then
+`backup upgrade-runtime --raw-payloads` with the reviewed preview digest.
+Reopen the installation and re-enroll eligible clients against the new
+generation. The selected generation remains v8 and retains the signed history.
+Exact ontology recall verifies the full snapshot and its latency can grow with
+the retained graph.
+
+For embedded deployments using the Python composition root:
+
 Provision a task, an installation-issued host credential, a task-scoped read
 grant, and a finite `resume_task` grant for that credential. Run
 `RuntimeSidecar.for_managed_installation` on loopback under the storage owner.

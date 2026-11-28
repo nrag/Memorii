@@ -228,10 +228,15 @@ class ManagedHostCommandAuthority:
         request: HostCommandGrantRequest,
         *,
         capability: OwnerCapability,
+        expected_generation_id: str | None = None,
     ) -> HostCommandGrant:
         """Owner-authorize a new finite grant for the current generation."""
         require_owner_capability(self._administration, capability)
         with self._administration.verified_operation_context() as (state, finalized):
+            if expected_generation_id is not None and (
+                finalized.data_generation_id != expected_generation_id or state.mode != "active"
+            ):
+                raise HostCommandAuthorityError("needs_reconciliation: enrollment authority changed")
             if request.native_source is not None:
                 from memorii.core.persistence.runtime_repository import RuntimeStateRepository
 
@@ -278,6 +283,18 @@ class ManagedHostCommandAuthority:
                 )
             )
             return next_epoch
+
+    def inspect_grant(
+        self, grant_id: str, *, capability: OwnerCapability,
+    ) -> tuple[HostCommandGrant, int] | None:
+        """Resolve the immutable grant and its epoch for an owner retry."""
+        require_owner_capability(self._administration, capability)
+        with self._administration.verified_operation_context():
+            payload = self._read_payload()
+            for grant in payload.grants:
+                if grant.grant_id == grant_id:
+                    return grant, payload.revoked.get(grant_id, grant.epoch)
+        return None
 
     def resolve(
         self,

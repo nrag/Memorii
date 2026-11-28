@@ -38,6 +38,68 @@ def _task(task_id: str) -> TaskRecord:
     )
 
 
+def test_owner_backfills_read_selectors_through_a_verified_v8_cutover(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from memorii.stores.sqlite import catalog_selection, native_receipts
+
+    root, archive, staging = tmp_path / "installed", tmp_path / "archive", tmp_path / "stage"
+    with StorageAdministrationService(root) as service:
+        with monkeypatch.context() as previous:
+            previous.setattr(catalog_selection, "install_catalog_selection_lookup", lambda _: None)
+            previous.setattr(native_receipts, "install_native_receipt_indexes", lambda _: None)
+            service.initialize()
+        owner = mint_owner_capability(service, "owner:test")
+        operator = StorageAdministrationOperator(service)
+        operator.change_mode(
+            ModeChangeRequest(
+                target_mode="read_only", expected_control_revision=operator.status().control_revision,
+                reason="backfill read selectors from a signed staged copy",
+            ),
+            capability=owner,
+        )
+        publish_runtime_change(
+            service, lambda connection, state: state.apply_task(connection, _task("task:before-backfill")),
+            operation_binding="migrate",
+        )
+        prior = service.partition()
+        with prior.transaction(write=False) as connection:
+            assert prior.read_schema_version(connection) == 8
+            assert prior.needs_verified_read_selectors(connection)
+            original_batches = tuple(prior.runtime_event_batch_rows(connection))
+        assert operator.status().readiness == "unavailable"
+        assert operator.status().read_selectors_ready is False
+        backups = BackupRestoreOperator(operator)
+        recovery_key = b"b" * 32
+        backups.create_backup(capability=owner, archive_root=archive, reason="selector backfill", recovery_key=recovery_key)
+        plan = backups.plan_restore(capability=owner, archive_root=archive, data_loss_acknowledged=False)
+        backups.apply_restore(capability=owner, plan=plan, staging_root=staging, recovery_key=recovery_key)
+        preview = backups.preview_staged_restore(capability=owner, plan=plan, staging_root=staging, raw_payloads=True)
+        assert preview.raw_payload_upgrade is not None and preview.raw_payload_upgrade.source_schema_version == 8
+        intent = backups.upgrade_current_runtime(
+            capability=owner, plan=plan, staging_root=staging, preview_digest=preview.digest(), raw_payloads=True,
+        )
+
+    with StorageAdministrationService(root) as reopened:
+        partition = reopened.partition()
+        with partition.transaction(write=False) as connection:
+            assert partition.read_schema_version(connection) == 8
+            assert not partition.needs_verified_read_selectors(connection)
+            assert tuple(partition.runtime_event_batch_rows(connection))[:-1] == original_batches
+        assert RuntimeStateRepository(partition).get_task("task:before-backfill") is not None
+        operator = StorageAdministrationOperator(reopened)
+        assert operator.status().readiness == "ready"
+        assert operator.status().read_selectors_ready is True
+        backups = BackupRestoreOperator(operator)
+        assert backups.upgrade_current_runtime(
+            capability=owner, plan=plan, staging_root=staging, preview_digest=preview.digest(), raw_payloads=True,
+        ) == intent
+        with pytest.raises(OperatorError, match="exact reviewed storage format"):
+            backups.upgrade_current_runtime(
+                capability=owner, plan=plan, staging_root=staging, preview_digest=preview.digest(),
+            )
+
+
 @pytest.mark.parametrize("cut", ["none", "before_selector", "after_selector", "invalid_selector", "permissions"])
 def test_older_restore_recovers_exact_bytes_and_keeps_delivery_held(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], cut: str,
@@ -136,6 +198,11 @@ def test_older_restore_recovers_exact_bytes_and_keeps_delivery_held(
             quarantined = reopened._control.read_generation_change(repository_id)
             assert quarantined is not None and quarantined.phase == "quarantined"
             return
+        if cut != "none":
+            pending_status = operator.status()
+            assert pending_status.readiness == "pending_recovery"
+            assert pending_status.verified_generation_id is None
+            reopened.acquire_verified_snapshot()
         status = operator.status()
         assert status.mode == "read_only"
         assert status.control_revision == plan.expected_control_revision + 2

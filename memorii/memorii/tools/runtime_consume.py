@@ -7,6 +7,7 @@ import json
 import logging
 import sqlite3
 import sys
+from contextlib import ExitStack
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -15,12 +16,12 @@ from memorii.core.harness_state.consumer import (
     ConsumerDeliveryError,
     HostEventDelivery,
     LocalDurableSpool,
-    ManagedRuntimeSpool,
     ManagedSpoolEntry,
 )
 from memorii.core.persistence.runtime_api import RuntimeCommandError, RuntimeCommandService
 from memorii.core.persistence.runtime_contracts import RuntimeCommandRequest
 from memorii.core.persistence.runtime_repository import RuntimeStateError
+from memorii.core.storage_administration.managed_spool_selection import managed_spool_lease, open_managed_spool
 from memorii.core.storage_administration.service import StorageAdministrationError, StorageAdministrationService
 from memorii.stores.sqlite.private_storage import read_private_file
 from memorii.tools.cli_diagnostics import SafeArgumentParser, diagnostic_code
@@ -240,19 +241,34 @@ def _run_legacy(arguments: argparse.Namespace, administration: StorageAdministra
 
 
 def _run_managed(arguments: argparse.Namespace) -> int:
-    from memorii.core.harness_state.credentials import CredentialError, SidecarCredentialStore
-    from memorii.core.harness_state.managed_ingress import authenticated_host_commands, spooled_host_commands
     root = Path(arguments.installation_root)
     try:
         administration = StorageAdministrationService(root, use_registered_writers=True)
     except (OSError, sqlite3.DatabaseError, StorageAdministrationError):
         _LOGGER.error("unavailable: managed installation could not be opened")
         return 3
+    with ExitStack() as stack:
+        stack.callback(administration.close)
+        return _run_managed_with_store(administration, arguments, stack)
+
+
+def _run_managed_with_store(
+    administration: StorageAdministrationService, arguments: argparse.Namespace, stack: ExitStack,
+) -> int:
+    from memorii.core.harness_state.credentials import CredentialError, SidecarCredentialStore
+    from memorii.core.harness_state.managed_ingress import authenticated_host_commands, spooled_host_commands
+
     try:
-        spool = ManagedRuntimeSpool(arguments.spool_directory or root / "spool" / "managed")
+        stack.enter_context(managed_spool_lease(administration))
+        spool = open_managed_spool(administration, directory=arguments.spool_directory)
         if arguments.drain:
             refused = 0
-            for entry in spool.pending():
+            with administration.verified_operation_context() as (_, current):
+                entries = spool.iter_generation_pending(
+                    installation_id=current.installation_id, repository_id=current.repository_id,
+                    generation_id=current.data_generation_id,
+                )
+            for entry in entries:
                 service = spooled_host_commands(administration, entry.operation_origin)
                 try:
                     receipt = service.dispatch(entry.delivery.command, operation_origin=entry.operation_origin)
@@ -260,7 +276,7 @@ def _run_managed(arguments: argparse.Namespace) -> int:
                     refused += 1
                     _LOGGER.error("%s", diagnostic_code(exc))
                     continue
-                spool.mark_committed(entry)
+                spool.mark_committed(entry, receipt=receipt)
                 print(receipt.model_dump_json())
             return 3 if refused else 0
 
@@ -273,7 +289,7 @@ def _run_managed(arguments: argparse.Namespace) -> int:
         if len(credential) > 4096:
             _LOGGER.error("invalid_request: credential file exceeds limit")
             return 2
-        credentials = SidecarCredentialStore(root / "control" / "runtime-credentials")
+        credentials = SidecarCredentialStore(administration.installation_root / "control" / "runtime-credentials")
         service = authenticated_host_commands(administration, credentials, credential.decode("utf-8").strip())
         incoming = (
             arguments.delivery.read_bytes() if arguments.delivery else sys.stdin.buffer.read((1 << 20) + 1)
@@ -295,7 +311,7 @@ def _run_managed(arguments: argparse.Namespace) -> int:
             validate=lambda command, proof: service.validate_intake(command, operation_origin=proof),
         )
         receipt = service.dispatch(entry.delivery.command, operation_origin=entry.operation_origin)
-        spool.mark_committed(entry)
+        spool.mark_committed(entry, receipt=receipt)
         print(receipt.model_dump_json())
         return 0
     except ValueError:
@@ -307,8 +323,6 @@ def _run_managed(arguments: argparse.Namespace) -> int:
     except (OSError, sqlite3.DatabaseError, CredentialError, RuntimeStateError, StorageAdministrationError):
         _LOGGER.error("unavailable: managed installation could not accept the operation")
         return 3
-    finally:
-        administration.close()
 
 
 if __name__ == "__main__":  # pragma: no cover

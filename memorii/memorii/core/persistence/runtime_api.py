@@ -570,14 +570,11 @@ class RuntimeCommandService:
         assert isinstance(connection, _sqlite3.Connection)
         if request.kind == "start_task":
             assert request.goal is not None
-            task_id = "task:" + uuid.uuid5(
-                uuid.NAMESPACE_URL,
-                (
-                    f"{self._client_namespace}:{request.operation_id}"
-                    if operation_origin is None
-                    else canonical_json_digest(operation_origin.coordinate.model_dump(mode="json"))
-                ),
-            ).hex[:12]
+            task_id = (
+                "task:" + uuid.uuid5(uuid.NAMESPACE_URL, f"{self._client_namespace}:{request.operation_id}").hex[:12]
+                if operation_origin is None
+                else managed_start_task_id(operation_origin.coordinate)
+            )
             created_at = datetime.now(UTC)
             principal = self._client_namespace if operation_origin is None else operation_origin.coordinate.principal
             root_node_id = "exec:" + task_id
@@ -794,6 +791,13 @@ def managed_receipt_namespace(
 
 def operation_origin_proof_digest(proof: OperationOrigin) -> str:
     return proof.proof_digest()
+
+
+def managed_start_task_id(coordinate: OperationOriginCoordinate) -> str:
+    """Resolve the task identity derived by a verified managed start command."""
+    return "task:" + uuid.uuid5(
+        uuid.NAMESPACE_URL, canonical_json_digest(coordinate.model_dump(mode="json"))
+    ).hex[:12]
 
 
 class _ManagedReceiptAppeared(RuntimeError):

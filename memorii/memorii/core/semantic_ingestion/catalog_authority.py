@@ -818,8 +818,9 @@ class CatalogSelectionPointer(BaseModel):
         )
 
 
-def catalog_version_memory_id(version: CatalogVersion | CatalogChildVersionV2) -> str:
-    return "semantic_ingestion:catalog-version:" + version.version_digest
+def catalog_version_memory_id(version: CatalogVersion | CatalogChildVersionV2 | str) -> str:
+    digest = version if isinstance(version, str) else version.version_digest
+    return "semantic_ingestion:catalog-version:" + digest
 
 
 def catalog_selection_pointer_memory_id(scope: CatalogAuthorityCoordinate) -> str:

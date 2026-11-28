@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import errno
 import os
+import sqlite3
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing, contextmanager
 from datetime import UTC, datetime, timedelta
 from threading import Event
 from unittest.mock import Mock
@@ -19,11 +21,15 @@ from memorii.core.memory_evolution.writer_admission import (
     SemanticWriterAdmissionStore,
     bounded_preplanning_ownership_manifest,
 )
+from memorii.core.memory_plane import sqlite_store
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
+from memorii.core.memory_plane.store import MemoryPlaneCorruptionError
 from memorii.core.persistence.factory import open_managed_partition
 from memorii.core.provider.catalog_read_workflow import CatalogReadHostRequest, read_catalog_workflow
 from memorii.core.scoped_context.authority import InProcessScopedReadAuthority, ScopedNamespaceGrantRow
 from memorii.core.semantic_ingestion.catalog_authority import (
+    AgentLocalCatalogAuthorityScope,
     AuthenticatedPrincipalAgent,
     CatalogAuthorityScope,
     CatalogOwnerVisibilityGrant,
@@ -35,9 +41,10 @@ from memorii.core.semantic_ingestion.catalog_authority import (
     catalog_version_memory_id,
 )
 from memorii.core.semantic_ingestion.catalog_capture_pin import PackageIndexedCatalogBundleLocator
+from memorii.core.semantic_ingestion.learned_relation import OntologyActivation
 from memorii.core.storage_administration.revoked_identity_view import empty_revoked_view
 from memorii.core.storage_administration.service import InstallationIntegrityError, StorageAdministrationService
-from memorii.domain.enums import MemoryDomain
+from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 
 
 @pytest.fixture(params=("memory", "managed"))
@@ -55,6 +62,62 @@ def catalog_planes(request, tmp_path):
         yield read_plane, write_plane, database_path.with_name(database_path.name + ".lock"), read_owner
     finally:
         write_owner.close()
+        read_owner.close()
+
+
+def _activation_record(principal: str, agent: str, status: str) -> CanonicalMemoryRecord:
+    attempt = OntologyActivation.create(
+        schema_version=1, catalog_scope=AgentLocalCatalogAuthorityScope(principal_id=principal, agent_id=agent),
+        operation="select_prior_version", proposal_id=None, target_version_digest="a" * 64,
+        expected_pointer_digest=None, expected_pointer_sequence=None, authorizing_decision_digest="b" * 64,
+        status=status,
+    )
+    return CanonicalMemoryRecord(
+        memory_id=attempt.attempt_id, domain=MemoryDomain.EXECUTION,
+        text="catalog selection", status=CommitStatus.COMMITTED,
+        source_kind="learned_ontology_activation_attempt_v1", visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        content={"activation": attempt.model_dump(mode="json")},
+    )
+
+
+def test_managed_activation_lookup_matches_scope_and_invalidates_stale_rows(tmp_path, monkeypatch) -> None:
+    alice = _activation_record("alice", "one", "selected")
+    with StorageAdministrationService(tmp_path) as owner:
+        owner.initialize()
+        owner.publish_memory_plane_batch((
+            alice, _activation_record("alice", "two", "selected"), _activation_record("bob", "one", "selected"),
+        ))
+    read_owner, plane = open_managed_partition(tmp_path)
+    try:
+        def matching_ids():
+            return plane.read_catalog_metadata_linearized(
+                lambda _, metadata: tuple(
+                    record.memory_id for record in metadata.activation_attempts(principal_id="alice", agent_id="one")
+                ),
+                compatibility=Mock(side_effect=AssertionError("managed read used compatibility")),
+            )
+
+        assert matching_ids() == (alice.memory_id,)
+        read_owner.publish_memory_plane_batch((_activation_record("alice", "one", "abandoned"),))
+        assert matching_ids() == ()
+        read_owner.publish_memory_plane_batch((alice,))
+        assert matching_ids() == (alice.memory_id,)
+        verified_operation = read_owner.verified_operation_context
+
+        @contextmanager
+        def change_after_verification():
+            with verified_operation() as verified:
+                with closing(sqlite3.connect(read_owner.partition().database_path)) as tamper, tamper:
+                    tamper.execute("DELETE FROM catalog_selected_activations WHERE memory_id=?", (alice.memory_id,))
+                yield verified
+
+        with monkeypatch.context() as scoped:
+            scoped.setattr(read_owner, "verified_operation_context", change_after_verification)
+            with pytest.raises(MemoryPlaneCorruptionError, match="differs from its verified manifest"):
+                matching_ids()
+        with pytest.raises(InstallationIntegrityError, match="materialization manifest does not match the signed tuple"):
+            matching_ids()
+    finally:
         read_owner.close()
 
 
@@ -205,6 +268,56 @@ def test_catalog_installation_version_change_precedes_membership_and_fact_reads(
     assert default.catalog.catalog_digest == seed.catalog.catalog_digest
     assert default.version.version_digest != expected
     assert inspect() == default.version.version_digest
+    if read_owner is not None:
+        def read_warm_metadata() -> set[str]:
+            seen: set[str] = set()
+            decode = sqlite_store._decode_record
+
+            def track_decode(raw: str) -> CanonicalMemoryRecord:
+                record = decode(raw)
+                seen.add(record.memory_id)
+                return record
+
+            with monkeypatch.context() as scoped:
+                scoped.setattr(sqlite_store, "_decode_record", track_decode)
+                scoped.setattr(plane, "read_snapshot_linearized", Mock(
+                    side_effect=AssertionError("managed metadata reached a full snapshot"),
+                ))
+                assert inspect() == default.version.version_digest
+                assert read_catalog_workflow(
+                    {}, operation="browse", ingress=ingress, host_request=host_request, host_authority=host,
+                    memory_plane=plane, locator=locator, now_provider=lambda: now, legacy_verifier=Mock(),
+                    suppression_view=lambda _: empty_revoked_view(),
+                ).status == "listed"
+            return seen
+
+        baseline = read_warm_metadata()
+        writer_plane.write_records(tuple(
+            CanonicalMemoryRecord(
+                memory_id=f"unrelated-memory:{index}", domain=MemoryDomain.EPISODIC, text="unrelated memory",
+                timestamp=now, source_kind="external_episode", status=CommitStatus.COMMITTED,
+            )
+            for index in range(64)
+        ))
+        assert baseline
+        assert read_warm_metadata() == baseline
+        read_owner.publish_memory_plane_batch((_activation_record("alice", "other-agent", "selected"),))
+        assert read_warm_metadata() == baseline
+        read_owner.publish_memory_plane_batch((_activation_record("alice", "assistant", "selected"),))
+        assert read_catalog_workflow(
+            {}, operation="browse", ingress=ingress, host_request=host_request, host_authority=host,
+            memory_plane=plane, locator=locator, now_provider=lambda: now, legacy_verifier=Mock(),
+            suppression_view=lambda _: empty_revoked_view(),
+        ).model_dump(mode="json") == {"status": "denied"}
+        read_owner.publish_memory_plane_batch((_activation_record("alice", "assistant", "abandoned"),))
+        assert read_warm_metadata() == baseline
+        with monkeypatch.context() as scoped:
+            scoped.setattr(sqlite_store, "_CATALOG_BYTE_LIMIT", 1)
+            assert read_catalog_workflow(
+                {}, operation="browse", ingress=ingress, host_request=host_request, host_authority=host,
+                memory_plane=plane, locator=locator, now_provider=lambda: now, legacy_verifier=Mock(),
+                suppression_view=lambda _: empty_revoked_view(),
+            ).model_dump(mode="json") == {"status": "unavailable"}
     for predicate in ("project_owner", "unknown_relation"):
         assert diagnose({
             "kind": "exact", "predicate_id": predicate, "subject_entity_id": "opaque-subject",
@@ -225,6 +338,13 @@ def test_catalog_installation_version_change_precedes_membership_and_fact_reads(
 
     with monkeypatch.context() as scoped:
         scoped.setattr(plane, "read_snapshot_linearized", snapshot_without_selected_version)
+        if read_owner is not None:
+            scoped_record = sqlite_store._SqliteCatalogMetadataSnapshot.record
+
+            def get_without_selected_version(snapshot, memory_id):
+                return None if memory_id == selected_version_id else scoped_record(snapshot, memory_id)
+
+            scoped.setattr(sqlite_store._SqliteCatalogMetadataSnapshot, "record", get_without_selected_version)
         assert diagnose({
             "kind": "exact", "predicate_id": "project_owner", "subject_entity_id": "opaque-subject",
             "expected_catalog_version_digest": expected,

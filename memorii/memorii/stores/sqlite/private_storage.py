@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import os
 import stat
+import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
+from hashlib import sha256
 from pathlib import Path
 from typing import BinaryIO
 
@@ -64,6 +66,65 @@ def open_private_file(path: Path) -> Iterator[BinaryIO]:
 def read_private_file(path: Path, *, limit: int) -> bytes:
     with open_private_file(path) as source:
         return source.read(limit)
+
+
+def write_private_file(path: Path, contents: bytes, *, exclusive: bool = False) -> None:
+    """Durably publish private bytes, optionally reserving an unused destination."""
+    require_private_directory(path.parent)
+    prefix = _handoff_prefix(path) if exclusive else ".private-"
+    descriptor, temporary_name = tempfile.mkstemp(dir=path.parent, prefix=prefix)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as output:
+            _check_owner(output.fileno(), directory=False)
+            output.write(contents)
+            output.flush()
+            os.fsync(output.fileno())
+        if exclusive:
+            # Link with no replace, then drop the staging name before release.
+            os.link(temporary, path)
+            temporary.unlink(missing_ok=True)
+        else:
+            os.replace(temporary, path)
+        _sync_private_directory(path.parent)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _handoff_prefix(path: Path) -> str:
+    return f".handoff-{sha256(os.fsencode(path.name)).hexdigest()}-"
+
+
+def _sync_private_directory(path: Path) -> None:
+    directory = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+
+
+def finish_private_handoff(path: Path) -> None:
+    """Drop our own staging name if interrupted after exclusive publication."""
+    require_private_directory(path.parent)
+    try:
+        state = path.lstat()
+    except FileNotFoundError:
+        return
+    if not (
+        stat.S_ISREG(state.st_mode) and state.st_uid == os.geteuid()
+        and not state.st_mode & 0o077 and state.st_nlink == 2
+    ):
+        return
+    require_no_extended_acl(path)
+    for candidate in path.parent.glob(f"{_handoff_prefix(path)}*"):
+        try:
+            sibling = candidate.lstat()
+        except FileNotFoundError:
+            continue
+        if (sibling.st_dev, sibling.st_ino) == (state.st_dev, state.st_ino):
+            candidate.unlink()
+            _sync_private_directory(path.parent)
+            return
 
 
 @contextmanager

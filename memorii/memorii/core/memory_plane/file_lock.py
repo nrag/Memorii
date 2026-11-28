@@ -17,33 +17,40 @@ _WINDOWS = os.name == "nt"
 class _WindowsLockApi(Protocol):
     LK_LOCK: int
     LK_RLCK: int
+    LK_NBLCK: int
+    LK_NBRLCK: int
     LK_UNLCK: int
 
     def locking(self, file_descriptor: int, mode: int, byte_count: int) -> None: ...
 
 
 @contextmanager
-def locked_file(path: Path, *, exclusive: bool, private: bool = False) -> Iterator[None]:
+def locked_file(path: Path, *, exclusive: bool, private: bool = False, blocking: bool = True) -> Iterator[None]:
     """Hold a process-level advisory lock for the duration of the context."""
     with (open_private_lock(path) if private else path.open("a+b")) as handle:
-        _acquire(handle, exclusive=exclusive)
+        _acquire(handle, exclusive=exclusive, blocking=blocking)
         try:
             yield
         finally:
             _release(handle)
 
 
-def _acquire(handle: BinaryIO, *, exclusive: bool) -> None:
+def _acquire(handle: BinaryIO, *, exclusive: bool, blocking: bool) -> None:
     if _WINDOWS:
         windows_lock = _windows_lock_api()
         _ensure_lock_byte(handle)
-        mode = windows_lock.LK_LOCK if exclusive else windows_lock.LK_RLCK
+        if blocking:
+            mode = windows_lock.LK_LOCK if exclusive else windows_lock.LK_RLCK
+        else:
+            mode = windows_lock.LK_NBLCK if exclusive else windows_lock.LK_NBRLCK
         windows_lock.locking(handle.fileno(), mode, 1)
         return
 
     import fcntl
 
     mode = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+    if not blocking:
+        mode |= fcntl.LOCK_NB
     fcntl.flock(handle.fileno(), mode)
 
 

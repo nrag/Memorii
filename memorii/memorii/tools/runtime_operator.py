@@ -18,11 +18,18 @@ from typing import TYPE_CHECKING
 
 from pydantic import TypeAdapter, ValidationError
 
-from memorii.stores.sqlite.private_storage import read_private_file, repair_installation_permissions
+from memorii.stores.sqlite.private_storage import (
+    finish_private_handoff,
+    read_private_file,
+    repair_installation_permissions,
+    require_private_directory,
+    write_private_file,
+)
 from memorii.tools.cli_diagnostics import SafeArgumentParser, diagnostic_code
 
 if TYPE_CHECKING:
     from memorii.core.storage_administration.operator import OwnerCapability, StorageAdministrationOperator
+    from memorii.core.storage_administration.service import StorageAdministrationService
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -54,9 +61,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--installation-root", type=Path, required=True)
     commands = parser.add_subparsers(dest="command", required=True)
 
-    commands.add_parser("status", help="Content-free installation status")
+    status = commands.add_parser("status", help="Content-free installation status")
+    status.add_argument("--backup-archive", type=Path, help="Verify the selected backup and report its age")
     commands.add_parser("doctor", help="Read-only health checks")
     commands.add_parser("repair-permissions", help="Restrict an offline installation to its filesystem owner")
+    init = commands.add_parser("init", help="Initialize private managed storage")
+    init.add_argument("--capability-output", type=Path, required=True, help="New private owner capability file")
+    serve = commands.add_parser("serve", help="Serve verified native host requests on loopback")
+    serve.add_argument("--port", type=int, default=8762)
 
     mode = commands.add_parser("mode", help="Change the installation mode")
     mode.add_argument("--target", choices=("active", "read_only", "bypass"), required=True)
@@ -92,7 +104,7 @@ def main(argv: list[str] | None = None) -> int:
     preview_stage.add_argument("--plan-file", type=Path, required=True)
     preview_stage.add_argument("--staging-root", type=Path, required=True)
     preview_stage.add_argument(
-        "--raw-payloads", action="store_true", help="Review an opt-in raw memory payload format upgrade",
+        "--raw-payloads", action="store_true", help="Review a raw payload upgrade or v8 read selector backfill",
     )
     activate_current = backup_sub.add_parser(
         "restore-activate-current", help="Select a verified staged backup at the exact live watermark",
@@ -112,7 +124,7 @@ def main(argv: list[str] | None = None) -> int:
     upgrade.add_argument("--staging-root", type=Path, required=True)
     upgrade.add_argument("--preview-digest", required=True)
     upgrade.add_argument(
-        "--raw-payloads", action="store_true", help="Apply a reviewed raw memory payload format upgrade",
+        "--raw-payloads", action="store_true", help="Apply a reviewed raw payload upgrade or v8 read selector backfill",
     )
     reconcile = commands.add_parser("reconcile-delivery", help="Review a held delivery from a restored generation")
     reconcile_sub = reconcile.add_subparsers(dest="reconcile_command", required=True)
@@ -175,6 +187,23 @@ def main(argv: list[str] | None = None) -> int:
     )
     grant_revoke = grant_sub.add_parser("revoke", help="Revoke one host command grant")
     grant_revoke.add_argument("--grant-id", required=True)
+    enroll = grant_sub.add_parser("enroll-native", help="Provision an exact native host binding")
+    enroll.add_argument("--operation-id", required=True)
+    enroll.add_argument("--principal", required=True)
+    enroll.add_argument("--native-source", required=True, help="Exact native scope JSON with kind and session_id")
+    enroll.add_argument("--expires-at", required=True, help="ISO-8601 timestamp with offset")
+    enroll.add_argument("--credential-output", type=Path, required=True, help="New owner-only host credential file")
+    enroll.add_argument("--replaces-grant-id", help="Rotate the prior exact binding to a fresh credential")
+    task = enroll.add_mutually_exclusive_group(required=True)
+    task.add_argument("--task-id")
+    task.add_argument("--goal")
+
+    spool = commands.add_parser("runtime-spool", help="Inspect or select the private managed intake store")
+    spool_sub = spool.add_subparsers(dest="spool_command", required=True)
+    spool_sub.add_parser("register", help="Select a verified SQLite spool for a stopped read-only installation")
+    export_entry = spool_sub.add_parser("export-entry", help="Write one exact committed original signed entry")
+    export_entry.add_argument("--coordinate-file", type=Path, required=True)
+    export_entry.add_argument("--output-file", type=Path, required=True)
 
     source_grant = commands.add_parser("runtime-source-grant", help="Manage durable provider source release")
     source_grant_sub = source_grant.add_subparsers(dest="source_grant_command", required=True)
@@ -236,8 +265,14 @@ def main(argv: list[str] | None = None) -> int:
             raise _CliError("invalid_request: owner capability is malformed") from exc
 
     try:
+        if arguments.command == "runtime-spool":
+            return _run_spool_operator(arguments, administration, require_capability())
+        if arguments.command in {"init", "serve"} or (
+            arguments.command == "runtime-grant" and arguments.grant_command == "enroll-native"
+        ):
+            return _run_native_operator(arguments, administration, require_capability)
         if arguments.command == "status":
-            print(operator.status().model_dump_json())
+            print(operator.status(backup_archive=arguments.backup_archive).model_dump_json())
             return 0
         if arguments.command == "doctor":
             from memorii.core.storage_administration.operator_governance import (
@@ -512,6 +547,139 @@ def main(argv: list[str] | None = None) -> int:
         return 3
     finally:
         administration.close()
+
+
+def _run_spool_operator(
+    arguments: Namespace, administration: StorageAdministrationService, capability: OwnerCapability,
+) -> int:
+    from memorii.core.harness_state.consumer import ConsumerDeliveryError
+    from memorii.core.persistence.runtime_contracts import OperationOriginCoordinate
+    from memorii.core.storage_administration.managed_spool_selection import open_managed_spool, register_managed_spool
+    from memorii.core.storage_administration.operator import require_owner_capability
+
+    require_owner_capability(administration, capability)
+    try:
+        if arguments.spool_command == "register":
+            binding = register_managed_spool(administration, capability=capability)
+            print(binding.model_dump_json())
+            return 0
+
+        coordinate = OperationOriginCoordinate.model_validate_json(
+            read_private_file(arguments.coordinate_file, limit=64 * 1024),
+        )
+        with administration.verified_operation_context() as (_, publication):
+            if (
+                coordinate.installation_id != publication.installation_id
+                or coordinate.repository_id != publication.repository_id
+                or coordinate.generation_id != publication.data_generation_id
+            ):
+                raise _CliError("denied: managed spool coordinate belongs to a different generation")
+            entry = open_managed_spool(administration).find(coordinate)
+            if entry is None or entry.state != "committed":
+                raise _CliError("denied: no matching committed managed spool entry")
+        write_private_file(arguments.output_file, entry.model_dump_json().encode(), exclusive=True)
+        print(json.dumps({"status": "exported"}))
+        return 0
+    except ConsumerDeliveryError as exc:
+        raise _CliError(f"{diagnostic_code(exc)}: managed intake store is unavailable") from exc
+
+
+def _run_native_operator(
+    arguments: Namespace, administration: StorageAdministrationService,
+    require_capability: Callable[[], OwnerCapability],
+) -> int:
+    import threading
+    from dataclasses import asdict
+    from datetime import datetime
+
+    from memorii.core.harness_state.consumer import ConsumerDeliveryError
+    from memorii.core.harness_state.credentials import CredentialError
+    from memorii.core.harness_state.managed_enrollment import (
+        HostEnrollmentError,
+        HostEnrollmentRequest,
+        ManagedHostEnrollment,
+    )
+    from memorii.core.harness_state.sidecar import RuntimeSidecar, serve_loopback
+    from memorii.core.harness_state.write_authority import HostCommandAuthorityError, NativeSourceScope
+    from memorii.core.persistence.runtime_api import RuntimeCommandError
+    from memorii.core.storage_administration.managed_spool_selection import (
+        managed_spool_lease,
+        open_managed_spool,
+        register_managed_spool,
+    )
+    from memorii.core.storage_administration.operator import mint_owner_capability, require_owner_capability
+
+    if arguments.command == "init":
+        if not arguments.owner_principal or arguments.capability_file is not None:
+            raise _CliError("invalid_request: --owner-principal is required for initialization", exit_status=2)
+        output = arguments.capability_output
+        require_private_directory(output.parent)
+        finish_private_handoff(output)
+        receipt = administration.initialize()
+        capability = mint_owner_capability(administration, arguments.owner_principal)
+        try:
+            register_managed_spool(administration, capability=capability, initializing=True)
+        except ConsumerDeliveryError as exc:
+            raise _CliError(f"{diagnostic_code(exc)}: managed intake registration failed") from exc
+        contents = capability.capability_digest.encode("ascii")
+        try:
+            prior = read_private_file(output, limit=65)
+        except FileNotFoundError:
+            write_private_file(output, contents, exclusive=True)
+        else:
+            if prior != contents:
+                raise _CliError("conflict: capability destination already exists")
+        print(json.dumps(asdict(receipt)))
+        return 0
+    capability = require_capability()
+    require_owner_capability(administration, capability)
+    if arguments.command == "serve":
+        if not 0 <= arguments.port < 65_536:
+            raise _CliError("invalid_request: sidecar port is invalid", exit_status=2)
+        with administration.verified_operation_context() as (state, finalized):
+            if state.mode == "bypass":
+                raise _CliError("unavailable: installation is in bypass mode")
+            partition = administration.partition()
+            with partition.transaction(write=False) as connection:
+                if not partition.uses_raw_memory_payloads(connection) or partition.needs_verified_read_selectors(connection):
+                    raise _CliError("unavailable: managed native service requires verified v8 read selectors")
+            publication_digest = finalized.payload_digest()
+        enrollment = ManagedHostEnrollment(administration)
+        try:
+            with managed_spool_lease(administration):
+                spool = open_managed_spool(administration)
+                sidecar = RuntimeSidecar.for_managed_installation(
+                    administration, credentials=enrollment.credentials, enrollment=enrollment, spool=spool,
+                )
+                url, server = serve_loopback(sidecar, port=arguments.port)
+                try:
+                    print(json.dumps({
+                        "status": "ready", "url": url, "publication_digest": publication_digest,
+                    }), flush=True)
+                    threading.Event().wait()
+                except KeyboardInterrupt:
+                    return 0
+                finally:
+                    server.shutdown()
+                    server.server_close()
+        except ConsumerDeliveryError as exc:
+            raise _CliError(f"{diagnostic_code(exc)}: managed intake store is unavailable") from exc
+    try:
+        request = HostEnrollmentRequest(
+            operation_id=arguments.operation_id, principal=arguments.principal,
+            source=NativeSourceScope.model_validate_json(arguments.native_source),
+            expires_at=datetime.fromisoformat(arguments.expires_at), task_id=arguments.task_id, goal=arguments.goal,
+            replaces_grant_id=arguments.replaces_grant_id,
+        )
+        receipt = ManagedHostEnrollment(administration).enroll(
+            request, capability=capability, credential_file=arguments.credential_output,
+        )
+    except ValidationError as exc:
+        raise _CliError("invalid_request: native enrollment scope is invalid", exit_status=2) from exc
+    except (CredentialError, HostCommandAuthorityError, HostEnrollmentError, RuntimeCommandError) as exc:
+        raise _CliError(f"{diagnostic_code(exc)}: native enrollment failed") from exc
+    print(receipt.model_dump_json())
+    return 0
 
 
 def _run_backup(

@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import os
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from secrets import token_bytes
@@ -30,6 +30,7 @@ from memorii.core.memory_plane.query import (
 from memorii.core.memory_plane.store import (
     SEMANTIC_CHECKPOINT_SECRET_PURPOSE,
     BackendCheckpointSignatureAuthority,
+    CatalogMetadataSnapshot,
     CheckpointSignatureAuthority,
     GovernedWritePolicy,
     IndexedGovernedWritePolicy,
@@ -50,9 +51,78 @@ from memorii.core.storage_administration.revoked_identity_view import (
     RevokedIdentityServingGate,
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain
+from memorii.stores.sqlite.catalog_selection import selected_catalog_activation_id
 from memorii.stores.sqlite.partition import PartitionDataRepository
 
 _PARTITION_DATABASE_NAME = "partition.sqlite3"
+_CATALOG_ROW_LIMIT = 4_096
+_CATALOG_BYTE_LIMIT = 16 << 20
+_LEARNED_ACTIVATION_KIND = "learned_ontology_activation_attempt_v1"
+
+
+class _SqliteCatalogMetadataSnapshot:
+    """Bound candidate visits and decoded record bytes inside one read transaction."""
+
+    def __init__(self, connection: sqlite3.Connection, *, raw_payloads: bool) -> None:
+        self._connection = connection
+        self._raw_payloads = raw_payloads
+        self._visited = 0
+        self._remaining_bytes = _CATALOG_BYTE_LIMIT
+        self._records: dict[str, CanonicalMemoryRecord | None] = {}
+
+    def record(self, memory_id: str) -> CanonicalMemoryRecord | None:
+        if memory_id in self._records:
+            return self._records[memory_id]
+        if self._visited == _CATALOG_ROW_LIMIT:
+            raise MemoryPlaneCorruptionError("catalog metadata exceeds its row budget")
+        self._visited += 1
+        if self._raw_payloads:
+            query = (
+                "SELECT p.raw_size, CASE WHEN p.raw_size <= ? THEN CAST(p.body AS TEXT) END AS record_json"
+                " FROM memory_current_records c LEFT JOIN memory_payloads p USING (payload_digest)"
+                " WHERE c.memory_id = ?"
+            )
+        else:
+            query = (
+                "SELECT length(CAST(record_json AS BLOB)) AS raw_size,"
+                " CASE WHEN length(CAST(record_json AS BLOB)) <= ? THEN record_json END AS record_json"
+                " FROM memory_current_records WHERE memory_id = ?"
+            )
+        row = self._connection.execute(query, (self._remaining_bytes, memory_id)).fetchone()
+        result = None
+        if row is not None:
+            size = row["raw_size"]
+            if type(size) is not int or size <= 0 or size > self._remaining_bytes or row["record_json"] is None:
+                raise MemoryPlaneCorruptionError("catalog metadata is incomplete or exceeds its byte budget")
+            self._remaining_bytes -= size
+            result = _decode_record(row["record_json"])
+            if result.memory_id != memory_id:
+                raise MemoryPlaneCorruptionError("catalog metadata identity differs from its storage key")
+        self._records[memory_id] = result
+        return result
+
+    def activation_attempts(self, *, principal_id: str, agent_id: str) -> Iterator[CanonicalMemoryRecord]:
+        if self._raw_payloads:
+            selected_id = selected_catalog_activation_id(
+                self._connection, principal_id=principal_id, agent_id=agent_id,
+            )
+            if selected_id is not None:
+                yield self._activation_record(selected_id)
+            return
+        # Legacy SQLite lacks a scoped activation projection.
+        rows = self._connection.execute(
+            "SELECT memory_id FROM memory_current_records"
+            " INDEXED BY memory_current_records_source_kind WHERE source_kind = ?",
+            (_LEARNED_ACTIVATION_KIND,),
+        )
+        for row in rows:
+            yield self._activation_record(row["memory_id"])
+
+    def _activation_record(self, memory_id: str) -> CanonicalMemoryRecord:
+        record = self.record(memory_id)
+        if record is None or record.source_kind != _LEARNED_ACTIVATION_KIND:
+            raise MemoryPlaneCorruptionError("catalog activation differs from its lookup coordinate")
+        return record
 
 
 class SqliteMemoryPlaneStore:
@@ -279,6 +349,21 @@ class SqliteMemoryPlaneStore:
                 data_revision,
                 tuple(clone_record(record) for record in current_records.values()),
             )
+
+    def read_verified_catalog_metadata(
+        self,
+        callback: Callable[[int, CatalogMetadataSnapshot], object],
+        *,
+        signed_manifest_digest: str,
+    ) -> object:
+        """Read scoped rows while the managed caller holds verified publication."""
+        with self._partition.transaction(write=False) as connection:
+            if not self._partition.has_verified_manifest_base(connection, signed_manifest_digest):
+                raise MemoryPlaneCorruptionError("catalog metadata transaction differs from its verified manifest")
+            _, data_revision = self._partition.read_revision_state(connection)
+            return callback(data_revision, _SqliteCatalogMetadataSnapshot(
+                connection, raw_payloads=self._partition.uses_raw_memory_payloads(connection),
+            ))
 
     def read_write_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
         with self._partition.transaction(write=False) as connection:

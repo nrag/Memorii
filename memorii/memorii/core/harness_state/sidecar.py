@@ -16,10 +16,16 @@ admission is durable before acknowledgement.
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Callable
-from contextlib import nullcontext
-from dataclasses import dataclass
+import stat
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager, nullcontext
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
+from functools import partial
+from hashlib import sha256
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from select import select
+from time import monotonic, sleep
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
@@ -37,8 +43,9 @@ from memorii.core.harness_state.consumer import (
     ManagedRuntimeSpool,
     SpoolRecord,
 )
-from memorii.core.harness_state.credentials import CredentialError, SidecarCredentialStore
-from memorii.core.harness_state.grant_registry import GrantEpochRegistry
+from memorii.core.harness_state.credentials import CredentialError, IssuedCredential, SidecarCredentialStore
+from memorii.core.harness_state.grant_registry import GrantEpochRegistry, GrantRegistryError
+from memorii.core.harness_state.managed_enrollment import HostEnrollmentError, ManagedHostEnrollment
 from memorii.core.harness_state.native_sources import (
     NativeSourceCaptureRequest,
     NativeSourceRecallRequest,
@@ -50,7 +57,14 @@ from memorii.core.harness_state.service import (
     HarnessStateService,
     RuntimeReadGrant,
 )
+from memorii.core.harness_state.write_authority import (
+    HostCommandAuthorityError,
+    ManagedHostCommandAuthority,
+    NativeSourceScope,
+    ResolvedHostCommandAuthority,
+)
 from memorii.core.harness_state.writeback_decision import WritebackDecisionError, WritebackDecisionService
+from memorii.core.persistence.contracts import InstallationControlState, RuntimePublicationState
 from memorii.core.persistence.runtime_api import ManagedRuntimeCommandService, RuntimeCommandError
 from memorii.core.persistence.runtime_contracts import OperationOrigin, RuntimeCommandRequest
 from memorii.core.persistence.runtime_repository import RuntimeStateRepository
@@ -67,6 +81,8 @@ from memorii.core.storage_administration.service import (
 
 _MAXIMUM_INTAKE_BYTES = 1 << 20
 _MAXIMUM_OPERATION_ORIGIN_BYTES = 8192
+_SOCKET_RELEASE_SECONDS = 2.0
+_SOCKET_RELEASE_CHUNK_BYTES = 64 * 1024
 _PREPARED_OPERATION = TypeAdapter(RuntimeCommandRequest | WritebackDecisionRequest)
 
 
@@ -107,6 +123,49 @@ class ManagedHostIntakeBinding:
 
     spool: ManagedRuntimeSpool
     commands: ManagedRuntimeCommandService
+
+
+_ReleaseRequest = (
+    SidecarRequest | NativeSourceCaptureRequest | NativeSourceRecallRequest | ConsolidationReadRequest
+    | RuntimeCommandRequest | WritebackDecisionRequest
+)
+
+
+@dataclass(frozen=True)
+class _ReleaseAuthority:
+    credential: IssuedCredential
+    task_id: str | None
+    native_source: NativeSourceScope | None
+    read_grant: RuntimeReadGrant | None
+    command_grant: ResolvedHostCommandAuthority | None
+    control: InstallationControlState
+    publication: RuntimePublicationState
+    suppression: tuple[tuple[int, ...], ...]
+
+
+@dataclass(frozen=True)
+class _SocketReleasePermit:
+    request: _ReleaseRequest
+    authority: _ReleaseAuthority
+    payload_digest: bytes
+    deadline: float
+
+
+def _suppression_coordinates(administration: StorageAdministrationService) -> tuple[tuple[int, ...], ...]:
+    # Cooperating owners publish journal members by rename under the publication
+    # fence. Include both directories to catch an interrupted control update.
+    control = administration.installation_root / "control"
+    coordinates: list[tuple[int, ...]] = []
+    for name in ("suppressions", "suppressions-archive"):
+        try:
+            info = (control / name).stat(follow_symlinks=False)
+        except FileNotFoundError:
+            coordinates.append(())
+            continue
+        if not stat.S_ISDIR(info.st_mode):
+            raise StorageAdministrationError("suppression authority is unavailable")
+        coordinates.append((info.st_dev, info.st_ino, info.st_mtime_ns, info.st_ctime_ns))
+    return tuple(coordinates)
 
 
 SidecarErrorCode = Literal[
@@ -159,7 +218,7 @@ class RuntimeSidecar:
         repository: RuntimeStateRepository,
         *,
         credentials: dict[str, str] | SidecarCredentialStore,
-        grant_factory: Callable[[str], RuntimeReadGrant],
+        grant_factory: Callable[[str], RuntimeReadGrant] | None,
         intake_factory: Callable[[str], HostIntakeBinding] | None = None,
         managed_intake_factory: Callable[[str], ManagedHostIntakeBinding | None] | None = None,
         consolidation_reader_factory: Callable[[str], ConsolidationReadService] | None = None,
@@ -168,12 +227,14 @@ class RuntimeSidecar:
         revoked_view: RevokedIdentityServingGate | None = None,
         administration: StorageAdministrationService | None = None,
         native_sources: NativeSourceService | None = None,
+        enrollment: ManagedHostEnrollment | None = None,
     ) -> None:
         self._repository = repository
         self._administration = administration
         self._native_sources = native_sources
         self._credentials = credentials
         self._grant_factory = grant_factory
+        self._enrollment = enrollment
         self._intake_factory = intake_factory
         if intake_factory is not None and managed_intake_factory is not None:
             raise ValueError("managed and legacy intake bindings are mutually exclusive")
@@ -213,6 +274,9 @@ class RuntimeSidecar:
         self._service = HarnessStateService(
             repository, grant_registry=grant_registry, revoked_view=revoked_view
         )
+        self._grant_registry = grant_registry
+        self._revoked_view = revoked_view
+        self._socket_commands = None if administration is None else ManagedHostCommandAuthority(administration)
 
     @classmethod
     def for_managed_installation(
@@ -220,12 +284,15 @@ class RuntimeSidecar:
         administration: StorageAdministrationService,
         *,
         credentials: SidecarCredentialStore,
-        grant_factory: Callable[[str], RuntimeReadGrant],
+        grant_factory: Callable[[str], RuntimeReadGrant] | None = None,
         spool: ManagedRuntimeSpool,
+        enrollment: ManagedHostEnrollment | None = None,
     ) -> RuntimeSidecar:
         """Bind installed admission to control grants, separately from reads."""
         from memorii.core.harness_state.managed_ingress import authenticated_host_commands
 
+        if (grant_factory is None) == (enrollment is None):
+            raise ValueError("managed sidecar requires exactly one read authority binding")
         credentials.verify_permissions()
 
         def managed_binding(secret: str) -> ManagedHostIntakeBinding | None:
@@ -241,11 +308,14 @@ class RuntimeSidecar:
             grant_factory=grant_factory,
             managed_intake_factory=managed_binding,
             consolidation_reader_factory=lambda secret: authenticated_consolidation_reader(
-                administration, credentials, secret, grant_factory,
+                administration, credentials, secret, grant_factory, enrollment=enrollment,
             ),
             writeback_factory=lambda secret: WritebackDecisionService(administration, credentials, secret),
             administration=administration,
-            native_sources=NativeSourceService(administration, credentials, spool, grant_factory),
+            native_sources=NativeSourceService(
+                administration, credentials, spool, grant_factory, enrollment=enrollment,
+            ),
+            enrollment=enrollment,
         )
 
     def handle_native_source_request(
@@ -279,8 +349,145 @@ class RuntimeSidecar:
 
     def _principal_for(self, secret: str) -> str | None:
         if isinstance(self._credentials, SidecarCredentialStore):
-            return self._credentials.principal_for(secret)
+            try:
+                return self._credentials.principal_for(secret)
+            except CredentialError:
+                return None
         return self._credentials.get(secret)
+
+    def _state_grant(
+        self, *, secret: str, principal: str, task_id: str,
+        verified: tuple[InstallationControlState, RuntimePublicationState] | None,
+        source: NativeSourceScope | None = None,
+        credential: IssuedCredential | None = None,
+    ) -> RuntimeReadGrant:
+        if self._enrollment is not None:
+            if verified is None or not isinstance(self._credentials, SidecarCredentialStore):
+                raise HostEnrollmentError("denied: verified read authority is unavailable")
+            credential = credential or self._credentials.credential_for(secret)
+            if credential is None or credential.principal != principal:
+                raise HostEnrollmentError("denied: enrolled credential is unavailable")
+            state, finalized = verified
+            return self._enrollment.resolve_read(
+                credential=credential, task_id=task_id, state=state, finalized=finalized, source=source,
+            )
+        if self._grant_factory is None:
+            raise HostEnrollmentError("denied: read authority is unavailable")
+        grant = self._grant_factory(principal)
+        if grant.principal != principal or not grant.authorizes(task_id):
+            raise HostEnrollmentError("denied: read authority is unavailable")
+        return grant
+
+    @property
+    def requires_socket_release(self) -> bool:
+        return self._administration is not None
+
+    @contextmanager
+    def _socket_authority(self, request: _ReleaseRequest, secret: str) -> Iterator[_ReleaseAuthority]:
+        administration = self._administration
+        credentials = self._credentials
+        if administration is None or not isinstance(credentials, SidecarCredentialStore):
+            raise StorageAdministrationError("protected socket authority is unavailable")
+        with administration.publication_release_context() as verified, credentials.current_credential(secret) as issued:
+            state, finalized = verified
+            task_id = request.task_id
+            source = request.source if isinstance(request, NativeSourceCaptureRequest | NativeSourceRecallRequest) else None
+            if state.mode == "bypass":
+                raise StorageAdministrationError("protected socket authority is unavailable")
+            if task_id is not None and self._revoked_view is not None and self._revoked_view.is_revoked_task(task_id):
+                raise HostEnrollmentError("protected task authority is unavailable")
+            grant = None
+            if isinstance(request, SidecarRequest | NativeSourceRecallRequest | ConsolidationReadRequest):
+                grant = self._state_grant(
+                    secret=secret, principal=issued.principal, task_id=request.task_id, verified=verified, source=source,
+                    credential=issued,
+                )
+            registry = self._grant_registry
+            if grant is not None and registry is None:
+                raise StorageAdministrationError("read grant registry is unavailable")
+            with (
+                registry.current_read(grant.grant_id, grant.epoch, blocking=False)
+                if grant is not None and registry is not None else nullcontext()
+            ):
+                command = self._socket_command_authority(issued, request, state, finalized)
+                if source is not None and (command is None or command.native_source != source):
+                    raise HostEnrollmentError("protected source authority is unavailable")
+                yield _ReleaseAuthority(
+                    issued, task_id, source, grant, command, state, finalized,
+                    _suppression_coordinates(administration),
+                )
+
+    def _socket_command_authority(
+        self, credential: IssuedCredential, request: _ReleaseRequest,
+        state: InstallationControlState, finalized: RuntimePublicationState,
+    ) -> ResolvedHostCommandAuthority | None:
+        if isinstance(request, SidecarRequest):
+            return None
+        grants = self._socket_commands
+        if grants is None:
+            raise StorageAdministrationError("command grant authority is unavailable")
+        if isinstance(request, ConsolidationReadRequest):
+            return grants.resolve_consolidation_reader_in_verified_context(
+                credential=credential, task_id=request.task_id, origin_operation_id=request.origin_operation_id,
+                state=state, finalized=finalized, now=datetime.now(UTC),
+            )
+        if isinstance(request, WritebackDecisionRequest):
+            return grants.resolve_writeback_in_verified_context(
+                credential=credential, request=request, state=state, finalized=finalized,
+            )
+        if isinstance(request, NativeSourceCaptureRequest | NativeSourceRecallRequest):
+            request = RuntimeCommandRequest(
+                kind="record_observation", task_id=request.task_id, operation_id="native-source-authorization",
+                expected_revision=0, source_digest="0" * 64,
+            )
+        return grants.resolve_for_credential_in_verified_context(
+            credential=credential, request=request, state=state, finalized=finalized,
+        )
+
+    def _sample_socket_authority(self, request: _ReleaseRequest, secret: str, deadline: float) -> _ReleaseAuthority:
+        while monotonic() < deadline:
+            try:
+                with self._socket_authority(request, secret) as authority:
+                    return authority
+            except BlockingIOError:
+                sleep(min(0.005, max(0.0, deadline - monotonic())))
+        raise StorageAdministrationError("protected response release timed out")
+
+    def prepare_socket_response(
+        self, request: _ReleaseRequest, *, secret: str, assemble: Callable[[], tuple[int, bytes]], mutates: bool,
+    ) -> tuple[int, bytes, _SocketReleasePermit | None]:
+        """Bind a successful assembly to the authority under which it ran."""
+        deadline = monotonic() + _SOCKET_RELEASE_SECONDS
+        try:
+            before = self._sample_socket_authority(request, secret, deadline)
+            status, payload = assemble()
+            if status != 200:
+                return status, payload, None
+            if len(payload) > _MAXIMUM_INTAKE_BYTES:
+                return (*_error(429, "resource_exhausted", None), None)
+            after = self._sample_socket_authority(request, secret, deadline)
+            old, new = before.publication, after.publication
+            if mutates and (
+                (old.installation_id, old.repository_id, old.data_generation_id)
+                == (new.installation_id, new.repository_id, new.data_generation_id)
+            ):
+                before = replace(before, publication=new)
+            if before != after:
+                return (*_error(403, "denied", None), None)
+            return status, payload, _SocketReleasePermit(request, after, sha256(payload).digest(), deadline)
+        except CredentialError:
+            return (*_error(401, "unauthenticated", None), None)
+        except (GrantRegistryError, HostCommandAuthorityError, HostEnrollmentError):
+            return (*_error(403, "denied", None), None)
+        except (OSError, StorageAdministrationError, ValidationError, ValueError, sqlite3.DatabaseError):
+            return (*_error(503, "unavailable", None), None)
+
+    @contextmanager
+    def socket_release(self, permit: _SocketReleasePermit, secret: str) -> Iterator[None]:
+        with self._socket_authority(permit.request, secret) as authority:
+            if authority != permit.authority or monotonic() >= permit.deadline:
+                raise HostEnrollmentError("protected response release is no longer authorized")
+            yield
 
     def handle_state_request(
         self,
@@ -295,7 +502,8 @@ class RuntimeSidecar:
             return _error(403, "denied", "remote binding is disabled")
         if origin is not None:
             return _error(403, "denied", "browser-origin requests are rejected")
-        principal = self._principal_for(bearer_token or "")
+        secret = bearer_token or ""
+        principal = self._principal_for(secret)
         if principal is None:
             return _error(
                 401, "unauthenticated", None
@@ -304,9 +512,6 @@ class RuntimeSidecar:
             request = SidecarRequest.model_validate_json(body)
         except ValueError:
             return _error(400, "invalid_request", "body is not a closed v1 request")
-        grant = self._grant_factory(principal)
-        if grant.principal != principal or not grant.authorizes(request.task_id):
-            return _error(403, "denied", None)
         administration = self._administration
         try:
             with (
@@ -322,6 +527,7 @@ class RuntimeSidecar:
                     installation_binding = (
                         finalized.data_generation_id, state.eligibility_epoch + state.pending_epoch_increments,
                     )
+                grant = self._state_grant(secret=secret, principal=principal, task_id=request.task_id, verified=verified)
                 envelope = self._service.read_state(
                     task_id=request.task_id,
                     grant=grant,
@@ -331,8 +537,23 @@ class RuntimeSidecar:
                     installation_binding=installation_binding,
                     include_task_version=request.include_task_version,
                 )
-                if self._principal_for(bearer_token or "") != principal:
+                if self._principal_for(secret) != principal:
                     return _error(401, "unauthenticated", None)
+                grant_lock = (
+                    nullcontext() if self._grant_registry is None
+                    else self._grant_registry.current_read(grant.grant_id, grant.epoch)
+                )
+                with grant_lock:
+                    if self._enrollment is not None and self._state_grant(
+                        secret=secret, principal=principal, task_id=request.task_id, verified=verified,
+                    ) != grant:
+                        return _error(403, "denied", None)
+                    excluded = {"task_version"} if envelope.task_version is None else None
+                    return 200, envelope.model_dump_json(exclude=excluded).encode("utf-8")
+        except (HostEnrollmentError, GrantRegistryError):
+            return _error(403, "denied", None)
+        except CredentialError:
+            return _error(401, "unauthenticated", None)
         except (HarnessStateError, HarnessCursorError) as exc:
             code = _harness_error_code(str(exc))
             return _error(_ERROR_STATUS.get(code, 400), code, None)
@@ -340,8 +561,6 @@ class RuntimeSidecar:
             return _error(500, "integrity_error", None)
         except (OSError, StorageAdministrationError):
             return _error(503, "unavailable", None)
-        excluded = {"task_version"} if envelope.task_version is None else None
-        return 200, envelope.model_dump_json(exclude=excluded).encode("utf-8")
 
     def handle_intake_request(
         self,
@@ -571,84 +790,83 @@ def _harness_error_code(message: str) -> SidecarErrorCode:
     return "invalid_request"
 
 
+def _release_request(path: str, body: bytes) -> _ReleaseRequest:
+    if path == "/v1/runtime/state":
+        return SidecarRequest.model_validate_json(body)
+    if path == "/v1/runtime/source/capture":
+        return NativeSourceCaptureRequest.model_validate_json(body)
+    if path == "/v1/runtime/source/recall":
+        return NativeSourceRecallRequest.model_validate_json(body)
+    if path == "/v1/operations/prepare":
+        return _PREPARED_OPERATION.validate_json(body)
+    if path == "/v1/consolidation/read":
+        return ConsolidationReadRequest.model_validate_json(body)
+    if path == "/v1/runtime/intake":
+        return SidecarIntakeRequest.model_validate_json(body).command
+    return WritebackDecisionRequest.model_validate_json(body)
+
+
 def build_sidecar_handler(sidecar: RuntimeSidecar) -> type[BaseHTTPRequestHandler]:
     """HTTP handler bound to one sidecar instance."""
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:  # noqa: N802 - http.server API
-            if self.path in ("/v1/runtime/source/capture", "/v1/runtime/source/recall"):
-                length = _safe_content_length(self.headers.get("Content-Length"), _MAXIMUM_INTAKE_BYTES)
-                if length is None:
-                    self._respond(*_error(400, "invalid_request", None))
-                    return
-                self._respond(*sidecar.handle_native_source_request(
-                    capture=self.path == "/v1/runtime/source/capture",
-                    bearer_token=self.headers.get("Authorization", "").removeprefix("Bearer ") or None,
-                    origin=self.headers.get("Origin"),
-                    body=self.rfile.read(length) if length else b"",
-                    host=self.headers.get("Host", "").split(":")[0] or None,
-                ))
-                return
-            if self.path in ("/v1/operations/prepare", "/v1/consolidation/read"):
-                length = _safe_content_length(self.headers.get("Content-Length"), _MAXIMUM_INTAKE_BYTES)
-                if length is None:
-                    self._respond(*_error(400, "invalid_request", None))
-                    return
-                handle = (
-                    sidecar.handle_prepare_request if self.path == "/v1/operations/prepare"
-                    else sidecar.handle_consolidation_read_request
-                )
-                self._respond(*handle(
-                    bearer_token=self.headers.get("Authorization", "").removeprefix("Bearer ") or None,
-                    origin=self.headers.get("Origin"),
-                    body=self.rfile.read(length) if length else b"",
-                    host=self.headers.get("Host", "").split(":")[0] or None,
-                ))
-                return
-            if self.path in ("/v1/runtime/intake", "/v1/consolidation/decision"):
-                length = _safe_content_length(self.headers.get("Content-Length"), _MAXIMUM_INTAKE_BYTES)
-                if length is None:
-                    self._respond(*_error(400, "invalid_request", "content length is invalid or oversized"))
-                    return
-                body = self.rfile.read(length) if length else b""
-                proofs = self.headers.get_all("Memorii-Operation-Origin", [])
-                if len(proofs) > 1:
-                    self._respond(*_error(400, "invalid_request", None))
-                    return
-                handle_mutation = (
-                    sidecar.handle_intake_request if self.path == "/v1/runtime/intake"
-                    else sidecar.handle_writeback_decision_request
-                )
-                status, payload = handle_mutation(
-                    bearer_token=self.headers.get("Authorization", "").removeprefix(
-                        "Bearer "
-                    )
-                    or None,
-                    origin=self.headers.get("Origin"),
-                    body=body,
-                    host=self.headers.get("Host", "").split(":")[0] or None,
-                    operation_origin=proofs[0] if proofs else None,
-                )
-                self._respond(status, payload)
-                return
-            if self.path != "/v1/runtime/state":
+            routes = {
+                "/v1/runtime/state": sidecar.handle_state_request,
+                "/v1/operations/prepare": sidecar.handle_prepare_request,
+                "/v1/consolidation/read": sidecar.handle_consolidation_read_request,
+                "/v1/runtime/intake": sidecar.handle_intake_request,
+                "/v1/consolidation/decision": sidecar.handle_writeback_decision_request,
+                "/v1/runtime/source/capture": partial(sidecar.handle_native_source_request, capture=True),
+                "/v1/runtime/source/recall": partial(sidecar.handle_native_source_request, capture=False),
+            }
+            if self.path not in routes:
                 self._respond(*_error(404, "not_found", None))
                 return
             length = _safe_content_length(self.headers.get("Content-Length"), _MAXIMUM_INTAKE_BYTES)
+            proofs = self.headers.get_all("Memorii-Operation-Origin", [])
             if length is None:
                 self._respond(*_error(400, "invalid_request", "content length is invalid or oversized"))
                 return
-            body = self.rfile.read(length) if length else b"{}"
-            status, payload = sidecar.handle_state_request(
-                bearer_token=self.headers.get("Authorization", "").removeprefix(
-                    "Bearer "
-                )
-                or None,
-                origin=self.headers.get("Origin"),
-                body=body,
-                host=self.headers.get("Host", "").split(":")[0] or None,
+            body = self.rfile.read(length) if length else (b"{}" if self.path == "/v1/runtime/state" else b"")
+            secret = self.headers.get("Authorization", "").removeprefix("Bearer ")
+            origin = self.headers.get("Origin")
+            host = self.headers.get("Host", "").split(":")[0] or None
+            handle = routes[self.path]
+            if self.path in ("/v1/runtime/intake", "/v1/consolidation/decision"):
+                if len(proofs) > 1:
+                    self._respond(*_error(400, "invalid_request", None))
+                    return
+                handle = partial(handle, operation_origin=proofs[0] if proofs else None)
+            assemble = partial(handle, bearer_token=secret or None, origin=origin, body=body, host=host)
+            if not sidecar.requires_socket_release:
+                self._respond(*assemble())
+                return
+            if origin is not None or host not in (None, "127.0.0.1", "localhost", "::1"):
+                self._respond(*_error(403, "denied", None))
+                return
+            if not secret:
+                self._respond(*_error(401, "unauthenticated", None))
+                return
+            try:
+                request = _release_request(self.path, body)
+            except ValueError:
+                status, payload = assemble()
+                if status == 200:
+                    self._respond(*_error(503, "unavailable", None))
+                else:
+                    self._respond(status, payload)
+                return
+            status, payload, permit = sidecar.prepare_socket_response(
+                request, secret=secret, assemble=assemble,
+                mutates=self.path in ("/v1/runtime/source/capture", "/v1/consolidation/decision"),
             )
-            self._respond(status, payload)
+            if permit is not None:
+                self._respond_protected(status, payload, permit, secret)
+            elif status == 200:
+                self._respond(*_error(503, "unavailable", None))
+            else:
+                self._respond(status, payload)
 
         def log_message(self, format: str, *args: object) -> None:
             return  # content-free logging only
@@ -659,6 +877,55 @@ def build_sidecar_handler(sidecar: RuntimeSidecar) -> type[BaseHTTPRequestHandle
             self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
             self.wfile.write(payload)
+
+        def _respond_protected(self, status: int, payload: bytes, permit: _SocketReleasePermit, secret: str) -> None:
+            if sha256(payload).digest() != permit.payload_digest:
+                self._respond(*_error(500, "integrity_error", None))
+                return
+            self.close_connection = True
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Connection", "close")
+            frame = memoryview(b"".join(self._headers_buffer) + b"\r\n" + payload)
+            self._headers_buffer = []
+            timeout = self.connection.gettimeout()
+            self.connection.setblocking(False)
+            offset = 0
+            try:
+                while offset < len(frame) and monotonic() < permit.deadline:
+                    try:
+                        with sidecar.socket_release(permit, secret):
+                            try:
+                                written = self.connection.send(frame[offset:offset + _SOCKET_RELEASE_CHUNK_BYTES])
+                            except BlockingIOError:
+                                written = None
+                    except BlockingIOError:
+                        sleep(min(0.005, max(0.0, permit.deadline - monotonic())))
+                        continue
+                    if written is None:
+                        select([], [self.connection], [], max(0.0, permit.deadline - monotonic()))
+                    elif written == 0:
+                        return
+                    else:
+                        offset += written
+            except (CredentialError, GrantRegistryError, HostCommandAuthorityError, HostEnrollmentError):
+                if offset == 0:
+                    self._deny_unwritten_response(permit.deadline)
+            except (OSError, StorageAdministrationError, ValueError, sqlite3.DatabaseError):
+                # A partial response cannot be replaced by an error frame.
+                return
+            finally:
+                self.connection.settimeout(timeout)
+
+        def _deny_unwritten_response(self, deadline: float) -> None:
+            remaining = deadline - monotonic()
+            if remaining > 0:
+                self.connection.settimeout(remaining)
+                try:
+                    self._respond(*_error(403, "denied", None))
+                except OSError:
+                    return
 
     return Handler
 

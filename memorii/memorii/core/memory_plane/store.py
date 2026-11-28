@@ -7,7 +7,7 @@ import hmac
 import json
 import os
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -46,6 +46,21 @@ class CheckpointSignatureAuthority(Protocol):
         checkpoint_digest: str,
         signature: str,
     ) -> bool: ...
+
+
+class CatalogMetadataSnapshot(Protocol):
+    """Transaction-local canonical rows for protected catalog selection."""
+
+    def record(self, memory_id: str) -> CanonicalMemoryRecord | None: ...
+
+    def activation_attempts(self, *, principal_id: str, agent_id: str) -> Iterable[CanonicalMemoryRecord]: ...
+
+
+@runtime_checkable
+class ManagedCatalogMetadataStore(Protocol):
+    def read_catalog_metadata_linearized(
+        self, callback: Callable[[int, CatalogMetadataSnapshot], object],
+    ) -> object: ...
 
 
 class BackendCheckpointSignatureAuthority:

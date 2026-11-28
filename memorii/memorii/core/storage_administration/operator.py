@@ -14,15 +14,27 @@ from __future__ import annotations
 
 import os
 import secrets
+import sqlite3
 import tempfile
+import time
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from memorii.core.memory_plane.file_lock import locked_file
-from memorii.core.persistence.contracts import canonical_json_digest
+from memorii.core.persistence.contracts import RuntimePublicationState, canonical_json_digest
+from memorii.core.storage_administration.operational_status import (
+    InstalledArtifactStatus,
+    QueueStatus,
+    delivery_queue_status,
+    installed_artifact_status,
+)
 from memorii.core.storage_administration.service import (
+    REPLACEMENT_RECOVERY_QUARANTINE,
+    InstallationIntegrityError,
+    InstallationQuarantinedError,
     StorageAdministrationService,
 )
 from memorii.stores.sqlite.private_storage import ensure_private_directory, read_private_file
@@ -56,14 +68,26 @@ class ModeChangeRequest(BaseModel):
 class InstallationStatus(BaseModel):
     """Content-free operational status the owner can always read."""
 
-    mode: InstallationMode
-    control_revision: int = Field(ge=1)
-    eligibility_epoch: int = Field(ge=1)
+    readiness: Literal["ready", "inert", "pending_recovery", "uninitialized", "quarantined", "unavailable"]
+    mode: InstallationMode | None = None
+    effective_mode: Literal["active", "read_only", "offline"] = "offline"
+    control_revision: int | None = Field(default=None, ge=1)
+    eligibility_epoch: int | None = Field(default=None, ge=1)
     pending_epoch_increments: int = Field(default=0, ge=0)
-    quarantined: bool
-    runtime_revision: int = Field(ge=0)
-    memory_write_revision: int = Field(ge=0)
-    memory_data_revision: int = Field(ge=0)
+    quarantined: bool = False
+    runtime_revision: int | None = Field(default=None, ge=0)
+    memory_write_revision: int | None = Field(default=None, ge=0)
+    memory_data_revision: int | None = Field(default=None, ge=0)
+    verified_generation_id: str | None = None
+    verified_publication_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    storage_schema_version: int | None = Field(default=None, ge=1)
+    read_selectors_ready: bool | None = None
+    custody_state: Literal["pending", "unknown"] = "unknown"
+    backup_state: Literal["verified", "unavailable", "unknown"] = "unknown"
+    verified_backup_age_seconds: int | None = Field(default=None, ge=0)
+    delivery_queue: QueueStatus | None = None
+    intake_queue: QueueStatus | None = None
+    artifact: InstalledArtifactStatus
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -74,22 +98,138 @@ class StorageAdministrationOperator:
     def __init__(self, administration: StorageAdministrationService) -> None:
         self._administration = administration
 
-    def status(self) -> InstallationStatus:
+    def status(self, *, backup_archive: Path | None = None) -> InstallationStatus:
+        """Use only verified operational data and report inert roots without opening the partition."""
+        result = self._status_current_root()
+        if backup_archive is None or result.verified_generation_id is None:
+            return result
+        from memorii.core.storage_administration.operator_backup import BackupRestoreOperator
+
         service = self._administration
-        with service.verified_operation_context() as (state, finalized):
-            partition = service.partition()
-            with partition.transaction(write=False) as connection:
+        try:
+            manifest = BackupRestoreOperator(self).verify_backup(archive_root=backup_archive)
+            if manifest.installation_id != service._control_state().installation_id:
+                return result.model_copy(update={"backup_state": "unavailable"})
+        except (OperatorError, OSError, ValueError):
+            return result.model_copy(update={"backup_state": "unavailable"})
+        return result.model_copy(update={
+            "backup_state": "verified",
+            "verified_backup_age_seconds": max(0, int(time.time()) - manifest.created_at_unix),
+        })
+
+    def _status_current_root(self) -> InstallationStatus:
+        from memorii.core.storage_administration.operator_backup import backup_lifetime_guard
+
+        with backup_lifetime_guard(self._administration, exclusive=False), ExitStack() as snapshots:
+            return self._status_pinned_root(snapshots)
+
+    def _status_pinned_root(self, snapshots: ExitStack) -> InstallationStatus:
+        from memorii.core.harness_state.managed_spool_store import SqliteManagedSpool
+        from memorii.core.storage_administration.operator_backup import _open_backup_snapshot
+
+        service = self._administration
+        artifact = installed_artifact_status()
+        with service._publication_fence():
+            state = service._control.read_control_state()
+            if state is None:
+                return InstallationStatus(readiness="uninitialized", artifact=artifact)
+            initial = InstallationStatus(
+                readiness="unavailable", artifact=artifact, mode=state.mode,
+                control_revision=state.control_revision, eligibility_epoch=state.eligibility_epoch,
+                pending_epoch_increments=state.pending_epoch_increments,
+                quarantined=state.quarantined_reason is not None,
+            )
+            if state.quarantined_reason == REPLACEMENT_RECOVERY_QUARANTINE:
+                return initial.model_copy(update={"readiness": "pending_recovery", "custody_state": "pending"})
+            if state.quarantined_reason is not None:
+                return initial.model_copy(update={"readiness": "quarantined"})
+
+            repository_id = service._repository_id()
+            change = service._control.read_generation_change(repository_id)
+            if (
+                (change is not None and change.phase == "prepared")
+                or service._control.read_pending_intent(repository_id) is not None
+            ):
+                return initial.model_copy(update={"readiness": "pending_recovery"})
+            finalized = service._control.read_publication_state(repository_id)
+            if finalized is None:
+                return initial
+            try:
+                snapshot = service._verified_snapshot_locked()
+                if snapshot.tuple_digest != finalized.payload_digest():
+                    return initial
+                partition = service.partition()
+                path = service.partition_path()
+                identity = service._partition_file_identity(path)
+                connection = snapshots.enter_context(_open_backup_snapshot(path))
+                row = partition.read_publication_row(connection)
+                if (
+                    row is None or row["tuple_digest"] != finalized.payload_digest()
+                    or not service._matches_signed_publication(row, finalized)
+                    or service._partition_file_identity(path) != identity
+                ):
+                    return initial
                 runtime_revision = partition.read_runtime_revision(connection)
-        return InstallationStatus(
-            mode=state.mode,
-            control_revision=state.control_revision,
-            eligibility_epoch=state.eligibility_epoch,
-            pending_epoch_increments=state.pending_epoch_increments,
-            quarantined=state.quarantined_reason is not None,
-            runtime_revision=runtime_revision,
-            memory_write_revision=finalized.vector.memory_write_revision,
-            memory_data_revision=finalized.vector.memory_data_revision,
-        )
+                schema_version = partition.read_schema_version(connection)
+                read_selectors_ready = not partition.needs_verified_read_selectors(connection)
+            except InstallationQuarantinedError:
+                return initial.model_copy(update={"readiness": "quarantined", "quarantined": True})
+            except (InstallationIntegrityError, OperatorError, OSError, sqlite3.DatabaseError, ValueError):
+                if service._control_state().quarantined_reason is not None:
+                    return initial.model_copy(update={"readiness": "quarantined", "quarantined": True})
+                return initial
+            intake_connection, intake_available = self._pin_status_intake(finalized, snapshots)
+
+        try:
+            deliveries = delivery_queue_status(connection, finalized)
+        except (sqlite3.DatabaseError, ValueError):
+            return initial
+        intake = None
+        if intake_connection is not None:
+            try:
+                pending, held = SqliteManagedSpool.backlog_counts(
+                    intake_connection, installation_id=finalized.installation_id,
+                    repository_id=finalized.repository_id, generation_id=finalized.data_generation_id,
+                )
+                intake = QueueStatus(pending_count=pending, held_count=held)
+            except sqlite3.DatabaseError:
+                intake_available = False
+
+        operational = intake_available and read_selectors_ready
+        return initial.model_copy(update={
+            "readiness": "inert" if state.mode == "bypass" else "ready" if operational else "unavailable",
+            "effective_mode": state.mode if state.mode != "bypass" and operational else "offline",
+            "runtime_revision": runtime_revision,
+            "memory_write_revision": finalized.vector.memory_write_revision,
+            "memory_data_revision": finalized.vector.memory_data_revision,
+            "verified_generation_id": finalized.data_generation_id,
+            "verified_publication_digest": snapshot.tuple_digest,
+            "storage_schema_version": schema_version,
+            "read_selectors_ready": read_selectors_ready,
+            "delivery_queue": deliveries,
+            "intake_queue": intake,
+        })
+
+    def _pin_status_intake(
+        self, publication: RuntimePublicationState, snapshots: ExitStack,
+    ) -> tuple[sqlite3.Connection | None, bool]:
+        from memorii.core.harness_state.consumer import ConsumerDeliveryError
+        from memorii.core.harness_state.managed_spool_store import SqliteManagedSpool
+        from memorii.stores.sqlite.control import ControlJournalChainError, ControlStateError
+
+        service = self._administration
+        try:
+            binding = service._control.read_managed_spool_binding()
+            if binding is None:
+                return None, True
+            if binding.installation_id != publication.installation_id or binding.repository_id != publication.repository_id:
+                return None, False
+            connection = snapshots.enter_context(SqliteManagedSpool.pin_backlog(
+                service.installation_root / "spool" / "managed", store_id=binding.store_id,
+            ))
+        except (ConsumerDeliveryError, ControlJournalChainError, ControlStateError):
+            return None, False
+        return connection, True
 
     def change_mode(
         self,

@@ -15,8 +15,13 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
+
+from memorii.core.memory_plane.file_lock import locked_file
+from memorii.core.persistence.contracts import canonical_json_digest
+from memorii.stores.sqlite.private_storage import read_private_file, write_private_file
 
 
 class GrantRegistryError(RuntimeError):
@@ -30,8 +35,65 @@ class RevocationRecord(BaseModel):
     epoch: int = Field(ge=1)
     revoked_at_unix: int = Field(ge=0)
     reason: str = Field(min_length=1)
+    custody_operation_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+_GrantId = Annotated[str, Field(min_length=1)]
+_RevokedEpoch = Annotated[int, Field(ge=2, strict=True)]
+_Epochs = TypeAdapter(dict[_GrantId, _RevokedEpoch])
+_MAX_DENIAL_BYTES = 16 * 1024 * 1024
+
+
+class GrantDenial(BaseModel):
+    """Recovery-safe audit coordinate, with no bearer or free-form reason."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    grant_id: _GrantId
+    epoch: _RevokedEpoch
+    revoked_at_unix: Annotated[int, Field(ge=0, strict=True)]
+
+
+class GrantDenialSnapshot(BaseModel):
+    """Monotonic grant epochs and the corresponding durable revocation prefix."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    protocol_version: Literal[1] = 1
+    denials: tuple[GrantDenial, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_epochs(self) -> Self:
+        epochs: dict[str, int] = {}
+        for record in self.denials:
+            if epochs.get(record.grant_id, 1) + 1 != record.epoch:
+                raise ValueError("read grant denial epochs are not a contiguous history")
+            epochs[record.grant_id] = record.epoch
+        return self
+
+    def epochs(self) -> dict[str, int]:
+        return {record.grant_id: record.epoch for record in self.denials}
+
+    def digest(self) -> str:
+        return canonical_json_digest(self.model_dump(mode="json"))
+
+
+def _unique_fields(items: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in items:
+        if key in result:
+            raise ValueError("grant registry contains duplicate fields")
+        result[key] = value
+    return result
+
+
+def _bounded_private_file(path: Path) -> bytes:
+    content = read_private_file(path, limit=_MAX_DENIAL_BYTES + 1)
+    if len(content) > _MAX_DENIAL_BYTES:
+        raise GrantRegistryError("resource_exhausted: read grant denial exceeds limit")
+    return content
 
 
 class GrantEpochRegistry:
@@ -43,6 +105,7 @@ class GrantEpochRegistry:
         os.chmod(self._directory, 0o700)
         self._epochs_path = self._directory / "grant-epochs.json"
         self._revocations_path = self._directory / "grant-revocations.jsonl"
+        self._custody_required = self._directory / "recovery-custody.json"
         # Owner-only from the first append; plain open() would apply umask.
         if not self._revocations_path.exists():
             descriptor = os.open(
@@ -61,13 +124,13 @@ class GrantEpochRegistry:
         concurrent revocations of different grants cannot lose one epoch
         advance through a last-writer-wins epochs map.
         """
-        from memorii.core.memory_plane.file_lock import locked_file
-
         if not grant_id:
             raise GrantRegistryError("grant id must be nonempty")
         if not reason.strip():
             raise GrantRegistryError("revocation reason must be nonempty")
         with locked_file(self._directory / "registry.lock", exclusive=True):
+            if self._custody_required.exists() or self._custody_required.is_symlink():
+                raise GrantRegistryError("unavailable: read grant revocation requires independent custody")
             epochs = self._read_epochs()
             next_epoch = int(epochs.get(grant_id, 1)) + 1
             epochs[grant_id] = next_epoch
@@ -79,10 +142,105 @@ class GrantEpochRegistry:
                 reason=reason,
             )
             with self._revocations_path.open("a", encoding="utf-8") as handle:
-                handle.write(record.model_dump_json() + "\n")
+                handle.write(record.model_dump_json(exclude_none=True) + "\n")
                 handle.flush()
                 os.fsync(handle.fileno())
         return record
+
+    @contextmanager
+    def recovery_lease(self) -> Iterator[None]:
+        """Take the registry lease after independent custody and publication."""
+        with locked_file(self._directory / "registry.lock", exclusive=True, private=True):
+            yield
+
+    def register_recovery_custody(self, custody_id: str) -> None:
+        """Bind the registry to a custody owner while its recovery lease is held."""
+        try:
+            write_private_file(self._custody_required, self._custody_record(custody_id), exclusive=True)
+        except FileExistsError:
+            self.require_recovery_custody(custody_id)
+
+    @staticmethod
+    def _custody_record(custody_id: str) -> bytes:
+        return json.dumps({"protocol_version": 1, "custody_id": custody_id}, sort_keys=True).encode("utf-8")
+
+    def require_recovery_custody(self, custody_id: str) -> None:
+        try:
+            if _bounded_private_file(self._custody_required) == self._custody_record(custody_id):
+                return
+        except FileNotFoundError:
+            pass
+        raise GrantRegistryError("conflict: read grant registry is not bound to this recovery custodian")
+
+    def _recovery_state(self) -> tuple[dict[str, int], GrantDenialSnapshot, tuple[RevocationRecord, ...]]:
+        try:
+            epochs = _Epochs.validate_python(json.loads(
+                _bounded_private_file(self._epochs_path), object_pairs_hook=_unique_fields,
+            ))
+        except FileNotFoundError:
+            epochs = {}
+        lines = _bounded_private_file(self._revocations_path).splitlines()
+        records = tuple(
+            RevocationRecord.model_validate(json.loads(line, object_pairs_hook=_unique_fields)) for line in lines
+        )
+        snapshot = GrantDenialSnapshot(denials=tuple(GrantDenial(
+            grant_id=record.grant_id, epoch=record.epoch, revoked_at_unix=record.revoked_at_unix,
+        ) for record in records))
+        return epochs, snapshot, records
+
+    def recovery_snapshot(self) -> GrantDenialSnapshot:
+        """Pin full deny history under an already-held recovery lease."""
+        epochs, snapshot, _ = self._recovery_state()
+        if epochs != snapshot.epochs():
+            raise GrantRegistryError("needs_reconciliation: read grant epochs and audit disagree")
+        return snapshot
+
+    def apply_recovery_denial(
+        self, denial: GrantDenial, *, before_digest: str, before_count: int, effect_digest: str,
+        operation_digest: str,
+    ) -> GrantDenialSnapshot:
+        """Finish the exact planned epoch/audit effect under a recovery lease."""
+        epochs, audit, records = self._recovery_state()
+        prior = GrantDenialSnapshot(denials=audit.denials[:before_count])
+        if prior.digest() != before_digest or len(prior.denials) != before_count:
+            raise GrantRegistryError("needs_reconciliation: read grant audit does not match pending proof")
+        successor = GrantDenialSnapshot(denials=(*prior.denials, denial))
+        if successor.digest() != effect_digest:
+            raise GrantRegistryError("needs_reconciliation: read grant effect differs from pending proof")
+        if audit == prior and epochs in (prior.epochs(), successor.epochs()):
+            append_record = RevocationRecord(
+                grant_id=denial.grant_id, epoch=denial.epoch, revoked_at_unix=denial.revoked_at_unix,
+                reason="operator-authorized recovery revocation", custody_operation_digest=operation_digest,
+            )
+            previous = _bounded_private_file(self._revocations_path)
+            content = previous + (append_record.model_dump_json() + "\n").encode("utf-8")
+            if len(content) > _MAX_DENIAL_BYTES:
+                raise GrantRegistryError("resource_exhausted: read grant denial exceeds limit")
+            if epochs != successor.epochs():
+                self._write_epochs(successor.epochs())
+            write_private_file(self._revocations_path, content)
+        elif (
+            audit != successor or epochs != successor.epochs()
+            or records[-1].custody_operation_digest != operation_digest
+        ):
+            raise GrantRegistryError("needs_reconciliation: read grant effect differs from pending proof")
+        return self.recovery_snapshot()
+
+    def restore_recovery_snapshot(self, snapshot: GrantDenialSnapshot, *, custody_id: str) -> None:
+        """Materialize content-free terminal denials into an inert replacement."""
+        with self.recovery_lease():
+            if self.recovery_snapshot().denials:
+                raise GrantRegistryError("conflict: replacement read grant registry is already populated")
+            records = (
+                RevocationRecord(grant_id=record.grant_id, epoch=record.epoch, revoked_at_unix=record.revoked_at_unix,
+                                 reason="retained recovery revocation")
+                for record in snapshot.denials
+            )
+            write_private_file(self._revocations_path, b"".join(
+                (record.model_dump_json(exclude_none=True) + "\n").encode("utf-8") for record in records
+            ))
+            self._write_epochs(snapshot.epochs())
+            self.register_recovery_custody(custody_id)
 
     def revocations(self) -> tuple[RevocationRecord, ...]:
         if not self._revocations_path.exists():
@@ -103,11 +261,9 @@ class GrantEpochRegistry:
             )
 
     @contextmanager
-    def current_read(self, grant_id: str, epoch: int) -> Iterator[None]:
+    def current_read(self, grant_id: str, epoch: int, *, blocking: bool = True) -> Iterator[None]:
         """Linearize assembling an authorized read result with grant revocation."""
-        from memorii.core.memory_plane.file_lock import locked_file
-
-        with locked_file(self._directory / "registry.lock", exclusive=False):
+        with locked_file(self._directory / "registry.lock", exclusive=False, blocking=blocking):
             self.require_current(grant_id, epoch)
             yield
 

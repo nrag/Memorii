@@ -24,7 +24,7 @@ from datetime import timedelta
 from importlib.metadata import distribution as installed_distribution
 from itertools import groupby, islice
 from pathlib import Path
-from typing import TypeVar
+from typing import Literal, TypeVar
 from zipfile import ZipFile
 
 import memorii
@@ -114,6 +114,7 @@ class ReferenceStorageAudit:
     source_driver_digest: str
     partition_tuple_digest: str
     partition_schema_version: int
+    fixture_origin: Literal["fresh-default", "owner-staged"]
     graph_digest: str
     sources_digest: str
     source_receipts_digest: str
@@ -448,6 +449,7 @@ def _audit(
             loader_digest=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             source_driver_digest=hashlib.sha256(Path(ReferenceSourceCapture.capture.__code__.co_filename).read_bytes()).hexdigest(),
             partition_tuple_digest=finalized.payload_digest(), partition_schema_version=version,
+            fixture_origin="owner-staged" if staged_raw_payloads else "fresh-default",
             graph_digest=graph_digest.hexdigest(),
             sources_digest=source_digest, source_receipts_digest=receipt_digest, event_inventory_digest=event_digest,
             graph_row_counts=dict(counts), source_count=len(expected_refs), source_receipt_count=len(expected_refs),
@@ -627,9 +629,12 @@ def _prepare(
     *,
     fill: Callable[[int], Iterable[EventFillInput]] | None = None,
     raw_payloads: bool = False,
+    require_fresh_v8: bool = False,
 ) -> ReferenceStorageAudit:
     if root.exists():
         raise ReferenceFixtureError("fixture root already exists; supply a fresh path")
+    if require_fresh_v8 and (raw_payloads or PARTITION_SCHEMA_VERSION != 8):
+        raise ReferenceFixtureError("qualification requires a fresh default-v8 installation")
     staged_raw_payloads = False
     if raw_payloads:
         with StorageAdministrationService(root) as service:
@@ -713,7 +718,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--distribution", required=True, choices=("balanced", "concentrated"))
     parser.add_argument("--candidate-wheel", type=Path)
     parser.add_argument("--require-qualified", action="store_true")
-    parser.add_argument("--raw-payloads", action="store_true", help="require the v8 fixture format")
+    formats = parser.add_mutually_exclusive_group()
+    formats.add_argument("--raw-payloads", action="store_true", help="require v8 and allow a staged upgrade")
+    formats.add_argument("--require-fresh-v8", action="store_true", help="require the installed default to be v8")
     args = parser.parse_args(argv)
     if args.require_qualified:
         print(json.dumps({"status": "unavailable", "blockers": _QUALIFICATION_BLOCKERS}), file=sys.stderr)
@@ -726,6 +733,7 @@ def main(argv: list[str] | None = None) -> int:
         args.installation_root, distribution, task_allocations(distribution),
         fill=lambda count: event_fill_inputs(distribution, verified_mandatory_events=count),
         raw_payloads=args.raw_payloads,
+        require_fresh_v8=args.require_fresh_v8,
     )
     print(json.dumps({"status": "diagnostic_only", "candidate_wheel_digest": wheel_digest, **asdict(audit)}, sort_keys=True))
     return 0

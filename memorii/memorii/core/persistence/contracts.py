@@ -276,6 +276,20 @@ class InstallationControlState(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class InstalledManagedSpoolBinding(BaseModel):
+    """Signed control participant identity for the separate managed spool."""
+
+    format_version: Literal[1] = 1
+    installation_id: str = Field(min_length=1, max_length=512, pattern=r"^[^\x00]+$")
+    repository_id: str = Field(min_length=1, max_length=1024, pattern=r"^[^\x00]+$")
+    store_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    def digest(self) -> str:
+        return canonical_json_digest(self.model_dump(mode="json"))
+
+
 class InstallationControlJournalEntry(BaseModel):
     revision: int = Field(ge=1)
     prior_digest: str = Field(pattern=_HEX_64)
@@ -289,6 +303,7 @@ class InstallationControlJournalEntry(BaseModel):
         "trust_changed",
         "logical_forget_applied",
         "partition_erasure_applied",
+        "managed_spool_registered",
         "generation_change_prepared",
         "generation_change_finalized",
         "generation_change_aborted",
@@ -319,6 +334,7 @@ __all__ = [
     "InstallationGenerationChangeIntent",
     "InstallationControlJournalEntry",
     "InstallationControlState",
+    "InstalledManagedSpoolBinding",
     "MaterializationCatalogEntry",
     "PartitionRevisionVector",
     "PublicationPosition",

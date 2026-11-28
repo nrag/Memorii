@@ -678,14 +678,20 @@ class PartitionDataRepository:
         return tuple(sorted(entries, key=lambda entry: entry.catalog))
 
     def rebuild_manifest_accumulator(self, connection: sqlite3.Connection) -> MaterializationForest | None:
+        from memorii.stores.sqlite.catalog_selection import verify_catalog_selection_lookup
         from memorii.stores.sqlite.materialization_sql import rebuild_manifest
+        from memorii.stores.sqlite.native_receipts import verify_native_receipt_indexes
 
         version = self.read_schema_version(connection)
         if version < _INCREMENTAL_MANIFEST_SCHEMA_VERSION:
             return None
         self.supports_runtime_replay_checkpoints(connection)
+        verify_native_receipt_indexes(connection)
         catalogs = _MATERIALIZATION_CATALOGS_BY_VERSION[version]
-        return rebuild_manifest(connection, frozenset(name for name, _, _ in catalogs))
+        forest = rebuild_manifest(connection, frozenset(name for name, _, _ in catalogs))
+        if version == RAW_MEMORY_PAYLOAD_SCHEMA_VERSION:
+            verify_catalog_selection_lookup(connection)
+        return forest
 
     def cache_manifest_accumulator(self, cookie: VerificationCookie, forest: MaterializationForest) -> None:
         self._manifest_cache = (cookie, forest)
@@ -805,11 +811,40 @@ class PartitionDataRepository:
 
     def stage_raw_memory_payload_upgrade(self, connection: sqlite3.Connection) -> None:
         """Convert the memory catalogs in an owner-verified staging transaction."""
+        from memorii.stores.sqlite.catalog_selection import install_catalog_selection_lookup
+        from memorii.stores.sqlite.native_receipts import install_native_receipt_indexes
         from memorii.stores.sqlite.raw_memory_payloads import convert_v7
 
         if not connection.in_transaction or self.read_schema_version(connection) != _INCREMENTAL_MANIFEST_SCHEMA_VERSION:
             raise sqlite3.DatabaseError("raw payload upgrade requires a v7 staging transaction")
         convert_v7(connection)
+        install_native_receipt_indexes(connection)
+        install_catalog_selection_lookup(connection)
+
+    @staticmethod
+    def needs_verified_read_selectors(connection: sqlite3.Connection) -> bool:
+        """Recognize an earlier v8 layout, with malformed selectors still rejected."""
+        from memorii.stores.sqlite.catalog_selection import has_catalog_selection_lookup
+        from memorii.stores.sqlite.native_receipts import has_native_receipt_indexes
+
+        if not PartitionDataRepository.uses_raw_memory_payloads(connection):
+            return False
+        native = has_native_receipt_indexes(connection)
+        catalog = has_catalog_selection_lookup(connection)
+        return not (native and catalog)
+
+    def stage_verified_read_selectors(self, connection: sqlite3.Connection, *, source_digest: str) -> None:
+        """Backfill derived owners in the reviewed v8 working copy."""
+        from memorii.stores.sqlite.catalog_selection import install_catalog_selection_lookup
+        from memorii.stores.sqlite.native_receipts import install_native_receipt_indexes
+
+        row = self.read_publication_row(connection)
+        if not connection.in_transaction or row is None or row["tuple_digest"] != source_digest:
+            raise sqlite3.DatabaseError("read selector staging requires the exact attested publication")
+        if not self.uses_raw_memory_payloads(connection):
+            raise sqlite3.DatabaseError("read selector staging requires a v8 working copy")
+        install_native_receipt_indexes(connection)
+        install_catalog_selection_lookup(connection)
 
     @staticmethod
     def uses_raw_memory_payloads(connection: sqlite3.Connection) -> bool:
@@ -1590,11 +1625,15 @@ class PartitionDataRepository:
         """
         created_utc = datetime.now(UTC).isoformat()
         if self.uses_raw_memory_payloads(connection):
+            from memorii.stores.sqlite.catalog_selection import update_catalog_selection_lookup
             from memorii.stores.sqlite.raw_memory_payloads import append_batch
 
             append_batch(
                 connection, revision=revision, data_revision=data_revision, checksum=checksum,
                 batch_json=batch_json, records_json=records_json, created_utc=created_utc,
+            )
+            update_catalog_selection_lookup(
+                connection, ((memory_id, source_kind, raw) for memory_id, raw, _, _, source_kind in records_json),
             )
             return
         connection.execute(
@@ -1640,9 +1679,13 @@ class PartitionDataRepository:
             for statement in _SCHEMA_STATEMENTS:
                 connection.execute(statement)
             if PARTITION_SCHEMA_VERSION == RAW_MEMORY_PAYLOAD_SCHEMA_VERSION:
+                from memorii.stores.sqlite.catalog_selection import install_catalog_selection_lookup
+                from memorii.stores.sqlite.native_receipts import install_native_receipt_indexes
                 from memorii.stores.sqlite.raw_memory_payloads import install_raw_schema
 
                 install_raw_schema(connection)
+                install_native_receipt_indexes(connection)
+                install_catalog_selection_lookup(connection)
             else:
                 for statement in _LEGACY_MEMORY_SCHEMA_STATEMENTS:
                     connection.execute(statement)

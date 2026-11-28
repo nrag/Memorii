@@ -101,13 +101,13 @@ jobs:
           "$interpreter" -m tests.support.reference_capacity_measure preflight \
             --work-root "$scratch" --wheel "$wheel" --dependency-lock "$candidate/runtime.lock" \
             --builder-lock "$candidate/build.lock" \
-            --revision "$REVISION" --profile "$PROFILE" --dedicated-idle --raw-payloads \
+            --revision "$REVISION" --profile "$PROFILE" --dedicated-idle --require-fresh-v8 \
             --report "$reports/preflight.json"
           qualified=0
           for distribution in balanced concentrated; do
             fixture="$scratch/$distribution"
             if ! "$interpreter" -m tests.support.reference_capacity_fixture \
-              --installation-root "$fixture" --distribution "$distribution" --candidate-wheel "$wheel" --raw-payloads \
+              --installation-root "$fixture" --distribution "$distribution" --candidate-wheel "$wheel" --require-fresh-v8 \
               > "$reports/$distribution-fixture.json"; then
               qualified=1
               continue
@@ -115,7 +115,7 @@ jobs:
             "$interpreter" -m tests.support.reference_capacity_measure run \
               --base "$fixture" --work-root "$scratch" --wheel "$wheel" --dependency-lock "$candidate/runtime.lock" \
               --builder-lock "$candidate/build.lock" \
-              --revision "$REVISION" --profile "$PROFILE" --distribution "$distribution" --dedicated-idle --raw-payloads \
+              --revision "$REVISION" --profile "$PROFILE" --distribution "$distribution" --dedicated-idle --require-fresh-v8 \
               --report "$reports/$distribution-measurement.json" || qualified=1
           done
           exit "$qualified"
