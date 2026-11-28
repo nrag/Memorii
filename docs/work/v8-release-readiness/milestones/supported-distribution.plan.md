@@ -26,10 +26,36 @@ Pi/OpenClaw installed rehearsal using wheel
 Final closure still requires provider/Hermes, dependency scans across
 supported artifacts, model verification, SBOM, provenance and signatures.
 
-Pi 0.99.2 and OpenClaw 2026.9.7 completed signed capture, duplicate receipt,
-restart recall, revocation and unrelated-session denial. Audits from their
-installed dependency closures reported two High packages for Pi and four for
-OpenClaw. Pi embeds Undici and minimatch in the distributed executable. A
-dependency override left their original bundled copies present. The pinned
-versions remain in place. Approval to change and recertify those versions is
-pending. A newer pin needs its own complete closure scan and host journey.
+The original Pi 0.99.2 and OpenClaw 2026.9.7 journeys passed functionally.
+Their installed closure audits reported two High packages for Pi and four
+for OpenClaw. The owner approved new pins on 2026-11-27.
+
+Pi 1.7.0 and OpenClaw 2026.11.10, both on Node 24.22.3 and npm 12.2.3,
+passed the real Linux arm64 Docker journeys using committed runtime wheel
+`4a07d3a6a9bf08a1195878ec4e03cb591dd488c40b8caddb4a82b5d3f27594d9`.
+The respective image indexes were
+`75bb6493eea4130ae8b6f2ab817a40812df914e2b59159e0ce5dfa16d8c2d40d` and
+`46678f45f78e1b0feabd97f91cca166b9c6fe01f424f9573d78668ad9aa28203`.
+Pi's installed application audit reported zero findings. OpenClaw's installed
+application closure reported zero High or Critical and 16 Moderate entries.
+The explicit compatible dependency overrides retain patched Undici and npm
+bytes, including npm's bundled Undici. Global npm's separate closure reported
+zero High or Critical entries.
+
+The pinned OpenClaw prompt projection initially persisted recalled text.
+The dedicated gateway profile selects Memorii as its context engine and
+assembles quoted user-role recall for the current model request. It delegates
+host compaction and binds recall to an exact eligible native pre-write and
+run identity. The real host journey checks that the original transcript
+persists, the recall marker is absent from native persistent state, and all
+fresh provider requests after revocation and a second gateway restart omit
+the marker. The SDK's separate deterministic test rejects a forwarded write
+even when it overlaps an earlier admitted identity.
+
+Application audit and functional certification are separate from the OS image
+gate. Trivy 0.76.2 reported 493 High/Critical Debian findings and two High
+Python setuptools findings on the Bookworm Pi image. The raw JSON digest is
+`725ebaa57006e51756c0a28ca0ddb908c93ef8a0481ca5f36bedfff1de2fd380`.
+The exact Pi image CycloneDX inventory digest is
+`bdd14402a904a022cef3d628a904a618f1e5be9a10b2b751ee5cd203613f3b77`.
+The newer slim multi-stage runtime is a separate image qualification attempt.

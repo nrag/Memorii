@@ -148,6 +148,29 @@ for (const host of ["pi", "openclaw"]) {
   });
 }
 
+test("OpenClaw refuses a forwarded turn even after a matching native write", async (context) => {
+  const home = await privateHome(context);
+  const seen = [];
+  let proof;
+  const server = await listen(context, async (request, response) => {
+    const body = await requestBody(request);
+    seen.push(request.url);
+    switch (request.url) {
+      case "/v1/runtime/state": reply(response, { task_version: 3 }); break;
+      case "/v1/operations/prepare": proof = operationProof(body); reply(response, proof); break;
+      case "/v1/runtime/intake": reply(response, {
+        operation_id: body.command.operation_id, producer_binding: proof.coordinate.client_namespace,
+        request_digest: proof.coordinate.request_digest, state: "pending",
+      }); break;
+      case "/v1/runtime/source/recall": reply(response, { messages: [{ text: "synthetic private content" }] }); break;
+      default: reply(response, { status: "denied" });
+    }
+  });
+  const result = await drive("openclaw", home, server, "forwarded");
+  assert.equal(result.stdout.trim(), "1");
+  assert.deepEqual(seen, ["/v1/runtime/state", "/v1/operations/prepare", "/v1/runtime/intake"]);
+});
+
 async function privateHome(context) {
   const home = await mkdtemp(join(tmpdir(), "memorii-host-transport-"));
   await writeFile(join(home, "credential"), "test-token", { mode: 0o600 });

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import signal
 import socket
 import subprocess
@@ -11,8 +10,6 @@ import sys
 import time
 from contextlib import suppress
 from pathlib import Path
-
-sys.path.insert(0, "/opt/memorii-src/memorii")
 
 from managed_host_journey import ManagedHostJourney
 from stub_openai_provider import serve_stub_provider
@@ -25,18 +22,9 @@ base_env = dict(
     MEMORII_OPENCLAW_SESSION_KEY=session_key,
 )
 
-# Plugin into the extensions home: root-owned (OpenClaw blocks foreign-uid
-# plugin files), with openclaw resolvable for the plugin-sdk import.
-extensions_home = Path("/root/.openclaw/extensions/memorii")
-if extensions_home.exists():
-    shutil.rmtree(extensions_home)
-extensions_home.mkdir(parents=True)
-for name in ("index.js", "openclaw.plugin.json", "package.json"):
-    shutil.copy(f"/opt/memorii-openclaw/plugin/{name}", extensions_home / name)
-subprocess.run(
-    ["npm", "install", "--no-save", "--ignore-scripts", "openclaw@2026.9.7"],
-    cwd=extensions_home, capture_output=True, text=True, timeout=900, check=False,
-)
+# Load the packaged plugin in place, so it resolves the same OpenClaw
+# installation as the gateway and never installs dependencies at runtime.
+plugin_directory = "/opt/memorii-openclaw/plugin"
 
 stub_url, stub_server = serve_stub_provider(observe=journey.model_requests.append)
 
@@ -45,8 +33,7 @@ def config_set(path: str, value: str) -> None:
         ["openclaw", "config", "set", path, value],
         capture_output=True, text=True, timeout=120, check=False,
     )
-    if result.returncode != 0:
-        print(f"config set {path} failed: {result.stdout} {result.stderr}")
+    assert result.returncode == 0, f"config set {path} failed: {result.stdout} {result.stderr}"
 
 config_set("models.providers.stub", json.dumps({
     "baseUrl": f"{stub_url}/v1",
@@ -55,11 +42,13 @@ config_set("models.providers.stub", json.dumps({
     "authHeader": True,
     "models": [{"id": "stub-model", "name": "Stub Model", "api": "openai-completions"}],
 }))
+config_set("plugins.load.paths", json.dumps([plugin_directory]))
 config_set("plugins.entries.memorii", json.dumps({
     "enabled": True, "config": {},
-    "hooks": {"allowConversationAccess": True, "allowPromptInjection": True},
+    "hooks": {"allowConversationAccess": True},
 }))
 config_set("plugins.allow", json.dumps(["memorii"]))
+config_set("plugins.slots.contextEngine", "memorii")
 config_set("gateway.mode", "local")
 config_set("gateway.auth.mode", "token")
 config_set("gateway.auth.token", GATEWAY_TOKEN)
@@ -96,6 +85,8 @@ def run_agent(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 def stop_gateway() -> None:
+    if gateway.poll() is not None:
+        return
     with suppress(ProcessLookupError):
         os.killpg(gateway.pid, signal.SIGTERM)
     try:
@@ -144,9 +135,39 @@ try:
     assert retry.returncode == 0 and retry.stdout == ""
     print("An unbound OpenClaw session could not submit to the Memorii task", flush=True)
     journey.revoke()
-    revoked_turn = run_agent("--session-key", session_key, "-m", "continue after revocation")
+    prior_model_requests = len(journey.model_requests)
+    revoked_prompt = "continue after revocation"
+    revoked_turn = run_agent("--session-key", session_key, "-m", revoked_prompt)
     assert revoked_turn.returncode == 0, revoked_turn.stderr
+    assert len(journey.model_requests) > prior_model_requests
+    assert any(revoked_prompt in message for message in journey.last_model_messages())
     journey.prove_model_without_recall()
+    recall_marker = "Memorii historical user data"
+    assert all(recall_marker not in json.dumps(request) for request in journey.model_requests[prior_model_requests:])
+    assert any(second_prompt in message for message in journey.last_model_messages())
+
+    stop_gateway()
+    gateway = start_gateway()
+    assert wait_for_loopback_port(18789), Path("/tmp/gateway-journey.log").read_text()[-2000:]
+    prior_model_requests = len(journey.model_requests)
+    after_restart = "continue after revoked gateway restart"
+    restarted_turn = run_agent("--session-key", session_key, "-m", after_restart)
+    assert restarted_turn.returncode == 0, restarted_turn.stderr
+    assert len(journey.model_requests) > prior_model_requests
+    assert any(after_restart in message for message in journey.last_model_messages())
+    assert all(recall_marker not in json.dumps(request) for request in journey.model_requests[prior_model_requests:])
+    assert any(second_prompt in message for message in journey.last_model_messages())
+
+    stop_gateway()
+    native_state = Path.home() / ".openclaw"
+    native_history = [
+        path for path in native_state.rglob("*")
+        if path.is_file()
+        and path.suffix in {".sqlite", ".sqlite-wal", ".db", ".db-wal", ".jsonl", ".json"}
+    ]
+    assert any(first_prompt.encode() in path.read_bytes() for path in native_history)
+    assert all(recall_marker.encode() not in path.read_bytes() for path in native_history)
+    print("OpenClaw retained its original transcript and omitted the recall projection after revocation and restart")
     print("JOURNEY: PASS (signed capture, restart recall, and revocation)")
 except Exception:
     gateway_log.flush()

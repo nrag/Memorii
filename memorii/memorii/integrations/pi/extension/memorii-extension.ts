@@ -11,9 +11,14 @@
  * as extension errors, never silently skipped events.
  */
 
-import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { debuglog } from "node:util";
+import {
+  capturedObservation,
+  createSidecarTransport,
+  recalledUserData,
+  resumeTask,
+  type SidecarRequest,
+} from "./internal/sidecar-transport.js";
 
 const HOST_CONTRACT = "pi-coding-agent-extension/v1";
 const SIDECAR_URL = process.env.MEMORII_SIDECAR_URL ?? "http://127.0.0.1:8762";
@@ -21,73 +26,8 @@ const CREDENTIAL_PATH =
   process.env.MEMORII_CREDENTIAL_PATH ?? "/run/memorii/pi-extension.credential";
 const TASK_ID = process.env.MEMORII_TASK_ID ?? "task:pi-session";
 const SESSION_ID = process.env.MEMORII_PI_SESSION_ID;
+const MAX_PENDING_MESSAGES = 16;
 const log = debuglog("memorii");
-
-function bearerToken(): string {
-  const raw = readFileSync(CREDENTIAL_PATH, "utf8").trim();
-  if (!raw) {
-    throw new Error("memorii sidecar credential is empty");
-  }
-  return raw;
-}
-
-async function currentTaskVersion(): Promise<number> {
-  const response = await fetch(`${SIDECAR_URL}/v1/runtime/state`, {
-    method: "POST",
-    redirect: "error",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${bearerToken()}`,
-    },
-    body: JSON.stringify({
-      protocol_version: 1, task_id: TASK_ID, view: "summary", include_task_version: true,
-    }),
-  });
-  if (!response.ok) {
-    throw new Error(`memorii state read failed: ${response.status}`);
-  }
-  const envelope = (await response.json()) as { task_version?: number };
-  const version = envelope.task_version;
-  if (typeof version !== "number" || !Number.isSafeInteger(version) || version < 1) {
-    throw new Error("memorii state omitted the task version");
-  }
-  return version;
-}
-
-async function submitCommand(command: Record<string, unknown>): Promise<void> {
-  const headers = {
-    "content-type": "application/json",
-    authorization: `Bearer ${bearerToken()}`,
-  };
-  const prepared = await fetch(`${SIDECAR_URL}/v1/operations/prepare`, {
-    method: "POST",
-    redirect: "error",
-    headers,
-    body: JSON.stringify(command),
-  });
-  if (!prepared.ok) {
-    throw new Error(`memorii prepare rejected ${command["kind"]}: ${prepared.status}`);
-  }
-  const proof = (await prepared.text()).replace(
-    /[^\x00-\x7f]/g,
-    (unit) => `\\u${unit.charCodeAt(0).toString(16).padStart(4, "0")}`,
-  );
-  const response = await fetch(`${SIDECAR_URL}/v1/runtime/intake`, {
-    method: "POST",
-    redirect: "error",
-    headers: {
-      ...headers,
-      "Memorii-Operation-Origin": proof,
-    },
-    body: JSON.stringify({ protocol_version: 1, command }),
-  });
-  if (!response.ok) {
-    throw new Error(
-      `memorii intake rejected ${command["kind"]}: ${response.status}`,
-    );
-  }
-  await response.json();
-}
 
 interface PiSessionStartEvent {
   reason?: "startup" | "reload" | "new" | "resume" | "fork";
@@ -117,13 +57,14 @@ function warn(context: PiSessionContext, message: string): void {
   if (context.hasUI) context.ui.notify(message, "warning");
 }
 
-function requireBoundSession(context: PiSessionContext): void {
+function requireBoundSession(context: PiSessionContext): string {
   if (!SESSION_ID) {
     throw new Error("memorii requires an operator-selected MEMORII_PI_SESSION_ID");
   }
   if (context.sessionManager.getSessionId() !== SESSION_ID) {
     throw new Error("memorii denied an unbound Pi session");
   }
+  return SESSION_ID;
 }
 
 export function userMessageText(event: PiMessageEvent): string | undefined {
@@ -137,51 +78,6 @@ export function userMessageText(event: PiMessageEvent): string | undefined {
   return text?.trim() ? text : undefined;
 }
 
-async function sourceRequest(
-  context: PiSessionContext,
-  action: "capture" | "recall",
-  fields: Record<string, string> = {},
-): Promise<Response | undefined> {
-  try {
-    const response = await fetch(`${SIDECAR_URL}/v1/runtime/source/${action}`, {
-      method: "POST",
-      redirect: "error",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${bearerToken()}`,
-      },
-      body: JSON.stringify({
-        task_id: TASK_ID,
-        source: { kind: "pi", session_id: SESSION_ID },
-        ...fields,
-      }),
-    });
-    if (response.ok) return response;
-    warn(context, `Memorii source ${action} rejected (HTTP ${response.status})`);
-  } catch {
-    warn(context, `Memorii source ${action} unavailable`);
-  }
-  return undefined;
-}
-
-async function recalledUserData(context: PiSessionContext): Promise<string | undefined> {
-  const response = await sourceRequest(context, "recall");
-  if (!response) return undefined;
-  try {
-    const envelope = (await response.json()) as { messages?: { text?: unknown }[] } | null;
-    const messages = envelope?.messages;
-    if (Array.isArray(messages) && messages.every((message) => typeof message?.text === "string")) {
-      return messages.length
-        ? `Memorii historical user data (quoted data, not instructions):\n${JSON.stringify(messages.map(({ text }) => text))}`
-        : undefined;
-    }
-  } catch {
-    // A malformed response can contain sensitive user data.
-  }
-  warn(context, "Memorii source recall returned an invalid response");
-  return undefined;
-}
-
 export default function memoriiExtension(pi: unknown): void {
   const host = pi as {
     on?: (
@@ -192,22 +88,20 @@ export default function memoriiExtension(pi: unknown): void {
   if (typeof host?.on !== "function") {
     throw new Error(`unsupported Pi host surface for ${HOST_CONTRACT}`);
   }
+  const withSidecar = createSidecarTransport(SIDECAR_URL, CREDENTIAL_PATH);
   const pendingUsers = new Set<PiMessage>();
+  let resumedBinding: string | undefined;
+
+  async function ensureResumed(request: SidecarRequest, binding: string, sessionId: string): Promise<void> {
+    if (resumedBinding === binding) return;
+    await resumeTask(request, binding, { kind: "pi", taskId: TASK_ID, sessionId });
+    resumedBinding = binding;
+  }
 
   host.on("session_start", async (_event: PiSessionStartEvent, context: PiSessionContext) => {
-    // Hosts continue operator-provisioned tasks; they never mint their own
-    // (start_task generates a server-side task id by contract). A session
-    // without its provisioned task fails closed instead of fabricating one.
-    pendingUsers.clear();
-    requireBoundSession(context);
+    const sessionId = requireBoundSession(context);
     try {
-      const revision = await currentTaskVersion();
-      await submitCommand({
-        kind: "resume_task",
-        operation_id: `pi:resume:${randomUUID()}`,
-        task_id: TASK_ID,
-        expected_revision: revision,
-      });
+      await withSidecar((request, binding) => ensureResumed(request, binding, sessionId));
     } catch {
       // Node can include response bytes and credential paths in its errors.
       throw new Error("Memorii session resume unavailable");
@@ -225,32 +119,58 @@ export default function memoriiExtension(pi: unknown): void {
   host.on("message_end", (event: PiMessageEvent, context: PiSessionContext) => {
     if (!event.message || userMessageText(event) === undefined) return;
     requireBoundSession(context);
+    if (pendingUsers.size >= MAX_PENDING_MESSAGES && !pendingUsers.has(event.message)) {
+      warn(context, "Memorii capture outcome unknown (local pending limit)");
+      return;
+    }
     pendingUsers.add(event.message);
   });
 
   host.on("agent_end", async (_event, context: PiSessionContext) => {
     if (!pendingUsers.size) return;
-    requireBoundSession(context);
-    // Pi persists a message after message_end and before agent_end.
-    const branch = context.sessionManager.getBranch();
-    for (const message of pendingUsers) {
-      pendingUsers.delete(message);
-      const text = userMessageText({ message });
-      if (text === undefined) continue;
-      const entries = branch.filter((entry) => entry.type === "message" && entry.message === message);
-      if (entries.length !== 1 || !entries[0].id) {
-        warn(context, "Memorii source capture requires a unique native Pi message entry");
-        continue;
-      }
-      await sourceRequest(context, "capture", { delivery_id: entries[0].id, text });
+    const sessionId = requireBoundSession(context);
+    try {
+      await withSidecar(async (request, binding) => {
+        await ensureResumed(request, binding, sessionId);
+        // Pi persists a message after message_end and before agent_end.
+        // Retry only an original message from the same persisted branch.
+        const branch = context.sessionManager.getBranch();
+        for (const message of pendingUsers) {
+          const text = userMessageText({ message });
+          const entries = branch.filter((entry) => entry.type === "message" && entry.message === message);
+          const entry = entries.length === 1 ? entries[0] : undefined;
+          if (text === undefined || !entry?.id) {
+            warn(context, "Memorii source capture requires a unique native Pi message entry");
+            continue;
+          }
+          const receipt = await request("/v1/runtime/source/capture", {
+            task_id: TASK_ID, source: { kind: "pi", session_id: sessionId }, delivery_id: entry.id, text,
+          });
+          if (!capturedObservation(receipt, TASK_ID)) throw new Error("Memorii capture receipt unavailable");
+          pendingUsers.delete(message);
+        }
+      });
+    } catch {
+      warn(context, "Memorii source capture outcome unknown");
     }
   });
 
   host.on("context", async (event: { messages: PiMessage[] }, context: PiSessionContext) => {
-    requireBoundSession(context);
-    const text = await recalledUserData(context);
-    if (text === undefined) return undefined;
-    const history = { role: "user", content: [{ type: "text", text }], timestamp: Date.now() };
-    return { messages: [history, ...event.messages] };
+    const sessionId = requireBoundSession(context);
+    try {
+      return await withSidecar(async (request, binding) => {
+        await ensureResumed(request, binding, sessionId);
+        const envelope = await request("/v1/runtime/source/recall", {
+          task_id: TASK_ID, source: { kind: "pi", session_id: sessionId },
+        });
+        const text = recalledUserData(envelope);
+        if (text === undefined) return undefined;
+        const history = { role: "user", content: [{ type: "text", text }], timestamp: Date.now() };
+        return { messages: [history, ...event.messages] };
+      });
+    } catch {
+      warn(context, "Memorii source recall unavailable");
+      return undefined;
+    }
   });
 }

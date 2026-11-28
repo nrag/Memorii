@@ -4,10 +4,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import sys
 from pathlib import Path
-
-sys.path.insert(0, "/opt/memorii-src/memorii")
 
 from managed_host_journey import ManagedHostJourney
 from stub_openai_provider import serve_stub_provider

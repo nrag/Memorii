@@ -323,11 +323,11 @@ Set `MEMORII_SIDECAR_URL`, `MEMORII_CREDENTIAL_PATH`, and `MEMORII_TASK_ID` in t
 host process. The credential file belongs to the host account and requires
 owner-only permissions.
 
-- For Pi 0.99.2, select the session with `pi --session-id <id>` and set
+- For Pi 1.7.0, select the session with `pi --session-id <id>` and set
   `MEMORII_PI_SESSION_ID` to that exact ID before loading the extension. The
   extension checks the native session ID again after a restart or fork.
   For headless Pi diagnostics, set `NODE_DEBUG=memorii`.
-- For OpenClaw 2026.9.7, set `MEMORII_OPENCLAW_SESSION_KEY` in the gateway
+- For OpenClaw 2026.11.10, set `MEMORII_OPENCLAW_SESSION_KEY` in the gateway
   environment and target that same key with `openclaw agent --session-key
   agent:<agent-id>:<session-key>`. Restart the gateway after changing the pin.
 
@@ -341,10 +341,11 @@ To enable user-message capture and recall, issue a finite
 `--kind record_observation`, exactly one `--task-id`, and
 `--native-source '{"kind":"pi","session_id":"<native-id>"}'`. For OpenClaw,
 use `"kind":"openclaw"` and the exact gateway session key, then set
-`plugins.entries.memorii.hooks.allowConversationAccess` and
-`plugins.entries.memorii.hooks.allowPromptInjection` in that gateway.
-Enroll OpenClaw only for a dedicated operator-controlled local session.
-Forwarded or shared-channel sender identity is outside this binding.
+`plugins.entries.memorii.hooks.allowConversationAccess` and select `memorii`
+in `plugins.slots.contextEngine` in that gateway. Use a dedicated
+operator-controlled local profile for this exclusive context-engine slot.
+Recall is assembled as quoted user data for the current request. Forwarded
+or shared-channel sender identity is outside this binding.
 
 Capture retains user text through governed admission, then commits a signed
 observation. The owner drain can recover a staged observation after a sidecar

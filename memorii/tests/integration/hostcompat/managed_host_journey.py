@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 import urllib.error
@@ -11,20 +10,13 @@ import urllib.request
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from memorii.core.harness_state.consumer import ManagedRuntimeSpool
-from memorii.core.harness_state.credentials import SidecarCredentialStore
 from memorii.core.harness_state.envelope import HarnessStateEnvelope
-from memorii.core.harness_state.native_sources import NativeSourceCaptureRequest, enroll_native_source
-from memorii.core.harness_state.service import RuntimeReadGrant
+from memorii.core.harness_state.managed_enrollment import ManagedHostEnrollment
+from memorii.core.harness_state.native_sources import NativeSourceCaptureRequest
 from memorii.core.harness_state.sidecar import RuntimeSidecar, serve_loopback
-from memorii.core.harness_state.write_authority import (
-    HostCommandGrantRequest,
-    ManagedHostCommandAuthority,
-    NativeSourceScope,
-)
-from memorii.core.persistence.runtime_contracts import RuntimeCommandReceipt, TaskRecord
-from memorii.core.persistence.runtime_repository import publish_runtime_change
-from memorii.core.storage_administration.operator import mint_owner_capability
+from memorii.core.harness_state.write_authority import NativeSourceScope
+from memorii.core.persistence.runtime_contracts import RuntimeCommandReceipt
+from memorii.core.storage_administration.managed_spool_selection import open_managed_spool
 from memorii.core.storage_administration.service import StorageAdministrationService
 
 
@@ -45,41 +37,35 @@ class ObservedSidecar(RuntimeSidecar):
 
 class ManagedHostJourney:
     def __init__(self, root: Path, host, session_id: str) -> None:
+        root.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.installation = root / "installation"
-        self.task_id = f"task:{host}-session"
         self.goal = f"Resume the persisted {host} task"
-        self.credentials = SidecarCredentialStore(self.installation / "control" / "runtime-credentials")
-        self.spool_root = self.installation / "spool" / "managed"
         self.principal = "principal:a"
         self.source = NativeSourceScope(kind=host, session_id=session_id)
-        self.grant_id = f"commands:{host}"
         self.model_requests: list[dict] = []
-        self.credential, self.secret = self.credentials.issue(self.principal)
-        with StorageAdministrationService(self.installation) as administration:
-            administration.initialize()
-            task = TaskRecord(
-                task_id=self.task_id, principal=self.principal, goal=self.goal,
-                created_at=datetime.now(UTC), root_execution_node_id="exec:root",
-            )
-            publish_runtime_change(
-                administration, lambda connection, repo: repo.apply_task(connection, task),
-                operation_binding="host_journey_task",
-            )
-            enroll_native_source(
-                administration,
-                HostCommandGrantRequest(
-                    grant_id=self.grant_id, principal=self.principal, credential_id=self.credential.credential_id,
-                    client_namespace=f"host:{host}", allowed_task_ids=(self.task_id,),
-                    allowed_kinds=("resume_task", "record_observation"),
-                    expires_at=datetime.now(UTC) + timedelta(hours=1), native_source=self.source,
-                ),
-                capability=mint_owner_capability(administration, "owner"),
-            )
-
+        self._operator = [
+            sys.executable, "-m", "memorii.tools.runtime_operator",
+            "--installation-root", str(self.installation), "--owner-principal", "owner",
+        ]
+        capability_path = root / "owner.cap"
         credential_path = root / "host.credential"
-        descriptor = os.open(credential_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(descriptor, "w") as writer:
-            writer.write(self.secret)
+        subprocess.run(
+            [*self._operator, "init", "--capability-output", str(capability_path)],
+            capture_output=True, text=True, timeout=30, check=True,
+        )
+        self._operator.extend(("--capability-file", str(capability_path)))
+        enrolled = subprocess.run(
+            [*self._operator, "runtime-grant", "enroll-native", "--operation-id", f"enroll:{host}",
+             "--principal", self.principal, "--native-source", self.source.model_dump_json(),
+             "--expires-at", (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+             "--credential-output", str(credential_path), "--goal", self.goal],
+            capture_output=True, text=True, timeout=30, check=True,
+        )
+        receipt = json.loads(enrolled.stdout)
+        self.task_id = receipt["task_id"]
+        self.grant_id = receipt["command_grant_id"]
+        self.secret = credential_path.read_text(encoding="ascii")
+        assert self.secret not in enrolled.stdout and self.secret not in enrolled.stderr
         self.start()
         self.environment = {
             "MEMORII_SIDECAR_URL": self.url,
@@ -89,9 +75,10 @@ class ManagedHostJourney:
 
     def start(self) -> None:
         self.administration = StorageAdministrationService(self.installation)
+        enrollment = ManagedHostEnrollment(self.administration)
         self.sidecar = ObservedSidecar.for_managed_installation(
-            self.administration, credentials=self.credentials, grant_factory=self.read_grant,
-            spool=ManagedRuntimeSpool(self.spool_root),
+            self.administration, credentials=enrollment.credentials, enrollment=enrollment,
+            spool=open_managed_spool(self.administration),
         )
         self.url, self.server = serve_loopback(self.sidecar, port=8762)
 
@@ -99,12 +86,6 @@ class ManagedHostJourney:
         self.server.shutdown()
         self.server.server_close()
         self.administration.close()
-
-    def read_grant(self, principal: str) -> RuntimeReadGrant:
-        return RuntimeReadGrant(
-            grant_id=f"read:{principal}", principal=principal, allowed_task_ids=(self.task_id,),
-            epoch=1, expires_at=datetime.now(UTC) + timedelta(minutes=5),
-        )
 
     def read(self) -> HarnessStateEnvelope:
         request = urllib.request.Request(
@@ -135,7 +116,7 @@ class ManagedHostJourney:
         assert captured.text == prompt and captured.source == self.source
         assert receipt.status == "committed" and receipt.operation_origin and receipt.source_admission
         assert receipt.source_admission.task_id == self.task_id
-        spool = ManagedRuntimeSpool(self.spool_root)
+        spool = open_managed_spool(self.administration)
         entry = spool.find(receipt.operation_origin)
         assert entry is not None and entry.state == "committed"
         assert entry.operation_origin.coordinate == receipt.operation_origin
@@ -167,8 +148,9 @@ class ManagedHostJourney:
         return [json.dumps(message.get("content")) for message in self.model_requests[-1]["messages"]]
 
     def revoke(self) -> None:
-        ManagedHostCommandAuthority(self.administration).revoke(
-            self.grant_id, capability=mint_owner_capability(self.administration, "owner"),
+        subprocess.run(
+            [*self._operator, "runtime-grant", "revoke", "--grant-id", self.grant_id],
+            capture_output=True, text=True, timeout=30, check=True,
         )
         status, payload = self.source_request("recall")
         assert status == 403 and payload["code"] == "denied" and "messages" not in payload

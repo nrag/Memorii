@@ -12,31 +12,17 @@ Journey scripts and images:
 """
 from __future__ import annotations
 
+import hashlib
+import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = __file__.rsplit("/memorii/", 1)[0]
-
-MANAGED_REFRESH = (
-    "memorii/core/harness_state/client.py",
-    "memorii/core/harness_state/envelope.py",
-    "memorii/core/harness_state/service.py",
-    "memorii/core/harness_state/sidecar.py",
-    "memorii/core/harness_state/managed_ingress.py",
-    "memorii/core/harness_state/native_sources.py",
-    "memorii/core/harness_state/write_authority.py",
-    "memorii/core/memory_evolution/atomic_store.py",
-    "memorii/core/provider/native_source_admission.py",
-    "memorii/core/harness_state/consumer.py",
-    "memorii/tools/runtime_consume.py",
-    "memorii/core/persistence/runtime_api.py",
-    "memorii/core/persistence/runtime_contracts.py",
-    "memorii/core/storage_administration/service.py",
-    "memorii/core/storage_administration/writer_enrollment.py",
-)
+JOURNEY_DIRECTORY = "/opt/memorii-journey"
 
 JOURNEYS = {
     "pi": {
@@ -44,24 +30,18 @@ JOURNEYS = {
         "dockerfile": "Dockerfile.pi",
         "script": "pi_certification_journey.py",
         "venv": "/opt/memorii-venv/bin/python",
-        "refresh": MANAGED_REFRESH,
     },
     "openclaw": {
         "image": "memorii-openclaw-validation",
         "dockerfile": "Dockerfile.openclaw",
         "script": "openclaw_certification_journey.py",
         "venv": "/opt/memorii-venv/bin/python",
-        "refresh": MANAGED_REFRESH,
     },
     "hermes": {
         "image": "hermes-memorii-pr",
         "dockerfile": "Dockerfile.memorii",
         "script": "hermes_certification_journey.py",
         "venv": "/opt/hermes/.venv/bin/python",
-        # The Hermes journey drives the in-process provider through Hermes
-        # itself; its image ships the pinned integration sources it needs,
-        # so no source refresh applies.
-        "refresh": (),
     },
 }
 
@@ -73,15 +53,34 @@ def _docker_available() -> bool:
     ).returncode == 0
 
 
-def _build(image: str, dockerfile: str) -> None:
+@pytest.fixture(scope="session")
+def native_candidate_wheel(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, str]:
+    """Build one immutable input shared by both native certification images."""
+    wheel_directory = tmp_path_factory.mktemp("memorii-wheel")
+    subprocess.run(
+        [sys.executable, "-m", "pip", "wheel", "--no-deps",
+         "--wheel-dir", str(wheel_directory), str(Path(REPO_ROOT) / "memorii")],
+        check=True, timeout=300,
+    )
+    [wheel] = wheel_directory.glob("memorii-*.whl")
+    with wheel.open("rb") as handle:
+        digest = hashlib.file_digest(handle, "sha256").hexdigest()
+    return wheel_directory, digest
+
+
+def _build(image: str, dockerfile: str, wheel: tuple[Path, str] | None) -> None:
     # Absolute Dockerfile path: CI runs pytest from memorii/, so a bare
     # relative name cannot resolve. Build logs stream to the console so a
     # failed build is diagnosable instead of a bare CalledProcessError.
     tag = f"{image}:ci-{_commit()}"
-    subprocess.run(
-        ["docker", "build", "-f", str(Path(REPO_ROOT) / dockerfile), "-t", tag, REPO_ROOT],
-        timeout=3600, check=True,
-    )
+    command = ["docker", "build", "-f", str(Path(REPO_ROOT) / dockerfile), "-t", tag]
+    if wheel is not None:
+        wheel_directory, digest = wheel
+        command += [
+            "--build-context", f"memorii-wheel={wheel_directory}",
+            "--build-arg", f"MEMORII_WHEEL_SHA256={digest}",
+        ]
+    subprocess.run([*command, REPO_ROOT], timeout=3600, check=True)
     subprocess.run(
         ["docker", "tag", tag, f"{image}:ci"], check=True, timeout=120
     )
@@ -95,48 +94,40 @@ def _commit() -> str:
     return result.stdout.strip() or "unknown"
 
 
-def _run_journey(host: str) -> None:
+def _run_journey(host: str, wheel_digest: str | None) -> None:
     spec = JOURNEYS[host]
     image = f"{spec['image']}:ci"
-    container = f"memorii-journey-{host}-{subprocess.run(['git', '-C', REPO_ROOT, 'rev-parse', '--short', 'HEAD'], capture_output=True, text=True).stdout.strip() or 'x'}"
+    container = f"memorii-journey-{host}-{_commit()}"
     subprocess.run(["docker", "rm", "-f", container], capture_output=True, check=False)
     subprocess.run(
         ["docker", "run", "-d", "--name", container, "--entrypoint", "bash", image, "-lc", "sleep 3600"],
         capture_output=True, check=True, timeout=120,
     )
     try:
-        for source in spec["refresh"]:
+        if wheel_digest is not None:
             subprocess.run(
-                ["docker", "cp", f"{REPO_ROOT}/memorii/{source}", f"{container}:/opt/memorii-src/memorii/{source}"],
-                capture_output=True, check=True, timeout=120,
+                ["docker", "exec", container, spec["venv"], "-I", "-c",
+                 "import json, sys, sysconfig; from importlib.metadata import distribution; "
+                 "from pathlib import Path; import memorii; "
+                 "source = json.loads(distribution('memorii').read_text('direct_url.json')); "
+                 "assert source['archive_info']['hashes']['sha256'] == sys.argv[1]; "
+                 "assert Path(memorii.__file__).resolve().is_relative_to(sysconfig.get_path('purelib'))",
+                 wheel_digest],
+                check=True, timeout=120,
             )
         subprocess.run(
-            ["docker", "exec", container, "mkdir", "-p",
-             "/opt/memorii-src/memorii/tests/integration/hostcompat"],
+            ["docker", "exec", container, "mkdir", "-p", JOURNEY_DIRECTORY],
             capture_output=True, check=True, timeout=120,
         )
         for name in (spec["script"], "stub_openai_provider.py", "hermes_chat_pty.py", "managed_host_journey.py"):
             subprocess.run(
                 ["docker", "cp", f"{REPO_ROOT}/memorii/tests/integration/hostcompat/{name}",
-                 f"{container}:/opt/memorii-src/memorii/tests/integration/hostcompat/{name}"],
-                capture_output=True, check=True, timeout=120,
-            )
-        if host == "openclaw":
-            for name in ("index.js", "openclaw.plugin.json", "package.json"):
-                subprocess.run(
-                    ["docker", "cp", f"{REPO_ROOT}/memorii/memorii/integrations/openclaw/plugin/{name}",
-                     f"{container}:/opt/memorii-openclaw/plugin/{name}"],
-                    capture_output=True, check=True, timeout=120,
-                )
-        if host == "pi":
-            subprocess.run(
-                ["docker", "cp", f"{REPO_ROOT}/memorii/memorii/integrations/pi/extension/memorii-extension.ts",
-                 f"{container}:/opt/memorii-pi/.pi/extensions/memorii-extension.ts"],
+                 f"{container}:{JOURNEY_DIRECTORY}/{name}"],
                 capture_output=True, check=True, timeout=120,
             )
         result = subprocess.run(
             ["docker", "exec", container, spec["venv"],
-             f"/opt/memorii-src/memorii/tests/integration/hostcompat/{spec['script']}"],
+             f"{JOURNEY_DIRECTORY}/{spec['script']}"],
             capture_output=True, text=True, timeout=2400,
         )
         output = result.stdout + result.stderr
@@ -147,12 +138,16 @@ def _run_journey(host: str) -> None:
         subprocess.run(["docker", "rm", "-f", container], capture_output=True, check=False)
 
 
-@pytest.mark.skipif(not _docker_available(), reason="docker daemon unavailable")
 @pytest.mark.parametrize("host", sorted(JOURNEYS))
-def test_container_certification_journey(host: str) -> None:
+def test_container_certification_journey(host: str, request: pytest.FixtureRequest) -> None:
+    if not _docker_available():
+        if os.environ.get("MEMORII_RUN_DOCKER_TESTS") == "1":
+            pytest.fail("container certification requires a Docker daemon")
+        pytest.skip("docker daemon unavailable")
     spec = JOURNEYS[host]
+    wheel = request.getfixturevalue("native_candidate_wheel") if host in {"openclaw", "pi"} else None
     subprocess.run(
         ["docker", "image", "rm", "-f", f"{spec['image']}:ci"], capture_output=True
     )
-    _build(spec["image"], spec["dockerfile"])
-    _run_journey(host)
+    _build(spec["image"], spec["dockerfile"], wheel)
+    _run_journey(host, wheel[1] if wheel is not None else None)
