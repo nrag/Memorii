@@ -118,20 +118,32 @@ recorded separately from the deterministic installed acceptance.
   agent routing. This is a P2 for stock-host manual testing. Ask whether
   stock operator setup and routing are required in this milestone.
 
-## Scope decision pending
+## Stock Hermes scope
 
-Stock Hermes support requires both registration through its actual memory
-manager and a trusted local operator opt-in configuration. Define and
-review that provisioning, authorization, and registration boundary if
-stock Hermes is in this milestone. If the trial is limited to configured
-bindings, record the supported registration order and prove a configured
-manager dispatch there. Existing scope, consent, and verified subject-ID
-requirements apply to either decision.
+The user approved stock Hermes support and assigned the separate storage
+fix to parallel v8 work. The reviewed stock design uses a process-level
+opt-in, pre-initialization schemas and existing grants. The stock writer
+owns only the Hermes and shared read binding code and focused tests.
+The offline installed witness must exercise the actual Hermes manager
+and include an absent optional raw user ID, current grants, and removal
+of the opt-in. Configured-host scope and tests carry forward.
+
+The stock candidate checks the same literal opt-in before initialization,
+at authenticated invocation, and at release. The registered tools
+respond through the stock Hermes JSON dispatch ABI. The independent
+review confirmed the exact scope and grant references and surfaced two
+input/timing cases. The candidate now rejects a malformed supplied user ID
+and returns JSON denial for a cached route after opt-in withdrawal before
+initialization. Both cases are covered in the integration fixture.
+The focused unit run passed 10 tests. Scoped Ruff and clean candidate
+Pyright passed. The actual router and candidate gates remain in progress.
 
 ## Package Smoke repair
 
 The [linked debugging WorkPlan](../debug-release-proof-members.plan.md)
 owns the stale release member hashes and their CI verification.
+Package Smoke passed on PR #126 at `8825330d`. The stock implementation
+will refresh any changed proof members before pushing its own gate run.
 
 ## Changed surfaces and gate ledger
 

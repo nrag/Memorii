@@ -642,6 +642,27 @@ Dispatch of a read tool bypasses the captured-turn runtime. Tool descriptors
 are static and convey no authority. Each invocation reuses the current
 verified host ingress and protected read/release path.
 
+For stock Hermes, set `MEMORII_HERMES_CATALOG_READ=1` in the local
+operator's environment before launching Hermes. The bridge advertises
+the static descriptors at registration, which Hermes performs before
+provider initialization. Calls made before initialization are unavailable.
+During initialization the first-party factory uses the verified local
+installation and primary CLI profile to construct the exact semantic
+row with the project's task ID, canonical operator and agent IDs, and no
+record session ID. The live session stays on authenticated ingress and the
+request handle. The factory references the existing version-1 fact
+and base catalog visibility grants. It never provisions a grant through
+this opt-in. Read authorization still requires live matching grant
+records and the verified operator context at invocation and release.
+If the host supplies no optional user ID, the stock path requires the
+pre-existing local operator binding for an absent raw ID. It cannot stand
+in for a user ID supplied during provisioning. The factory checks the exact
+environment value at invocation and release without reopening storage.
+An explicit authenticated host configuration retains
+its existing behavior. The stock read dispatch uses the JSON string
+expected by the Hermes memory router; the dedicated read hook keeps its
+object response for callers using the shared contract directly.
+
 `memorii_browse_catalog` uses a separate closed object. The first request is
 `{}`. Subsequent requests contain exactly `after_predicate_id` and
 `expected_catalog_version_digest`, validated by the existing ID and digest

@@ -38,7 +38,7 @@ from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.persistence.factory import select_persistent_memory_plane
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.learned_replay import LearnedRetainedSourceReplayService
-from memorii.core.scoped_context.authority import InProcessScopedReadAuthority
+from memorii.core.scoped_context.authority import InProcessScopedReadAuthority, ScopedNamespaceGrantRow
 from memorii.core.semantic_ingestion.catalog_authority import (
     AgentLocalCatalogAuthorityScope,
     AuthenticatedPrincipalAgent,
@@ -94,7 +94,13 @@ from memorii.core.user_context.preferences import (
     PreferenceHolderAuthority,
     PreferenceService,
 )
-from memorii.integrations.catalog_read_binding import bind_catalog_read
+from memorii.domain.enums import MemoryDomain
+from memorii.integrations.catalog_read_binding import (
+    CatalogReadGrantReference,
+    CatalogReadOptIn,
+    bind_catalog_read,
+    stock_hermes_catalog_read_enabled,
+)
 from memorii.integrations.hermes_local_authority import (
     LocalLevel2AuthorityError,
     load_local_level2_authority,
@@ -527,6 +533,11 @@ def _build_local_level2_runtime_binding(
         + sha256((f"memorii.hermes.local-level2-operator.v1:{authorization.installation_id}").encode()).hexdigest()
     )
     agent_id = _canonical_agent_id(getattr(context, "agent_identity", None))
+    stock_read = getattr(context, "stock_catalog_read", False) is True and getattr(context, "catalog_read_opt_in", None) is None
+    stock_identity_preexisting = (
+        getattr(context, "user_id", None) is not None
+        or (storage_root / "local-operator-context.json").is_file()
+    )
     primary_agent_id = _bind_single_local_operator_context(
         storage_root=storage_root,
         installation_id=authorization.installation_id,
@@ -932,9 +943,25 @@ def _build_local_level2_runtime_binding(
         return activation
 
     raw_user_id = getattr(context, "user_id", None)
+    base_scope = CatalogAuthorityScope(schema_version=1, kind="base")
+    stock_opt_in = CatalogReadOptIn(
+        installation_id=authorization.installation_id, storage_root=storage_root,
+        user_id=raw_user_id, agent_id=agent_id, fact_scope=f"user:{operator_id}",
+        rows=(ScopedNamespaceGrantRow(domain=MemoryDomain.SEMANTIC, task_id=project_task_id,
+                                      session_id=None, user_id=operator_id, agent_id=agent_id),),
+        grant_references=(CatalogReadGrantReference(
+            catalog_scope=base_scope,
+            fact_grant_id=_grant_id(authorization.installation_id, operator_id, agent_id, "fact", f"user:{operator_id}"),
+            fact_grant_version=1,
+            catalog_grant_id=_grant_id(authorization.installation_id, operator_id, agent_id, "catalog_visibility", base_scope),
+            catalog_grant_version=1,
+        ),),
+    ) if stock_read else None
 
     def current_catalog_read_opt_in() -> object:
         opt_in = getattr(context, "catalog_read_opt_in", None)
+        if stock_read:
+            return stock_opt_in if stock_identity_preexisting and stock_hermes_catalog_read_enabled() else None
         return opt_in() if callable(opt_in) else opt_in
 
     def current_catalog_read_session() -> object:
@@ -942,7 +969,7 @@ def _build_local_level2_runtime_binding(
             if (
                 getattr(context, "user_id", None) != raw_user_id
                 or getattr(context, "storage_root", None) != storage_root
-                or getattr(context, "agent_identity", None) is None
+                or (getattr(context, "agent_identity", None) is None and not stock_read)
                 or _canonical_agent_id(getattr(context, "agent_identity", None)) != agent_id
                 or _require_local_cli_context(context) != context_kind
             ):
@@ -953,19 +980,20 @@ def _build_local_level2_runtime_binding(
         return session() if callable(session) else getattr(context, "session_id", None)
 
     def catalog_read_installation_is_current() -> bool:
-        if context_kind != "primary" or not isinstance(raw_user_id, str) or not authority_is_current():
+        if context_kind != "primary" or (raw_user_id is None and not stock_read) or not authority_is_current():
             return False
         try:
             operator = json.loads((storage_root / "local-operator-context.json").read_bytes())
         except (OSError, ValueError):
             return False
         raw_user_digest = sha256(
-            b"memorii.hermes.raw-user-consistency.v1\0" + raw_user_id.strip().encode("utf-8")
+            b"memorii.hermes.raw-user-consistency.v1\0" + (raw_user_id.strip() if isinstance(raw_user_id, str) else "").encode("utf-8")
         ).hexdigest()
         return (
             isinstance(operator, dict)
             and operator.get("schema") == "memorii.hermes.local-operator-context.v1"
             and operator.get("installation_id") == authorization.installation_id
+            and (not stock_read or operator.get("primary_agent_id") == agent_id)
             and operator.get("raw_user_consistency_digest") == raw_user_digest
         )
 
@@ -977,10 +1005,11 @@ def _build_local_level2_runtime_binding(
         raw_user_id=raw_user_id,
         authenticated=AuthenticatedPrincipalAgent(principal_id=operator_id, agent_id=agent_id),
         current_opt_in=current_catalog_read_opt_in,
-        configured=getattr(context, "catalog_read_opt_in", None) is not None,
+        configured=stock_read or getattr(context, "catalog_read_opt_in", None) is not None,
         current_session=current_catalog_read_session,
         installation_is_current=catalog_read_installation_is_current,
         issue_ingress=ingress_resolver.issue,
+        allow_absent_user=stock_read,
     )
     return HermesProviderRuntimeBinding(
         service=service,

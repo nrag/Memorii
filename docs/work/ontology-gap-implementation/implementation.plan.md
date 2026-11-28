@@ -3,7 +3,7 @@
 - Work ID: ontology-gap-implementation
 - Work type: implementation
 - Delivery fidelity: Level 2 for signed-in local work and household trials
-- Status: blocked
+- Status: active
 - Coordinator: Codex
 - Created: 2026-11-27
 - Last updated: 2026-11-27
@@ -73,7 +73,7 @@ the push range before publication.
 
 | Order | Packet | Observable completion | Status |
 | --- | --- | --- | --- |
-| 1 | [Packaged catalog discovery](milestones/packaged-catalog-discovery.plan.md) | Both installed bindings expose discover/clarify/recall without a key, starting with a bill due date. | Configured binding verified locally. Stock Hermes scope decision and hosted gates pending. |
+| 1 | [Packaged catalog discovery](milestones/packaged-catalog-discovery.plan.md) | Both installed bindings expose discover/clarify/recall without a key, starting with a bill due date. | Configured binding verified. Stock Hermes routing in progress. |
 | 2 | [Learned catalog review and recall](milestones/learned-catalog-review-and-recall.plan.md) | Owner decision and retry work. A selected exact-parent `mentors` version is inspectable and readable. | Queued behind 1 |
 | 3 | [Verified recurring gap](milestones/verified-recurring-gap.plan.md) | Two adapters yield one durable, scoped, explainable gap from independent evidence. | Queued behind 2 |
 | 4 | [Grounded relation creation](milestones/grounded-relation-creation.plan.md) | Observed and manual paths exercise a different relation through paired evaluation, owner selection and protected use. | Queued behind 3 |
@@ -182,5 +182,5 @@ type-check or CI failure is classified by this planning task.
 
 ## Next action
 
-Record whether stock Hermes operator setup and tool routing are in scope
-for packet 1, then close the corresponding installed path and its gates.
+Verify the stock Hermes catalog tools through pre-initialization
+registration and actual router dispatch on the installed candidate.

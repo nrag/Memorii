@@ -36,6 +36,7 @@ from memorii.integrations.catalog_read_binding import (
     CatalogReadOptIn,
     catalog_read_tool_schemas,
     dispatch_catalog_read,
+    stock_hermes_catalog_read_enabled,
 )
 from memorii.integrations.hermes_provider import HermesMemoryProvider, build_started_hermes_memory_provider
 from memorii.integrations.hermes_runtime_binding import (
@@ -64,6 +65,7 @@ class HermesProviderServiceContext:
     parent_session_id: object | None
     catalog_read_opt_in: CatalogReadOptIn | Callable[[], CatalogReadOptIn | None] | None = None
     catalog_read_session: Callable[[], str] | None = None
+    stock_catalog_read: bool = False
 
 
 @dataclass(frozen=True)
@@ -91,6 +93,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         self._issue_ingress: Callable[[HermesIngressRequest], AuthenticatedHostIngress] | None = None
         self._completed_turn_runtime: object | None = None
         self._catalog_read: CatalogReadBinding | None = None
+        self._stock_catalog_read = False
         self._absent_author_id = "memorii.hermes.author.absent.v1"
         self._revoke_structured_submission_grant: Callable[[str], None] | None = None
         self._activate_learned_candidate: Callable[[str], object] | None = None
@@ -133,6 +136,14 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         factory, reason = _service_factory_status()
         if factory is None:
             raise RuntimeError(f"Memorii Hermes provider is unavailable: {reason}")
+        stock_read = (
+            kwargs.get("catalog_read_opt_in") is None
+            and stock_hermes_catalog_read_enabled()
+            and all(
+                kwargs.get(key) is None or _optional_text(kwargs[key]) is not None
+                for key in ("user_id", "user_id_alt")
+            )
+        )
         binding = factory(
             HermesProviderServiceContext(
                 storage_root=storage_root,
@@ -148,6 +159,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
                 parent_session_id=kwargs.get("parent_session_id"),
                 catalog_read_opt_in=kwargs.get("catalog_read_opt_in"),
                 catalog_read_session=lambda: self._session_id if self._default_user_id == user_id else "",
+                stock_catalog_read=stock_read,
             )
         )
         if type(binding) is not HermesProviderRuntimeBinding:
@@ -163,6 +175,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         self._issue_ingress = binding.issue_ingress
         self._completed_turn_runtime = binding.completed_turn_runtime
         self._catalog_read = binding.catalog_read
+        self._stock_catalog_read = stock_read
         self._absent_author_id = binding.absent_author_id
         self._revoke_structured_submission_grant = binding.revoke_structured_submission_grant
         self._activate_learned_candidate = binding.activate_learned_candidate
@@ -185,7 +198,10 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
 
     def handle_tool_call(self, tool_name: str, arguments: dict[str, object]) -> object:
         if tool_name in CATALOG_READ_TOOL_NAMES:
-            return self.handle_read_tool_call(tool_name, arguments)
+            result = self.handle_read_tool_call(tool_name, arguments)
+            if self._stock_catalog_read or self._catalog_read is None or not self._catalog_read.configured:
+                return json.dumps(result)
+            return result
         runtime = self._completed_turn_runtime
         handler = getattr(runtime, "handle_tool_call", None) if runtime is not None else None
         if callable(handler):
@@ -231,11 +247,11 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         )
 
     def get_read_tool_schemas(self) -> list[dict[str, object]]:
-        return catalog_read_tool_schemas() if self._catalog_read is not None and self._catalog_read.configured else []
+        return catalog_read_tool_schemas() if (self._catalog_read is not None and self._catalog_read.configured) or (self._catalog_read is None and stock_hermes_catalog_read_enabled()) else []
 
     def handle_read_tool_call(self, tool_name: str, arguments: object) -> dict[str, object]:
         if self._catalog_read is None:
-            raise ValueError("Memorii catalog read tools are unavailable")
+            return {"status": "unavailable"}
         return dispatch_catalog_read(self._catalog_read, tool_name, arguments)
 
     def browse_catalog(self, request: object) -> CatalogBrowseResponse:

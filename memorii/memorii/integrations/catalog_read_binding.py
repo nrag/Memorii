@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -57,7 +58,7 @@ class CatalogReadOptIn:
 
     installation_id: str
     storage_root: Path
-    user_id: str
+    user_id: str | None
     agent_id: str
     fact_scope: str
     rows: tuple[ScopedNamespaceGrantRow, ...]
@@ -73,6 +74,10 @@ class CatalogReadBinding:
 
 
 _ReadResponse = TypeVar("_ReadResponse", covariant=True)
+
+
+def stock_hermes_catalog_read_enabled() -> bool:
+    return os.environ.get("MEMORII_HERMES_CATALOG_READ") == "1"
 
 
 class _ReadOperation(Protocol[_ReadResponse]):
@@ -95,6 +100,7 @@ def bind_catalog_read(
     current_session: Callable[[], object],
     installation_is_current: Callable[[], bool],
     issue_ingress: Callable[[object], AuthenticatedHostIngress],
+    allow_absent_user: bool = False,
 ) -> CatalogReadBinding:
     """Compose read callbacks from a verified host, with no write authority."""
 
@@ -104,7 +110,8 @@ def bind_catalog_read(
         if (
             not isinstance(opt_in, CatalogReadOptIn)
             or not isinstance(session, str) or not session.strip()
-            or not isinstance(raw_user_id, str) or not raw_user_id.strip()
+            or (raw_user_id is None and not allow_absent_user)
+            or (raw_user_id is not None and (not isinstance(raw_user_id, str) or not raw_user_id.strip()))
             or opt_in.installation_id != installation_id
             or not isinstance(opt_in.storage_root, Path)
             or opt_in.storage_root.resolve() != storage_root.resolve()

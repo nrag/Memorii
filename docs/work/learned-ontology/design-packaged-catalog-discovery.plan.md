@@ -77,3 +77,22 @@ the existing Hermes function schema envelope. The reviewed canonical
 design SHA-256 is `408be6aa9a2d263e55a566a7889ce81c3c87b0e007eb9109e2448580aa3d2c45`.
 The existing exact workflows and provider hooks establish the composition
 seams. The implementation packet owns browse dispatch and release proof.
+
+## Stock Hermes routing
+
+The operator approved stock Hermes in this milestone. The pinned host's
+`MemoryManager.add_provider` collects and registers schemas before
+`initialize_all` and never refreshes its routing table. Section 13
+defines a literal process opt-in and static pre-initialization registration
+for this path. Only an existing verified primary CLI operator binding and
+the current exact grants authorize a result. Use the current storage row and
+grant identity conventions. No persisted format, new grant issuance, or
+changes to the generic binding are required. Historical fact grants remain
+authoritative. The Level 2 witness registers before initialize and exercises
+the real manager's tool listing and dispatch with the candidate wheel.
+
+The targeted design reviewer checked the registration, grant and scope
+boundary. The canonical amendment now spells out the exact projection row
+and live process opt-in recheck. Stock absent-user matching requires a
+pre-existing operator binding for the same absent-ID coordinate and cannot
+use the generic operator-binding recovery option.

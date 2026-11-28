@@ -3,7 +3,7 @@
 - Work ID: release-proof-member-refresh
 - Work type: debugging
 - Delivery fidelity: Level 2, current PR installed-package gate
-- Status: active
+- Status: complete (Level 2 gate repair)
 - Coordinator: Codex
 - Created: 2026-11-27
 - Last updated: 2026-11-27
@@ -52,7 +52,14 @@ All 19 tests passed. The hosted `package-smoke` step remains the authoritative f
 Linux Python 3.11 acquire, prepare, install, proof, rejection and
 benchmark dry-run check. Record the tested PR head, merge SHA and run.
 
-## Next action
+## Closure
 
-Verify the updated installed release proof through Package Smoke on the
-pushed repair.
+Package Smoke passed on [PR #126 run 46097574716](https://github.com/nrag/Memorii/actions/runs/46097574716/job/140832368158).
+The PR head was `8825330dfdfe109e6bd095279f9b18b7ba41b78e` and the
+checked-out merge SHA was `cce969920766e3753cd15a96ae141278d170527a`.
+The full job ran the 19 tests in 6.38 seconds, then completed acquisition,
+installed proof, rejection checks, imports, and dry-run artifact validation.
+The local Linux validation image had a preinstalled Memorii shadow-path
+conflict and did not reproduce the clean hosted environment.
+
+`remaining_validated_p1_p2: []` for this focused repair.
