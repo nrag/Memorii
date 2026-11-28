@@ -235,14 +235,15 @@ def test_installed_catalog_read_workflow_needs_no_key_or_write_tool(tmp_path, mo
     monkeypatch.setattr(HermesCompletedTurnRuntime, "read_structured_facts", writer_route_forbidden)
     monkeypatch.setattr(HermesCompletedTurnRuntime, "capture_user_turn", writer_route_forbidden)
 
-    def assert_read_workflow(host, memory_plane) -> None:
+    tool_names = (
+        "memorii_browse_catalog", "memorii_inspect_catalog_relation", "memorii_diagnose_structured_recall",
+    )
+
+    def assert_read_workflow(host, memory_plane, *, call_tool=None) -> None:
         before = memory_plane.read_snapshot()
-        assert [schema["function"]["name"] for schema in host.get_read_tool_schemas()] == [
-            "memorii_browse_catalog", "memorii_inspect_catalog_relation", "memorii_diagnose_structured_recall",
-        ]
-        if hasattr(host, "get_tool_schemas"):
-            assert host.get_tool_schemas() == host.get_read_tool_schemas()
-            assert host.handle_tool_call("memorii_browse_catalog", {})["status"] == "listed"
+        assert tuple(schema["function"]["name"] for schema in host.get_read_tool_schemas()) == tool_names
+        if call_tool is None:
+            call_tool = host.handle_read_tool_call
         from memorii.core.provider import catalog_read_workflow
 
         request = {}
@@ -250,7 +251,7 @@ def test_installed_catalog_read_workflow_needs_no_key_or_write_tool(tmp_path, mo
         while True:
             with monkeypatch.context() as scoped:
                 scoped.setattr(catalog_read_workflow, "read_current_catalog_bound_facts", writer_route_forbidden)
-                page = host.handle_read_tool_call("memorii_browse_catalog", request)
+                page = call_tool("memorii_browse_catalog", request)
             assert page["status"] == "listed"
             assert len(page["relations"]) <= 16
             ids.extend(row["predicate_id"] for row in page["relations"])
@@ -259,30 +260,30 @@ def test_installed_catalog_read_workflow_needs_no_key_or_write_tool(tmp_path, mo
             request = {"after_predicate_id": page["next_after_predicate_id"],
                        "expected_catalog_version_digest": page["catalog_version_digest"]}
         assert len(ids) == 56 and ids == sorted(set(ids))
-        assert host.handle_read_tool_call("memorii_browse_catalog", {
+        assert call_tool("memorii_browse_catalog", {
             "after_predicate_id": "not_in_catalog", "expected_catalog_version_digest": "0" * 64,
         }) == {"status": "catalog_changed"}
-        assert host.handle_read_tool_call("memorii_browse_catalog", {
+        assert call_tool("memorii_browse_catalog", {
             "after_predicate_id": "not_in_catalog", "expected_catalog_version_digest": page["catalog_version_digest"],
         }) == {"status": "invalid_request"}
-        assert host.handle_read_tool_call("memorii_browse_catalog", {"after_predicate_id": "project_owner"}) == {
+        assert call_tool("memorii_browse_catalog", {"after_predicate_id": "project_owner"}) == {
             "status": "invalid_request",
         }
-        assert host.handle_read_tool_call("memorii_diagnose_structured_recall", {
+        assert call_tool("memorii_diagnose_structured_recall", {
             "kind": "unresolved", "reference": "subject",
         }) == {"status": "needs_clarification"}
         for name, relation in (
             ("bill due date", "obligation_due_on"),
             ("work item due date", "work_item_due_on"),
         ):
-            payload = host.handle_read_tool_call("memorii_inspect_catalog_relation", {"kind": "name", "name": name})
+            payload = call_tool("memorii_inspect_catalog_relation", {"kind": "name", "name": name})
             assert payload["status"] == "matched", payload
             assert [row["predicate_id"] for row in payload["relations"]] == [relation]
             request = {
                 "kind": "exact", "predicate_id": relation, "subject_entity_id": subject_ids[relation],
                 "expected_catalog_version_digest": payload["catalog_version_digest"],
             }
-            result = host.handle_read_tool_call("memorii_diagnose_structured_recall", request)
+            result = call_tool("memorii_diagnose_structured_recall", request)
             assert result["status"] == "found", result
             assert [item["predicate_id"] for item in result["items"]] == [relation]
             assert json.loads(result["items"][0]["object_value"])["value"] == "2026-10-03"
@@ -317,11 +318,21 @@ def test_installed_catalog_read_workflow_needs_no_key_or_write_tool(tmp_path, mo
         }
         assert memory_plane.read_snapshot() == before
 
-    current_opt_in = opt_in
+    monkeypatch.setenv("MEMORII_HERMES_CATALOG_READ", "1")
     bridge = bridge_class()
-    bridge.initialize("session:read", **context, catalog_read_opt_in=lambda: current_opt_in)
+    # Stock Hermes registers before initialization. Keep the registered
+    # names fixed while the existing installed fixture exercises both roots.
+    registered = tuple(schema["function"]["name"] for schema in bridge.get_tool_schemas())
+    assert registered == tool_names
+
+    def call_stock_tool(name, arguments):
+        assert name in registered
+        return json.loads(bridge.handle_tool_call(name, arguments))
+
+    assert call_stock_tool("memorii_browse_catalog", {}) == {"status": "unavailable"}
+    bridge.initialize("session:read", **context)
     try:
-        assert_read_workflow(bridge, bridge._provider._service._memory_plane)
+        assert_read_workflow(bridge, bridge._provider._service._memory_plane, call_tool=call_stock_tool)
         from memorii.core.provider import catalog_read_workflow
 
         project = catalog_read_workflow.project_catalog_relations
@@ -346,10 +357,19 @@ def test_installed_catalog_read_workflow_needs_no_key_or_write_tool(tmp_path, mo
             assert bridge.browse_catalog({}).model_dump(mode="json") == {"status": "denied"}
         assert bridge.inspect_catalog_relation({"kind": "name", "name": "bill due date"}).status == "matched"
 
+        operator_path = storage_root / "local-operator-context.json"
+        operator_bytes = operator_path.read_bytes()
+        operator = json.loads(operator_bytes)
+        operator["primary_agent_id"] = "foreign-agent"
+        try:
+            operator_path.write_text(json.dumps(operator))
+            assert call_stock_tool("memorii_browse_catalog", {}) == {"status": "denied"}
+        finally:
+            operator_path.write_bytes(operator_bytes)
+
         def withdraw_after_lookup(bundle):
-            nonlocal current_opt_in
             declarations = project(bundle)
-            current_opt_in = None
+            monkeypatch.delenv("MEMORII_HERMES_CATALOG_READ")
             return declarations
 
         with monkeypatch.context() as scoped:
@@ -362,92 +382,6 @@ def test_installed_catalog_read_workflow_needs_no_key_or_write_tool(tmp_path, mo
         }
     finally:
         bridge.shutdown()
-
-    monkeypatch.setenv("MEMORII_HERMES_CATALOG_READ", "1")
-    stock = bridge_class()
-    # Hermes collects descriptors before it initializes the provider.
-    class LocalMemoryManager:
-        def __init__(self, provider):
-            self.provider = provider
-            self.registered = {schema["function"]["name"]: schema for schema in provider.get_tool_schemas()}
-
-        def call(self, name, arguments):
-            return self.provider.handle_tool_call(name, arguments)
-
-    manager = LocalMemoryManager(stock)
-    registered = manager.registered
-    assert len(registered) == 3
-    assert json.loads(stock.handle_tool_call("memorii_browse_catalog", {})) == {"status": "unavailable"}
-    stock.initialize("session:stock-read", **context)
-    try:
-        assert json.loads(manager.call("memorii_browse_catalog", {}))["status"] == "listed"
-        assert stock.handle_read_tool_call("memorii_browse_catalog", {})["status"] == "listed"
-        inspection = json.loads(manager.call("memorii_inspect_catalog_relation", {
-            "kind": "name", "name": "bill due date",
-        }))
-        assert inspection["status"] == "matched"
-        for predicate in ("obligation_due_on", "work_item_due_on"):
-            diagnosis = json.loads(manager.call("memorii_diagnose_structured_recall", {
-                "kind": "exact", "predicate_id": predicate, "subject_entity_id": subject_ids[predicate],
-                "expected_catalog_version_digest": inspection["catalog_version_digest"],
-            }))
-            assert diagnosis["status"] == "found", diagnosis
-        from memorii.core.provider import catalog_read_workflow
-
-        project = catalog_read_workflow.project_catalog_relations
-
-        def withdraw_stock_after_lookup(bundle):
-            declarations = project(bundle)
-            monkeypatch.delenv("MEMORII_HERMES_CATALOG_READ")
-            return declarations
-
-        with monkeypatch.context() as scoped:
-            scoped.setattr(catalog_read_workflow, "project_catalog_relations", withdraw_stock_after_lookup)
-            assert stock.handle_read_tool_call("memorii_browse_catalog", {}) == {"status": "denied"}
-        assert stock.handle_read_tool_call("memorii_browse_catalog", {}) == {"status": "denied"}
-    finally:
-        stock.shutdown()
-    cached_stock = bridge_class()
-    monkeypatch.setenv("MEMORII_HERMES_CATALOG_READ", "1")
-    cached_manager = LocalMemoryManager(cached_stock)
-    assert "memorii_browse_catalog" in cached_manager.registered
-    monkeypatch.delenv("MEMORII_HERMES_CATALOG_READ")
-    cached_stock.initialize("session:stock-withdrawn", **context)
-    try:
-        assert json.loads(cached_manager.call("memorii_browse_catalog", {})) == {"status": "denied"}
-    finally:
-        cached_stock.shutdown()
-    # The stock host may omit a raw user only when that exact absent identity
-    # was already bound to this installation and primary agent.
-    from hashlib import sha256
-
-    operator_path = storage_root / "local-operator-context.json"
-    original_operator = operator_path.read_bytes()
-    operator = json.loads(original_operator)
-    operator["raw_user_consistency_digest"] = sha256(b"memorii.hermes.raw-user-consistency.v1\0").hexdigest()
-    operator_path.write_text(json.dumps(operator))
-    monkeypatch.setenv("MEMORII_HERMES_CATALOG_READ", "1")
-    absent_stock = bridge_class()
-    try:
-        absent_stock.initialize("session:stock-absent", **{**context, "user_id": None})
-        assert json.loads(absent_stock.handle_tool_call("memorii_browse_catalog", {}))["status"] == "listed"
-        assert absent_stock.handle_read_tool_call("memorii_diagnose_structured_recall", {
-            "kind": "exact", "predicate_id": "obligation_due_on",
-            "subject_entity_id": subject_ids["obligation_due_on"],
-        })["status"] == "found"
-        malformed_stock = bridge_class()
-        malformed_stock.initialize("session:stock-malformed", **{**context, "user_id": " "})
-        try:
-            assert json.loads(malformed_stock.handle_tool_call("memorii_browse_catalog", {})) == {"status": "denied"}
-        finally:
-            malformed_stock.shutdown()
-        operator["primary_agent_id"] = "foreign-agent"
-        operator_path.write_text(json.dumps(operator))
-        assert absent_stock.handle_read_tool_call("memorii_browse_catalog", {}) == {"status": "denied"}
-    finally:
-        absent_stock.shutdown()
-        operator_path.write_bytes(original_operator)
-    monkeypatch.delenv("MEMORII_HERMES_CATALOG_READ", raising=False)
 
     generic = build_local_level2_authenticated_source_runtime(SimpleNamespace(
         **context, storage_root=storage_root, session_id="session:generic-read",

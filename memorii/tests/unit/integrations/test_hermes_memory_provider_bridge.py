@@ -157,6 +157,49 @@ def test_bridge_rejects_calls_before_successful_initialization(bridge_module) ->
         provider.handle_tool_call("memorii.search", {})
 
 
+@pytest.mark.parametrize(
+    ("environment", "identity"),
+    (("0", {}), ("1", {"user_id": " "}), ("1", {"user_id_alt": False})),
+)
+def test_stock_catalog_route_preserves_json_denial_after_registration(
+    bridge_module, monkeypatch, tmp_path, environment, identity,
+) -> None:
+    from memorii.core.provider.service import ProviderMemoryService
+    from memorii.core.semantic_ingestion.catalog_inspection import CatalogBrowseResponse
+    from memorii.integrations.catalog_read_binding import CatalogReadBinding
+    from memorii.integrations.hermes_runtime_binding import HermesProviderRuntimeBinding
+
+    def forbidden(*_args):
+        pytest.fail("denied discovery must not dispatch another operation")
+
+    def factory(context):
+        assert not context.stock_catalog_read
+        return HermesProviderRuntimeBinding(
+            service=ProviderMemoryService(),
+            issue_ingress=forbidden,
+            catalog_read=CatalogReadBinding(
+                configured=False,
+                browse_catalog=lambda _: CatalogBrowseResponse.model_validate({"status": "denied"}),
+                inspect_catalog_relation=forbidden,
+                diagnose_structured_recall=forbidden,
+            ),
+        )
+
+    monkeypatch.setattr(bridge_module, "_service_factory_status", lambda: (factory, None))
+    monkeypatch.setattr(bridge_module, "build_started_hermes_memory_provider", lambda **_: object())
+    monkeypatch.setenv("MEMORII_HERMES_CATALOG_READ", "1")
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    registered = {schema["function"]["name"] for schema in provider.get_tool_schemas()}
+    assert "memorii_browse_catalog" in registered
+
+    monkeypatch.setenv("MEMORII_HERMES_CATALOG_READ", environment)
+    provider.initialize("session:read", hermes_home=tmp_path, **identity)
+    try:
+        assert json.loads(provider.handle_tool_call("memorii_browse_catalog", {})) == {"status": "denied"}
+    finally:
+        provider.shutdown()
+
+
 def test_operation_identity_reuses_completed_transcript_and_separates_positions(bridge_module) -> None:
     first_messages = [
         {"role": "user", "content": "remember Atlas"},
@@ -2129,6 +2172,9 @@ def test_installed_default_catalog_literal_retraction_and_symmetric_reads_surviv
     )
     selected = provider.inspect_catalog_relation({"kind": "name", "name": "work item due date"})
     assert selected.status == "matched"
+    assert provider.handle_tool_call(
+        "memorii_inspect_catalog_relation", {"kind": "name", "name": "work item due date"},
+    )["status"] == "matched"
     diagnosis_request = {
         "kind": "exact", "predicate_id": "work_item_due_on", "subject_entity_id": due_subject_id,
         "expected_catalog_version_digest": selected.catalog_version_digest,

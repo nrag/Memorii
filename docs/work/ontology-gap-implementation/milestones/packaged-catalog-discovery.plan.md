@@ -135,8 +135,37 @@ review confirmed the exact scope and grant references and surfaced two
 input/timing cases. The candidate now rejects a malformed supplied user ID
 and returns JSON denial for a cached route after opt-in withdrawal before
 initialization. Both cases are covered in the integration fixture.
-The focused unit run passed 10 tests. Scoped Ruff and clean candidate
-Pyright passed. The actual router and candidate gates remain in progress.
+The focused unit run passed 10 tests. Scoped Ruff, clean candidate Pyright,
+and the field-aware identity check passed. The candidate was committed
+and pushed as `694e5651ca21add2fecb222414c912232f487e45`. Its outer
+proof pin and all 1,955 member hashes verified against the Git archive.
+
+The candidate wheel passed the real Hermes `MemoryManager` witness in the
+offline Linux rehearsal image (1 test, 374.26 seconds). Provisioning and
+read startup used a genuine absent raw host user ID. The witness registered
+the three names before initialization and used the real manager to invoke
+exact bill/work reads. It checked no-key dates, pre-initialization
+unavailability, opt-in withdrawal during release and before initialization,
+and malformed raw identity denial. The ephemeral fixture uses the real host
+module instead of the default CI stand-in and focuses on the stock path.
+
+[Package Smoke](https://github.com/nrag/Memorii/actions/runs/46098255626/job/140834556210)
+passed for `694e5651` on the hosted merge checkout `fda46b5`.
+The 19 bootstrap/release-tool tests and full installed preparation proof
+ran on Linux Python 3.11. Hosted Scoped Context Integration remains a
+separate gate for the exact repository fixture.
+
+The initial combined fixture passed locally in 670.60 seconds. The
+hosted scope job collected all 146 tests but reached its 15-minute job
+limit after dependency setup and before a test summary. The test-only
+follow-up folds stock registration, dispatch, foreign primary denial,
+and release races into the existing Hermes read startup. It preserves
+the full browse and recall cases, session rotation, read-only tripwires,
+and the generic root. Lightweight bridge tests cover cached-route denial
+and malformed identities. Existing configured Hermes proof retains object
+dispatch in its installed test. The real Linux router proof still covers
+positive absent raw identity. No runtime bytes, proof pins, or workflow
+limits changed in the follow-up.
 
 ## Package Smoke repair
 
