@@ -47,7 +47,7 @@ the push range before publication.
   closure exercised head `524fd8c6` via [workflow run 46083808916](https://github.com/nrag/Memorii/actions/runs/46083808916).
   New behavior requires new evidence.
 - The frozen discovery design's canonical SHA-256 is
-  `da3f80598686bf68b1c1db73aee745f981c3e5ead82d1809a845ca35574d6955`.
+  `408be6aa9a2d263e55a566a7889ce81c3c87b0e007eb9109e2448580aa3d2c45`.
   The reviewed [capability audit](../learned-ontology/ontology-capability-audit.md)
   SHA-256 is `259a83e09810f5be09f2733d3291e59187488d2691e383eac1a8736a0226485e`.
   The audit and roadmap supply scope and evidence. Each packet names the
@@ -73,7 +73,7 @@ the push range before publication.
 
 | Order | Packet | Observable completion | Status |
 | --- | --- | --- | --- |
-| 1 | [Packaged catalog discovery](milestones/packaged-catalog-discovery.plan.md) | Both installed bindings expose discover/clarify/recall without a key, starting with a bill due date. | In progress |
+| 1 | [Packaged catalog discovery](milestones/packaged-catalog-discovery.plan.md) | Both installed bindings expose discover/clarify/recall without a key, starting with a bill due date. | Implemented, installed and hosted verification pending |
 | 2 | [Learned catalog review and recall](milestones/learned-catalog-review-and-recall.plan.md) | Owner decision and retry work. A selected exact-parent `mentors` version is inspectable and readable. | Queued behind 1 |
 | 3 | [Verified recurring gap](milestones/verified-recurring-gap.plan.md) | Two adapters yield one durable, scoped, explainable gap from independent evidence. | Queued behind 2 |
 | 4 | [Grounded relation creation](milestones/grounded-relation-creation.plan.md) | Observed and manual paths exercise a different relation through paired evaluation, owner selection and protected use. | Queued behind 3 |
@@ -182,4 +182,5 @@ type-check or CI failure is classified by this planning task.
 
 ## Next action
 
-Verify the installed catalog discovery and recall candidate for packet 1.
+Verify installed catalog discovery and recall on the packet 1 candidate
+with PR #126's current revision gates.

@@ -5,6 +5,7 @@ from memorii.core.semantic_ingestion import catalog_inspection
 from memorii.core.semantic_ingestion.catalog_authority import CatalogAuthorityError
 from memorii.core.semantic_ingestion.catalog_capture_pin import SeedCatalogBundleLocator, VerifiedCatalogBundle
 from memorii.core.semantic_ingestion.catalog_inspection import (
+    CatalogBrowseRequest,
     CatalogRelationInspectionRequest,
     CatalogRelationInspectionResponse,
     StructuredRecallDiagnosisRequest,
@@ -99,3 +100,24 @@ def test_lookup_and_diagnosis_have_closed_inputs_and_status_only_failures() -> N
         StructuredRecallDiagnosisResponse.model_validate({"status": "catalog_changed", "items": []})
     with pytest.raises(ValidationError):
         CatalogRelationInspectionResponse.model_validate({"status": "ambiguous", "relations": []})
+
+
+def test_browse_contract_and_advertised_schema_are_closed() -> None:
+    from memorii.integrations.catalog_read_binding import catalog_read_tool_schemas
+
+    assert CatalogBrowseRequest.model_validate({}).after_predicate_id is None
+    for invalid in (
+        {"after_predicate_id": "project_owner"},
+        {"expected_catalog_version_digest": "a" * 64},
+        {"after_predicate_id": None, "expected_catalog_version_digest": "a" * 64},
+        {"after_predicate_id": "project_owner", "expected_catalog_version_digest": "a" * 64, "extra": 1},
+    ):
+        with pytest.raises(ValidationError):
+            CatalogBrowseRequest.model_validate(invalid)
+    schemas = catalog_read_tool_schemas()
+    browse = schemas[0]["function"]["parameters"]
+    assert browse["type"] == "object" and browse["additionalProperties"] is False
+    assert browse["oneOf"] == [{"maxProperties": 0}, {"required": [
+        "after_predicate_id", "expected_catalog_version_digest",
+    ]}]
+    assert all(schema["function"]["parameters"]["type"] == "object" for schema in schemas)

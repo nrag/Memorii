@@ -26,6 +26,8 @@ from memorii.core.semantic_ingestion.catalog_authority import (
     structured_grant_state_record_id,
 )
 from memorii.core.semantic_ingestion.catalog_inspection import (
+    CatalogBrowseRequest,
+    CatalogBrowseResponse,
     CatalogReadDirection,
     CatalogReadStatus,
     CatalogRelationInspectionRequest,
@@ -106,6 +108,16 @@ def _has_agent_local_catalog_control(
 
 @overload
 def read_catalog_workflow(
+    request: object, *, operation: Literal["browse"], ingress: AuthenticatedIngressContext | None,
+    host_request: CatalogReadHostRequest | None, host_authority: ScopedHostReadAuthority | None,
+    memory_plane: MemoryPlaneService, locator: CatalogBundleLocator,
+    now_provider: Callable[[], datetime], legacy_verifier: CatalogBoundProjectionReadVerifier,
+    suppression_view: Callable[[tuple[CanonicalMemoryRecord, ...]], RevokedIdentityView] | None,
+) -> CatalogBrowseResponse: ...
+
+
+@overload
+def read_catalog_workflow(
     request: object, *, operation: Literal["inspect"], ingress: AuthenticatedIngressContext | None,
     host_request: CatalogReadHostRequest | None, host_authority: ScopedHostReadAuthority | None,
     memory_plane: MemoryPlaneService, locator: CatalogBundleLocator,
@@ -125,17 +137,18 @@ def read_catalog_workflow(
 
 
 def read_catalog_workflow(
-    request: object, *, operation: Literal["inspect", "diagnose"],
+    request: object, *, operation: Literal["browse", "inspect", "diagnose"],
     ingress: AuthenticatedIngressContext | None,
     host_request: CatalogReadHostRequest | None, host_authority: ScopedHostReadAuthority | None,
     memory_plane: MemoryPlaneService, locator: CatalogBundleLocator,
     now_provider: Callable[[], datetime], legacy_verifier: CatalogBoundProjectionReadVerifier,
     suppression_view: Callable[[tuple[CanonicalMemoryRecord, ...]], RevokedIdentityView] | None,
-) -> CatalogRelationInspectionResponse | StructuredRecallDiagnosisResponse:
+) -> CatalogBrowseResponse | CatalogRelationInspectionResponse | StructuredRecallDiagnosisResponse:
     from memorii.core.persistence.factory import ManagedPartitionError
     from memorii.core.storage_administration.service import StorageAdministrationError
 
-    response_type = CatalogRelationInspectionResponse if operation == "inspect" else StructuredRecallDiagnosisResponse
+    response_type = (CatalogBrowseResponse if operation == "browse" else
+                     CatalogRelationInspectionResponse if operation == "inspect" else StructuredRecallDiagnosisResponse)
 
     def empty(status: CatalogReadStatus):
         return response_type.model_validate({"status": status})
@@ -200,7 +213,12 @@ def read_catalog_workflow(
         if not current:
             return finish(CatalogReadStatus.DENIED)
         try:
-            if operation == "inspect":
+            browse = None
+            if operation == "browse":
+                browse = CatalogBrowseRequest.model_validate(request)
+                lookup = None
+                exact = None
+            elif operation == "inspect":
                 lookup = CatalogRelationInspectionRequest.model_validate(request).root
                 exact = None
             else:
@@ -230,6 +248,20 @@ def read_catalog_workflow(
             descriptors = project_catalog_relations(bundle)
         except (CatalogAuthorityError, OSError, ValidationError):
             return finish(CatalogReadStatus.UNAVAILABLE)
+        if browse is not None:
+            if browse.expected_catalog_version_digest is not None and browse.expected_catalog_version_digest != bundle.version.version_digest:
+                return finish(CatalogReadStatus.CATALOG_CHANGED)
+            ids = tuple(item.predicate_id for item in descriptors)
+            if browse.after_predicate_id is not None and browse.after_predicate_id not in ids:
+                return finish(CatalogReadStatus.INVALID_REQUEST)
+            start = ids.index(browse.after_predicate_id) + 1 if browse.after_predicate_id is not None else 0
+            page = descriptors[start:start + 16]
+            if not released():
+                return empty(CatalogReadStatus.DENIED)
+            result = {"status": "listed", "catalog_version_digest": bundle.version.version_digest, "relations": page}
+            if start + 16 < len(descriptors):
+                result["next_after_predicate_id"] = page[-1].predicate_id
+            return CatalogBrowseResponse.model_validate(result)
         if lookup is not None:
             if lookup.kind == "predicate_id":
                 matches = tuple(item for item in descriptors if lookup.predicate_id == item.predicate_id)

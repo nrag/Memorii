@@ -22,6 +22,7 @@ from agent.memory_provider import MemoryProvider  # pyright: ignore[reportMissin
 from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedHostIngress
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.semantic_ingestion.catalog_inspection import (
+    CatalogBrowseResponse,
     CatalogRelationInspectionResponse,
     StructuredRecallDiagnosisResponse,
 )
@@ -29,7 +30,13 @@ from memorii.core.semantic_ingestion.structured_fact_read import (
     StructuredFactReadRequest,
     StructuredFactReadResponse,
 )
-from memorii.integrations.catalog_read_binding import CatalogReadBinding, CatalogReadOptIn
+from memorii.integrations.catalog_read_binding import (
+    CATALOG_READ_TOOL_NAMES,
+    CatalogReadBinding,
+    CatalogReadOptIn,
+    catalog_read_tool_schemas,
+    dispatch_catalog_read,
+)
 from memorii.integrations.hermes_provider import HermesMemoryProvider, build_started_hermes_memory_provider
 from memorii.integrations.hermes_runtime_binding import (
     HermesAuthenticatedForwardingReceipt,
@@ -170,13 +177,15 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         runtime = self._completed_turn_runtime
         schemas = getattr(runtime, "get_tool_schemas", None) if runtime is not None else None
         if not callable(schemas):
-            return []
+            return self.get_read_tool_schemas()
         value = schemas()
         if not isinstance(value, list) or not all(type(item) is dict for item in value):
             raise TypeError("Memorii completed-turn runtime returned invalid tool schemas")
-        return value
+        return [*value, *self.get_read_tool_schemas()]
 
     def handle_tool_call(self, tool_name: str, arguments: dict[str, object]) -> object:
+        if tool_name in CATALOG_READ_TOOL_NAMES:
+            return self.handle_read_tool_call(tool_name, arguments)
         runtime = self._completed_turn_runtime
         handler = getattr(runtime, "handle_tool_call", None) if runtime is not None else None
         if callable(handler):
@@ -220,6 +229,19 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
             authenticated_author_id=self._absent_author_id,
             now=datetime.now(UTC),
         )
+
+    def get_read_tool_schemas(self) -> list[dict[str, object]]:
+        return catalog_read_tool_schemas() if self._catalog_read is not None and self._catalog_read.configured else []
+
+    def handle_read_tool_call(self, tool_name: str, arguments: object) -> dict[str, object]:
+        if self._catalog_read is None:
+            raise ValueError("Memorii catalog read tools are unavailable")
+        return dispatch_catalog_read(self._catalog_read, tool_name, arguments)
+
+    def browse_catalog(self, request: object) -> CatalogBrowseResponse:
+        if self._catalog_read is None:
+            return CatalogBrowseResponse.model_validate({"status": "unavailable"})
+        return self._catalog_read.browse_catalog(request)
 
     def inspect_catalog_relation(self, request: object) -> CatalogRelationInspectionResponse:
         if self._catalog_read is None:

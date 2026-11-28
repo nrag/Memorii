@@ -23,7 +23,10 @@ from memorii.core.semantic_ingestion.catalog_authority import (
     StructuredFactReadAuthority,
 )
 from memorii.core.semantic_ingestion.catalog_inspection import (
+    CatalogBrowseResponse,
+    CatalogRelationInspectionRequest,
     CatalogRelationInspectionResponse,
+    StructuredRecallDiagnosisRequest,
     StructuredRecallDiagnosisResponse,
 )
 from memorii.domain.enums import MemoryDomain
@@ -63,6 +66,8 @@ class CatalogReadOptIn:
 
 @dataclass(frozen=True)
 class CatalogReadBinding:
+    configured: bool
+    browse_catalog: Callable[[object], CatalogBrowseResponse]
     inspect_catalog_relation: Callable[[object], CatalogRelationInspectionResponse]
     diagnose_structured_recall: Callable[[object], StructuredRecallDiagnosisResponse]
 
@@ -86,6 +91,7 @@ def bind_catalog_read(
     raw_user_id: str | None,
     authenticated: AuthenticatedPrincipalAgent,
     current_opt_in: Callable[[], object],
+    configured: bool,
     current_session: Callable[[], object],
     installation_is_current: Callable[[], bool],
     issue_ingress: Callable[[object], AuthenticatedHostIngress],
@@ -175,6 +181,54 @@ def bind_catalog_read(
             authority.revoke(handle)
 
     return CatalogReadBinding(
+        configured=configured,
+        browse_catalog=lambda request: with_authority(request, service.browse_catalog),
         inspect_catalog_relation=lambda request: with_authority(request, service.inspect_catalog_relation),
         diagnose_structured_recall=lambda request: with_authority(request, service.diagnose_structured_recall),
     )
+
+
+CATALOG_READ_TOOL_NAMES = frozenset({
+    "memorii_browse_catalog", "memorii_inspect_catalog_relation", "memorii_diagnose_structured_recall",
+})
+
+
+def catalog_read_tool_schemas() -> list[dict[str, object]]:
+    """Static descriptors; each call still requires current host authority."""
+    browse_schema = {
+        "type": "object", "additionalProperties": False,
+        "properties": {
+            "after_predicate_id": {"type": "string", "minLength": 1, "maxLength": 64,
+                                   "pattern": r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+            "expected_catalog_version_digest": {"type": "string", "pattern": r"^[0-9a-f]{64}$"},
+        },
+        "oneOf": [{"maxProperties": 0}, {"required": ["after_predicate_id", "expected_catalog_version_digest"]}],
+    }
+    recall_schema = StructuredRecallDiagnosisRequest.model_json_schema()
+    recall_schema["type"] = "object"
+    exact = recall_schema["$defs"]["_ExactRecall"]
+    exact["properties"]["expected_catalog_version_digest"] = {
+        "type": "string", "pattern": r"^[0-9a-f]{64}$",
+    }
+    return [
+        {"type": "function", "function": {"name": name, "description": description, "parameters": parameters}}
+        for name, description, parameters in (
+            ("memorii_browse_catalog", "Browse verified catalog relations.", browse_schema),
+            ("memorii_inspect_catalog_relation", "Inspect a catalog relation by ID or name.",
+             {**CatalogRelationInspectionRequest.model_json_schema(), "type": "object"}),
+            ("memorii_diagnose_structured_recall", "Read a relation for a verified subject.",
+             recall_schema),
+        )
+    ]
+
+
+def dispatch_catalog_read(binding: CatalogReadBinding, tool_name: str, arguments: object) -> dict[str, object]:
+    operations = {
+        "memorii_browse_catalog": binding.browse_catalog,
+        "memorii_inspect_catalog_relation": binding.inspect_catalog_relation,
+        "memorii_diagnose_structured_recall": binding.diagnose_structured_recall,
+    }
+    operation = operations.get(tool_name)
+    if operation is None:
+        raise ValueError(f"Unknown catalog read tool {tool_name!r}")
+    return operation(arguments).model_dump(mode="json")

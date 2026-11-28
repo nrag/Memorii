@@ -15,6 +15,7 @@ from pydantic import (
     SerializerFunctionWrapHandler,
     field_validator,
     model_serializer,
+    model_validator,
 )
 
 from memorii.core.semantic_ingestion.catalog_authority import CatalogAuthorityError
@@ -57,6 +58,20 @@ class CatalogRelationInspectionRequest(
     RootModel[Annotated[_PredicateLookup | _NameLookup, Field(discriminator="kind")]]
 ):
     model_config = ConfigDict(frozen=True)
+
+
+class CatalogBrowseRequest(_ClosedReadModel):
+    after_predicate_id: _PredicateId | None = None
+    expected_catalog_version_digest: _Digest | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def paired_cursor(cls, value: object) -> object:
+        if not isinstance(value, dict) or set(value) not in (set(), {"after_predicate_id", "expected_catalog_version_digest"}):
+            raise ValueError("browse cursor and digest must be supplied together")
+        if value and any(item is None for item in value.values()):
+            raise ValueError("browse cursor and digest cannot be null")
+        return value
 
 
 class _ExactRecall(_ClosedReadModel):
@@ -104,6 +119,7 @@ class StructuredRecallDiagnosisRequest(
 
 
 class CatalogReadStatus(StrEnum):
+    LISTED = "listed"
     MATCHED = "matched"
     AMBIGUOUS = "ambiguous"
     NO_MATCH = "no_match"
@@ -201,6 +217,33 @@ class CatalogRelationInspectionResponse(
     @property
     def catalog_version_digest(self) -> str | None:
         return None if isinstance(self.root, _EmptyInspection) else self.root.catalog_version_digest
+
+
+class _ListedCatalog(_ClosedReadModel):
+    status: Literal[CatalogReadStatus.LISTED]
+    catalog_version_digest: _Digest
+    relations: tuple[CatalogRelationDescriptor, ...] = Field(max_length=16)
+    next_after_predicate_id: _PredicateId | None = None
+
+    @model_serializer(mode="wrap")
+    def serialize_page(self, serialize: SerializerFunctionWrapHandler) -> dict[str, object]:
+        result = serialize(self)
+        if self.next_after_predicate_id is None:
+            result.pop("next_after_predicate_id", None)
+        return result
+
+
+class _EmptyBrowse(_ClosedReadModel):
+    status: Literal[CatalogReadStatus.INVALID_REQUEST, CatalogReadStatus.DENIED,
+                    CatalogReadStatus.UNAVAILABLE, CatalogReadStatus.CATALOG_CHANGED]
+
+
+class CatalogBrowseResponse(RootModel[Annotated[_ListedCatalog | _EmptyBrowse, Field(discriminator="status")]]):
+    model_config = ConfigDict(frozen=True)
+
+    @property
+    def status(self) -> CatalogReadStatus:
+        return self.root.status
 
 
 class _FoundRecall(_ClosedReadModel):

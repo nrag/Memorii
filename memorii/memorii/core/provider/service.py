@@ -216,6 +216,7 @@ from memorii.core.semantic_ingestion.catalog_authority import (
 )
 from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedTurnPin
 from memorii.core.semantic_ingestion.catalog_inspection import (
+    CatalogBrowseResponse,
     CatalogRelationInspectionResponse,
     StructuredRecallDiagnosisResponse,
 )
@@ -1706,6 +1707,18 @@ class ProviderMemoryService:
             return self._resolve_ingress(host_ingress)
         except (TypeError, ValueError):
             return None
+
+    def browse_catalog(
+        self, request: object, *, authenticated_host_ingress: AuthenticatedHostIngress | None = None,
+        host_read_request: CatalogReadHostRequest | None = None,
+    ) -> CatalogBrowseResponse:
+        return read_catalog_workflow(
+            request, operation="browse", ingress=self._resolve_catalog_read_ingress(authenticated_host_ingress),
+            host_request=host_read_request, host_authority=self._scoped_read_authority,
+            memory_plane=self._memory_plane, locator=self._catalog_bundle_locator,
+            now_provider=self._now_provider, legacy_verifier=self._semantic_atomic_store,
+            suppression_view=self._catalog_read_suppression_view,
+        )
 
     def inspect_catalog_relation(
         self, request: object, *, authenticated_host_ingress: AuthenticatedHostIngress | None = None,

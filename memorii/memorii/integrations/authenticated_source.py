@@ -14,6 +14,7 @@ from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.models import ProviderOperation, ProviderSyncResult
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.semantic_ingestion.catalog_inspection import (
+    CatalogBrowseResponse,
     CatalogRelationInspectionResponse,
     StructuredRecallDiagnosisResponse,
 )
@@ -29,7 +30,11 @@ from memorii.core.storage_administration.revoked_identity_view import (
     RevokedIdentityServingGate,
 )
 from memorii.domain.enums import SourceModality
-from memorii.integrations.catalog_read_binding import CatalogReadBinding
+from memorii.integrations.catalog_read_binding import (
+    CatalogReadBinding,
+    catalog_read_tool_schemas,
+    dispatch_catalog_read,
+)
 
 
 class AuthenticatedSourceSubmission(BaseModel):
@@ -137,6 +142,19 @@ class AuthenticatedSourceRuntime:
         if self._learned_ontology is None:
             return {"status": "unavailable"}
         return self._learned_ontology.status()
+
+    def get_read_tool_schemas(self) -> list[dict[str, object]]:
+        return catalog_read_tool_schemas() if self._catalog_read is not None and self._catalog_read.configured else []
+
+    def handle_read_tool_call(self, tool_name: str, arguments: object) -> dict[str, object]:
+        if self._catalog_read is None:
+            raise ValueError("Memorii catalog read tools are unavailable")
+        return dispatch_catalog_read(self._catalog_read, tool_name, arguments)
+
+    def browse_catalog(self, request: object) -> CatalogBrowseResponse:
+        if self._catalog_read is None:
+            return CatalogBrowseResponse.model_validate({"status": "unavailable"})
+        return self._catalog_read.browse_catalog(request)
 
     def inspect_catalog_relation(self, request: object) -> CatalogRelationInspectionResponse:
         if self._catalog_read is None:

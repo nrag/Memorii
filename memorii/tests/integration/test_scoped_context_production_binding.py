@@ -237,19 +237,52 @@ def test_installed_catalog_read_workflow_needs_no_key_or_write_tool(tmp_path, mo
 
     def assert_read_workflow(host, memory_plane) -> None:
         before = memory_plane.read_snapshot()
+        assert [schema["function"]["name"] for schema in host.get_read_tool_schemas()] == [
+            "memorii_browse_catalog", "memorii_inspect_catalog_relation", "memorii_diagnose_structured_recall",
+        ]
+        if hasattr(host, "get_tool_schemas"):
+            assert host.get_tool_schemas() == host.get_read_tool_schemas()
+            assert host.handle_tool_call("memorii_browse_catalog", {})["status"] == "listed"
+        from memorii.core.provider import catalog_read_workflow
+
+        request = {}
+        ids = []
+        while True:
+            with monkeypatch.context() as scoped:
+                scoped.setattr(catalog_read_workflow, "read_current_catalog_bound_facts", writer_route_forbidden)
+                page = host.handle_read_tool_call("memorii_browse_catalog", request)
+            assert page["status"] == "listed"
+            assert len(page["relations"]) <= 16
+            ids.extend(row["predicate_id"] for row in page["relations"])
+            if "next_after_predicate_id" not in page:
+                break
+            request = {"after_predicate_id": page["next_after_predicate_id"],
+                       "expected_catalog_version_digest": page["catalog_version_digest"]}
+        assert len(ids) == 56 and ids == sorted(set(ids))
+        assert host.handle_read_tool_call("memorii_browse_catalog", {
+            "after_predicate_id": "not_in_catalog", "expected_catalog_version_digest": "0" * 64,
+        }) == {"status": "catalog_changed"}
+        assert host.handle_read_tool_call("memorii_browse_catalog", {
+            "after_predicate_id": "not_in_catalog", "expected_catalog_version_digest": page["catalog_version_digest"],
+        }) == {"status": "invalid_request"}
+        assert host.handle_read_tool_call("memorii_browse_catalog", {"after_predicate_id": "project_owner"}) == {
+            "status": "invalid_request",
+        }
+        assert host.handle_read_tool_call("memorii_diagnose_structured_recall", {
+            "kind": "unresolved", "reference": "subject",
+        }) == {"status": "needs_clarification"}
         for name, relation in (
             ("bill due date", "obligation_due_on"),
             ("work item due date", "work_item_due_on"),
         ):
-            found_relation = host.inspect_catalog_relation({"kind": "name", "name": name})
-            payload = found_relation.model_dump(mode="json")
+            payload = host.handle_read_tool_call("memorii_inspect_catalog_relation", {"kind": "name", "name": name})
             assert payload["status"] == "matched", payload
             assert [row["predicate_id"] for row in payload["relations"]] == [relation]
             request = {
                 "kind": "exact", "predicate_id": relation, "subject_entity_id": subject_ids[relation],
                 "expected_catalog_version_digest": payload["catalog_version_digest"],
             }
-            result = host.diagnose_structured_recall(request).model_dump(mode="json")
+            result = host.handle_read_tool_call("memorii_diagnose_structured_recall", request)
             assert result["status"] == "found", result
             assert [item["predicate_id"] for item in result["items"]] == [relation]
             assert json.loads(result["items"][0]["object_value"])["value"] == "2026-10-03"
@@ -303,6 +336,14 @@ def test_installed_catalog_read_workflow_needs_no_key_or_write_tool(tmp_path, mo
             assert bridge.inspect_catalog_relation({"kind": "name", "name": "bill due date"}).model_dump(mode="json") == {
                 "status": "denied",
             }
+        def switch_session_after_browse(bundle):
+            declarations = project(bundle)
+            bridge.on_session_switch("session:browse-rotated")
+            return declarations
+
+        with monkeypatch.context() as scoped:
+            scoped.setattr(catalog_read_workflow, "project_catalog_relations", switch_session_after_browse)
+            assert bridge.browse_catalog({}).model_dump(mode="json") == {"status": "denied"}
         assert bridge.inspect_catalog_relation({"kind": "name", "name": "bill due date"}).status == "matched"
 
         def withdraw_after_lookup(bundle):

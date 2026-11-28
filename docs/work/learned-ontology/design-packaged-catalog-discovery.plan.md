@@ -71,7 +71,9 @@ the combined Hermes list preserves the existing write-tool behavior.
 ## Review and handoff
 
 The focused independent reviewer passed the Section 13 delta and installed
-acceptance without approval findings. The reviewed canonical design SHA-256
-is `da3f80598686bf68b1c1db73aee745f981c3e5ead82d1809a845ca35574d6955`.
+acceptance without approval findings. The targeted follow-up verified that
+static advertisement requires operator read opt-in configuration and uses
+the existing Hermes function schema envelope. The reviewed canonical
+design SHA-256 is `408be6aa9a2d263e55a566a7889ce81c3c87b0e007eb9109e2448580aa3d2c45`.
 The existing exact workflows and provider hooks establish the composition
 seams. The implementation packet owns browse dispatch and release proof.

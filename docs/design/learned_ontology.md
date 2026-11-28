@@ -632,7 +632,9 @@ host to display or interpret, never executable instructions.
 An authenticated host exposes three read tools named
 `memorii_browse_catalog`, `memorii_inspect_catalog_relation`, and
 `memorii_diagnose_structured_recall`. Both installed bindings advertise the
-same function schemas when their read binding is composed. A dedicated
+same function schemas when their read binding has operator read opt-in
+configuration. The schema envelope uses `type: function` and a `function`
+object with `name`, `description`, and `parameters`. A dedicated
 read-only tool list requires no active turn. Hermes also includes the
 read tools in its standard list, alongside any eligible captured-turn tools.
 The captured-turn tools retain their separate pin and authorization contract.

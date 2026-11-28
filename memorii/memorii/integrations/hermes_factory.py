@@ -977,6 +977,7 @@ def _build_local_level2_runtime_binding(
         raw_user_id=raw_user_id,
         authenticated=AuthenticatedPrincipalAgent(principal_id=operator_id, agent_id=agent_id),
         current_opt_in=current_catalog_read_opt_in,
+        configured=getattr(context, "catalog_read_opt_in", None) is not None,
         current_session=current_catalog_read_session,
         installation_is_current=catalog_read_installation_is_current,
         issue_ingress=ingress_resolver.issue,
