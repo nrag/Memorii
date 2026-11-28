@@ -120,7 +120,7 @@ interface. Exposing the verified IDs through that interface restored
 exact diagnosis with the same fact fields as the direct protected read.
 No persisted schema changed.
 
-The focused bridge test
+Product and test checkpoint `eec43ead`. The focused bridge test
 `test_learned_replay_of_a_preselection_capture_reopens_jsonl` passed in
 55.62 seconds on Python 3.12.16 with warnings as errors. It uses both
 real Memorii composition roots and the existing optional Hermes ABI
@@ -149,8 +149,12 @@ authority and protected release across both callers.
 `remaining_validated_p1_p2: []` for this read slice. A separate foreign
 account or agent trial, explicit legacy rebase, and direct race evidence
 for a packaged parent change at first selection remain outside the
-new witness. Early parentless overlays stay unavailable through the
-combined workflow and retain their separately authorized legacy recall.
+new witness. The separate
+`test_installed_learned_overlay_preserves_default_entity_relation_lifecycle`
+passed in 127.47 seconds. It rejects a new selection from a parent
+content digest, then verifies that an early parentless overlay remains
+unavailable through the combined workflow after reopen and retains
+authorized direct current and historical reads.
 
 ## Acceptance and verification
 
