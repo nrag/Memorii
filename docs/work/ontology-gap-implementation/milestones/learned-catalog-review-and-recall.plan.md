@@ -1,6 +1,6 @@
 # Review and recall an approved learned catalog
 
-- Order: 2. Status: active recovery slice. Implementation base: `52948673`; broader owner/version design pending.
+- Order: 2. Status: durable result recovery locally verified; owner authorization choice pending. Implementation base: `52948673`; recovery checkpoint `74e70d06`.
 - Requirements: partial OLE-02/04/05/06/07/10/13 and selected learned OCI behavior.
 - Dependencies: packaged discovery, plus approved exact-parent, owner-review and recovery design.
 

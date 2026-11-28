@@ -105,6 +105,12 @@ and inert unavailable/veto/legacy outcomes. These are local tests.
 The parallel version-key and metadata-read work remains outside these
 commits. The durable-result publication slice is locally verified.
 
+On clean pushed `74e70d06`, Python 3.12.16 ran the two targeted installed
+Hermes bridge witnesses with warnings as errors. The no-key isolated
+paired evaluator and learned `mentors` submission paths both passed
+in 141.96 seconds. These results exercise installed factories. They do
+not show that an unrecorded evaluator execution can resume.
+
 ## Next action
 
 Review the exact-parent and evaluator-binding admission for retries of

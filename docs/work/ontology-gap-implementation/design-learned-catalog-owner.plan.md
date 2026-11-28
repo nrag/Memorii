@@ -97,6 +97,76 @@ selection evidence. A failure before the authoritative write retains the
 actual old pointer. A failed post-write refresh exposes the real selected
 attempt and its replay/refresh progress, preserving retry identity.
 
+## Retry of unpublished evaluation work
+
+Result publication and evaluator execution have different recovery
+contracts. A result that was already durably published is finalized from
+those exact bytes. A new execution requires a durable attempt anchor
+binding the existing proposal ID and its immutable parent version to the
+registered evaluator binding, corpus, and budget. Record the anchor before
+calling the executor. A retry reuses the same frozen inputs. The old
+proposal ID stays stable and its frozen evidence does not change. Pre-edit
+v1 proposal records and historical results must remain decodable.
+
+The existing observer-to-recurrence entrypoint revalidates the exact
+scope, retained source evidence and current selected parent before an
+evaluator executes. Propagate unavailable capability state explicitly.
+If the selected version changed, or the binding, corpus, budget, or
+source proof differs or cannot be verified, stop the attempt without
+changing the pointer or facts. A previously unavailable result may
+reenter evaluation under the same verified attempt commitments.
+Pre-existing interrupted rows without enough to prove those commitments
+remain inert. They require a separately authorized new proposal when
+the exact old parent cannot be proved. A terminal or approved proposal
+never starts another execution.
+
+The current admission path can substitute a live learned pointer for the
+observation's version and derive a new proposal ID. Retry must instead
+resolve the existing proposal from its pinned identity and require the
+observed, anchored, and currently authorized version and scope to agree.
+A changed head cannot turn a retry into a new admission. The current
+frozen evaluator binding digest covers the corpus and budget. Expand the
+retry evidence to include the registered execution contract as well.
+For the first retry path, support the provable packaged parent and require
+the isolated evaluator roots to verify that exact parent. An overlay
+without equivalent isolated-runtime proof remains unavailable.
+
+Use a scoped durable attempt claim and generation fence before an executor
+starts. Publication must compare the current generation so a completed
+older run cannot replace a newer attempt. Retain the unavailable
+generation's result as evidence of that attempt. Membership growth in the
+recurrence group cannot rewrite the proposal. Revalidate every original
+evidence reference under current retained ingress and suppression. The
+current observer recovery authorizes one observation at a time and does
+not by itself prove all evidence in the proposal.
+
+The registered execution identity must cover how each isolated store is
+composed, how the verified parent and inert candidate are chosen, and
+which typed proposal, writer and protected reader bindings execute. Freeze
+the versioning and artifact proof before enabling retry. A checked-in
+corpus digest, budget digest, or package version string alone cannot
+identify the executor. A missing executor is retryable only against an
+identity already proven in the durable attempt. An attempt-only sweep
+does not reconstruct work interrupted before any attempt was published.
+
+The provider currently recovers coverage observations before the factory
+attaches the candidate admission callback and isolated evaluator. The
+complete installed retry must reenter eligible groups only after that
+composition barrier, with current retained-source authority, exact parent
+proof, and at most one evaluation attempt per proposal per recovery sweep.
+Exercise interruption before first durable result, same-binding unavailable
+retry, changed binding or parent, revoked evidence, and terminal
+idempotence. Distinguish a durable reopen test from installed startup
+evidence. Neither path may approve, select, or replay a candidate.
+
+A component probe confirmed two distinct executors with the same current
+corpus and budget have the same evaluator binding digest. It also
+confirmed the packaged seed and default catalogs have equal catalog
+digests and distinct version digests. Future preflight must reject both
+binding substitutes. The reviewer identified the startup composition and
+current source-authorization seams. The registered executor identity
+still needs a concrete, reviewed version and artifact rule.
+
 ## Completion and next action
 
 Freeze the chosen authority source and scope-revocation semantics, the
