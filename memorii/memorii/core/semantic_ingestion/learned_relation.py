@@ -224,7 +224,7 @@ class OntologyChangeProposal(BaseModel):
     relation: RelationDeclaration
     evidence: tuple[OntologyEvidenceReference, ...] = Field(min_length=1, max_length=8)
     lifecycle: Literal[
-        "draft", "validating", "validated", "evaluation_unavailable", "evaluated",
+        "draft", "validating", "validated", "evaluating", "evaluation_unavailable", "evaluated",
         "awaiting_decision", "approved_for_activation", "active", "rejected",
         "activation_conflict",
     ] = "draft"
@@ -1029,12 +1029,13 @@ class LearnedRelationRuntime:
                 raise LearnedRelationError("proposal identity collides") from exc
 
     def _replace_proposal(self, old: OntologyChangeProposal, new: OntologyChangeProposal) -> None:
-        # Lifecycle changes receive a fresh identity, so use one stable record key.
-        record = self._proposal_record(new)
-        record = record.model_copy(update={"memory_id": old.proposal_id})
         persisted = self._plane.get_record(old.proposal_id)
-        if persisted is None:
+        predecessor = self._decode_proposal(persisted)
+        if persisted is None or predecessor is None:
             raise LearnedRelationError("proposal is unavailable")
+        if predecessor != old:
+            raise LearnedRelationError("proposal lifecycle conflicted")
+        record = self._proposal_record(new).model_copy(update={"memory_id": old.proposal_id})
         try:
             self._plane.conditionally_write_records((record,), preconditions=(RecordDigestPrecondition(memory_id=old.proposal_id, expected_digest=record_digest(persisted)),))
         except MemoryPlaneRevisionConflictError as exc:

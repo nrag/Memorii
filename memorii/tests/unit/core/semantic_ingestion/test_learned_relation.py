@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from memorii.core.memory_plane.service import MemoryPlaneService
+from memorii.core.memory_plane.store import JsonlMemoryPlaneStore
 from memorii.core.semantic_ingestion.catalog_authority import (
     AuthenticatedPrincipalAgent,
     CatalogAuthorityError,
@@ -238,6 +240,70 @@ def test_registered_evaluator_is_unavailable_before_root_is_bound_or_when_vetoed
     assert vetoed.available
     assert vetoed.scope_or_provenance_failures == 1
     assert vetoed.passes is False
+
+
+def test_restart_can_read_proposal_interrupted_during_evaluation_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "plane"
+    writer = _ReplayWriter()
+    runtime = _runtime(writer, MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
+    proposal = runtime.prepare_candidate(_proposal())
+    replace = runtime._replace_proposal
+
+    def interrupt_after_commit(old: OntologyChangeProposal, new: OntologyChangeProposal) -> None:
+        replace(old, new)
+        if new.lifecycle == "evaluating":
+            raise InterruptedError("evaluation publication interrupted")
+
+    monkeypatch.setattr(runtime, "_replace_proposal", interrupt_after_commit)
+    with pytest.raises(InterruptedError, match="evaluation publication interrupted"):
+        runtime.record_evaluation(proposal_id=proposal.proposal_id, evaluation=_passing_evaluation())
+
+    reopened = _runtime(writer, MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
+    assert reopened._require_proposal(proposal.proposal_id) == proposal.model_copy(
+        update={"lifecycle": "evaluating"},
+    )
+    assert reopened.status(_SCOPE)["candidate_count"] == 1
+    with pytest.raises(LearnedRelationError, match="candidate evaluation has not passed"):
+        reopened.approve_candidate(proposal_id=proposal.proposal_id, principal_id="user:one", agent_id="agent:one")
+    assert writer.calls == []
+
+
+@pytest.mark.parametrize("winner_timing", ("before_predecessor_read", "before_compare_and_swap"))
+def test_stale_proposal_transition_preserves_the_winning_evaluation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, winner_timing: str,
+) -> None:
+    path = tmp_path / "plane"
+    writer = _ReplayWriter()
+    plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path))
+    runtime = _runtime(writer, plane)
+    proposal = runtime.prepare_candidate(_proposal())
+    competitor = _runtime(writer, MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
+
+    def finish_evaluation() -> None:
+        competitor.record_evaluation(proposal_id=proposal.proposal_id, evaluation=_passing_evaluation())
+
+    if winner_timing == "before_predecessor_read":
+        finish_evaluation()
+    else:
+        write = plane.conditionally_write_records
+
+        def commit_winner_first(*args, **kwargs):
+            finish_evaluation()
+            return write(*args, **kwargs)
+
+        monkeypatch.setattr(plane, "conditionally_write_records", commit_winner_first)
+
+    with pytest.raises(LearnedRelationError, match="proposal lifecycle conflicted"):
+        runtime._replace_proposal(proposal, proposal.model_copy(update={"lifecycle": "evaluating"}))
+
+    reopened = _runtime(writer, MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
+    winning_proposal = reopened._require_proposal(proposal.proposal_id)
+    assert winning_proposal == proposal.model_copy(update={
+        "lifecycle": "awaiting_decision", "evaluation": _passing_evaluation(),
+    })
+    assert writer.calls == []
 
 
 def test_recovery_finalizes_both_selection_crash_windows_and_replay_receipts() -> None:

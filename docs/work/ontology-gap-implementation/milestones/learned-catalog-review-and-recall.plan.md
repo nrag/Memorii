@@ -1,6 +1,6 @@
 # Review and recall an approved learned catalog
 
-- Order: 2. Status: queued. Baseline: `80fc5852`; design and candidate head pending.
+- Order: 2. Status: active recovery slice. Implementation base: `52948673`; broader owner/version design pending.
 - Requirements: partial OLE-02/04/05/06/07/10/13 and selected learned OCI behavior.
 - Dependencies: packaged discovery, plus approved exact-parent, owner-review and recovery design.
 
@@ -16,6 +16,10 @@ and explicit rebase protocol. Verify prepublication interruption,
 interrupted publication, evaluator unavailable/retry, and terminal retry
 as distinct cases. Record recovery via the linked debugging design if the
 reproduced defect needs a separate investigation.
+
+The [evaluation recovery WorkPlan](../debug-learned-evaluation-recovery.plan.md)
+owns the targeted proposal-state and retry changes. Owner controls,
+parent proof and learned reads wait for that recovery boundary.
 
 Represent the exact immutable packaged parent and validate the whole
 effective catalog. Old overlays without sufficient evidence are unavailable

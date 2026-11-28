@@ -184,5 +184,5 @@ type-check or CI failure is classified by this planning task.
 
 ## Next action
 
-Open the linked evaluation recovery slice for milestone 2 before widening
-learned catalog selection and recall.
+Execute the [proposal-state recovery slice](debug-learned-evaluation-recovery.plan.md)
+for milestone 2 before widening learned catalog selection and recall.
