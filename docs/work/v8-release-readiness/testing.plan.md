@@ -77,11 +77,36 @@ and reported readiness. The committed archive matched all 1,966 installed
 proof member pins. Local Durable Storage passed 81 tests, and the focused
 operator, backup and recovery verification passed 70 tests after review.
 
-The SDK passed 20 localhost and transport tests, installed tarball proof
+The SDK passed 22 localhost and transport tests, installed tarball proof
 and generated contract parity. Its npm production dependency audit reported
 zero advisories. Python 3.12 advisory scans of the locked reference base and
 resolved provider plus live extras reported no known advisories. These
 results do not cover the OS image package inventories.
+
+The committed `a59d0df6` wheel
+`627ddb61376f9d92f197362ab8e015ae4075b30a13aac9f5ef437ed82933160e`
+passed the installed foreground operator/API rehearsal and six installed
+mode, status and replacement recovery tests outside the checkout. The
+committed `2a9e140b` archive passed all 111 Durable Runtime integration tests
+and the real installed Package Smoke proof, including the independent
+negative package and authority inputs. The local identity and static tooling
+regression passed 181 tests and shard verification collected 5,383 tests.
+
+The `ac10d5a1` candidate was built from an isolated clean checkout. Its
+manifest pins wheel `d7f2803b09a24f7e767f4067bbfe05b4b8dd06228d0adf5914f0f088cdb9b482`,
+Pi archive `7ae578229757805612d54be53489078c125a77642570e24f63a7988804ef1bc8`
+and OpenClaw archive `3111c611a2071ba1974c2d3805fda324ecd3097053a7527bb29cac380258f49f`.
+The unpacked Pi lock audit returned zero findings. The unpacked OpenClaw
+lock audit returned 16 Moderate and zero High or Critical. Both CycloneDX
+dependency inventories were exported from the unpacked archives.
+The exact `ac10d5a1` Linux ARM64 host certification passed both native
+journeys in 232.22 seconds. The wheel digest and all host archive member
+digests matched the installed validation environments before the journeys
+ran. Each used the installed foreground operator console. The approved
+OpenClaw dedicated context engine preserved native history and omitted the
+recall marker after revocation and restart, including after a 17-turn
+sidecar outage. These artifacts are local candidates and carry no release
+signatures or native capacity claims.
 
 ## Next action
 

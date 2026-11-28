@@ -86,6 +86,9 @@ digests before exercise and retains the candidate archives on a passing job.
 Both host journeys now run the installed foreground operator console.
 A test-only loopback relay observes successful signed captures while the
 operator process retains authorization, persistence and response ownership.
+Both exact wheel-and-archive journeys passed for `ac10d5a1` on Linux ARM64.
+The archive pins and exact artifact audit are recorded in the
+[testing WorkPlan](../testing.plan.md).
 
 | Evidence | Pi SHA-256 | OpenClaw SHA-256 |
 | --- | --- | --- |

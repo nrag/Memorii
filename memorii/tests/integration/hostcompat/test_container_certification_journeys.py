@@ -73,7 +73,11 @@ def native_candidate_wheel(tmp_path_factory: pytest.TempPathFactory) -> NativeAr
     wheel_directory.mkdir(parents=True)
     revision = subprocess.check_output(["git", "-C", REPO_ROOT, "rev-parse", "HEAD"], text=True, timeout=30).strip()
     if configured_output:
-        subprocess.run(["git", "-C", REPO_ROOT, "diff", "--quiet", "HEAD"], check=True, timeout=30)
+        status = subprocess.check_output(
+            ["git", "-C", REPO_ROOT, "status", "--porcelain=v1", "--untracked-files=all"], text=True, timeout=30,
+        )
+        if status:
+            pytest.fail("release candidate assets require a clean checkout")
     subprocess.run(
         [sys.executable, "-m", "pip", "wheel", "--no-build-isolation", "--no-deps",
          "--wheel-dir", str(wheel_directory), str(Path(REPO_ROOT) / "memorii")],

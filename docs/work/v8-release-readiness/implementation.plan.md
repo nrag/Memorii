@@ -106,5 +106,5 @@ source-admission tests locally and was pushed as a8dd72b9.
 
 ## Next action
 
-Qualify updated host dependencies while completing operator status and live
-recovery custody, then freeze the release candidate.
+Complete the remaining production custody owner composition before freezing
+the exact release candidate for signed artifacts and native qualification.
