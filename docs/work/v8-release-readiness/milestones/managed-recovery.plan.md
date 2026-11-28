@@ -44,6 +44,14 @@ The 57-test focused suite passed. This slice requires the exact retained
 publication and has an internal entrypoint. Ordinary data-head drift and
 other production authority writers still need closed composition.
 
+The maintenance forget owner retains independent pending authority before
+its suppression write and seals the exact suppression and signed epoch
+effect. The focused proof restarts after the file-only and local control
+cuts, then reconciles one suppression and one journal effect. Legacy direct
+forget and retention deny after custody selection. Nineteen related focused
+tests passed. The active-mode custody composition, erasure and the installed
+replacement bootstrap remain open.
+
 Installed replacement recovery still needs the complete authoritative live
 deny-state writers and codecs, independently configured custody and isolation,
 historical signer rotation, a bounded streaming journal reader, and process

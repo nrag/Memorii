@@ -1920,7 +1920,7 @@
     "memorii/memorii/core/persistence/runtime_repository.py": "9caf27d24812a84c0403482c997620b728a28de58dbfe2943368569e37cc4bd2",
     "memorii/memorii/core/semantic_ingestion/structured_fact_read.py": "e8b911f854549767ee0d673782c4006daa4009eaf6ba52433506d97580381b17",
     "memorii/memorii/core/storage_administration/operator.py": "6ec39b6cb129c3418fea8574b3f603f14dd037222868b75e6499cf6c50871f49",
-    "memorii/memorii/core/storage_administration/operator_governance.py": "04f252328873be5690998f7d436add9370ea2eface771f6160b0460f93e4aeea",
+    "memorii/memorii/core/storage_administration/operator_governance.py": "9d4a85826c2b4e2e4cba600bb612e7660391f359131fbddccfabf1e2a1fa339f",
     "memorii/memorii/core/storage_administration/revoked_identity_view.py": "7106d12c5fc21d9a73294aa784b22a620a5d504c0dc822a98ab1a4afce5cdabb",
     "memorii/memorii/core/storage_administration/service.py": "6005a19204065b5797d10ff86d15759e0b508ea882d7b7f435a1c54fede30f46",
     "memorii/memorii/core/storage_administration/suppression_journal.py": "0c2cb33f207a0029150126ccf0e67e17bf4260fbfa8b475e2434081cf4d8267f",
@@ -1966,7 +1966,8 @@
     "memorii/memorii/core/storage_administration/replacement_restore.py": "ab5b411b6c2cfe02839a6afdfdde20e38f6dc9ef01cdf95e93906bb4f8f98608",
     "memorii/memorii/stores/sqlite/catalog_selection.py": "8528868638e5ef30dbc3b3358f42f331844755195ecb0316728587bee7809b97",
     "memorii/memorii/stores/sqlite/native_receipts.py": "507179c3090ec47f7315db3a2d7030625b1c300e0819efd1dcbe8146029e8634",
-    "memorii/memorii/core/storage_administration/mode_recovery.py": "48707166ad87d17dd4631a30e32bea03cda8227b5fe58541377b3f930381d6e5"
+    "memorii/memorii/core/storage_administration/mode_recovery.py": "48707166ad87d17dd4631a30e32bea03cda8227b5fe58541377b3f930381d6e5",
+    "memorii/memorii/core/storage_administration/suppression_recovery.py": "127173beb780a7b685b9e8fd574c868c9ec101fb34ff676fcb6b04d5ac53fd3d"
   },
   "head": "c62def7f9cf9a0c965bba856002dc8c1dec9ff9f",
   "scope": "offline deployment and target preparation only; no CAS, M5 or whole branch approval"

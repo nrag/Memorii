@@ -27,6 +27,11 @@ from memorii.core.storage_administration.operator import (
     StorageAdministrationOperator,
     require_owner_capability,
 )
+from memorii.core.storage_administration.suppression_journal import (
+    SuppressionCoordinate,
+    SuppressionRecord,
+    suppression_identifier,
+)
 from memorii.stores.sqlite.private_storage import require_private_directory, require_private_sqlite
 
 
@@ -167,6 +172,12 @@ class GovernanceOperator:
     def __init__(self, operator: StorageAdministrationOperator) -> None:
         self._operator = operator
 
+    def _require_unselected_suppression_owner(self) -> None:
+        """Legacy mutations cannot change a registered maintenance snapshot."""
+        service = self._operator._administration
+        if any(entry.operation == "mode_recovery_registered" for entry in service._control.read_journal()):
+            raise OperatorError("unavailable: registered suppression mutations require independent custody")
+
     def plan_forget(
         self,
         *,
@@ -203,11 +214,8 @@ class GovernanceOperator:
     ) -> ForgetReceipt:
         from memorii.core.persistence.contracts import canonical_json_digest
         from memorii.core.storage_administration.suppression_journal import (
-            SuppressionCoordinate,
-            SuppressionRecord,
             find_record_by_plan_digest,
             suppressed_coordinates,
-            suppression_identifier,
             write_suppression_record,
         )
 
@@ -215,6 +223,8 @@ class GovernanceOperator:
         require_owner_capability(service, capability)
 
         control_root = service.installation_root / "control"
+        with service._publication_fence():
+            self._require_unselected_suppression_owner()
 
         # Retry of the same plan reuses the existing suppression identity and
         # performs no second journal or epoch write.
@@ -250,48 +260,14 @@ class GovernanceOperator:
                 " barrier (change mode to read_only first)"
             )
         state = service._control_state()
-        suppression_id = suppression_identifier(
-            installation_id=state.installation_id,
-            plan_digest=plan.plan_digest,
-            closure_digest=plan.closure_digest,
+        record = self._make_suppression_record(
+            plan, capability=capability, installation_id=state.installation_id,
+            already_revoked=already_revoked, journal_position=state.control_revision + 1,
         )
-        newly = tuple(
-            coordinate
-            for coordinate in plan.closure
-            if coordinate not in already_revoked
-        )
-        if not newly:
-            raise OperatorError(
-                "conflict: every plan target is already revoked; nothing to apply"
-            )
-        applied_at_unix = int(time.time())
-        record = SuppressionRecord(
-            suppression_id=suppression_id,
-            plan_digest=plan.plan_digest,
-            closure_digest=plan.closure_digest,
-            authority_capability_digest=capability.capability_digest,
-            scope_note=plan.scope_note,
-            suppressed=tuple(
-                SuppressionCoordinate(
-                    coordinate_kind=cast(
-                        Literal[
-                            "entity", "claim", "source", "record", "task",
-                            "justification",
-                        ],
-                        kind,
-                    ),
-                    coordinate_id=identifier,
-                    record_kind=record_kind or None,
-                )
-                for kind, identifier, record_kind in (
-                    _split_coordinate(coordinate) for coordinate in newly
-                )
-            ),
-            applied_at_unix=applied_at_unix,
-            control_journal_position=state.control_revision + 1,
-        )
+        newly = len(record.suppressed)
         with service._publication_fence():
             require_owner_capability(service, capability)
+            self._require_unselected_suppression_owner()
             if service._require_operational() != state or state.mode != "read_only":
                 raise OperatorError("conflict: control changed before forget could be applied")
             # Record revocation first, while serializing both steps with
@@ -318,19 +294,49 @@ class GovernanceOperator:
                     after_digest=canonical_json_digest(
                         {
                             "revision": state.control_revision + 1,
-                            "suppressed": len(newly),
+                            "suppressed": newly,
                             "pending": state.pending_epoch_increments + 1,
                         }
                     ),
                 ),
             )
         return ForgetReceipt(
-            suppression_id=suppression_id,
-            newly_revoked_count=len(newly),
-            already_revoked_count=len(plan.closure) - len(newly),
+            suppression_id=record.suppression_id,
+            newly_revoked_count=newly,
+            already_revoked_count=len(plan.closure) - newly,
             historical_bytes_retained=True,
             enforcement_publication_pending=True,
-            applied_at_unix=applied_at_unix,
+            applied_at_unix=record.applied_at_unix,
+        )
+
+    @staticmethod
+    def _make_suppression_record(
+        plan: ForgetPlan, *, capability: OwnerCapability, installation_id: str,
+        already_revoked: set[str], journal_position: int,
+    ) -> SuppressionRecord:
+        newly = tuple(coordinate for coordinate in plan.closure if coordinate not in already_revoked)
+        if not newly:
+            raise OperatorError("conflict: every plan target is already revoked; nothing to apply")
+        return SuppressionRecord(
+            suppression_id=suppression_identifier(
+                installation_id=installation_id, plan_digest=plan.plan_digest, closure_digest=plan.closure_digest,
+            ),
+            plan_digest=plan.plan_digest,
+            closure_digest=plan.closure_digest,
+            authority_capability_digest=capability.capability_digest,
+            scope_note=plan.scope_note,
+            suppressed=tuple(
+                SuppressionCoordinate(
+                    coordinate_kind=cast(
+                        Literal["entity", "claim", "source", "record", "task", "justification"], kind,
+                    ),
+                    coordinate_id=identifier,
+                    record_kind=record_kind or None,
+                )
+                for kind, identifier, record_kind in (_split_coordinate(coordinate) for coordinate in newly)
+            ),
+            applied_at_unix=int(time.time()),
+            control_journal_position=journal_position,
         )
 
     def enforce_forget(
@@ -1014,6 +1020,7 @@ class GovernanceOperator:
         archived = 0
         with service._publication_fence():
             require_owner_capability(service, capability)
+            self._require_unselected_suppression_owner()
             for name in plan.eligible_suppression_journals:
                 path = suppression / name
                 if not path.is_file():
