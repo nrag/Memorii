@@ -45,10 +45,12 @@ proposal and that checking host authority only at admission missed
 withdrawal before the write. The implementation makes preparation an
 atomic insert and retries a validated proposal on renewed eligible
 submission. The write callback verifies host authority at transaction
-admission. The reviewer confirmed the remediation. Managed enrollment
-still needs a workspace-scoped issuance and withdrawal witness from
-trusted deployment setup. Existing source and task enrollment
-receipts do not confer this authority.
+admission. The reviewer confirmed the remediation. The managed
+provisioning contract can be implemented and verified in Memorii with
+a trusted reference host and two workspace partitions. Production
+qualification follows when Virtual Employee implements the enrollment
+verifier and lifecycle delivery. Source and task enrollment receipts
+do not confer this authority.
 
 Represent the exact immutable packaged parent and validate the whole
 effective catalog. Old overlays without sufficient evidence are unavailable

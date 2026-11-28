@@ -252,6 +252,24 @@ the principal, and the exact agent catalog. Workspace disablement,
 agent removal, or authority withdrawal stops future selection. Enrollment
 supplies no other fact, catalog-read, provider or egress grant.
 
+Memorii owns the managed provisioning contract. The host supplies a current,
+verified enrollment decision from its trusted control plane for one
+workspace partition, principal and agent. The decision carries a monotonic
+enrollment revision for that coordinate and the desired state. Eligibility
+enables learning by default. Workspace policy, agent removal or authority
+withdrawal can set the decision to paused. Only trusted deployment setup can
+bind the verifier to the workspace memory plane. Transcript ingress and
+agent tools have no provisioning authority.
+
+Memorii applies the decision to its standing grant in the same partition
+used for catalog mutations. Exact retries return the existing result.
+Older decisions and conflicting decisions at the same revision are
+refused. The host retries delivery until Memorii acknowledges a durable
+decision. Withdrawal takes effect in Memorii at that commit, which
+serializes with catalog mutations. A missing or unverifiable decision
+confers no new authority. A managed runtime that cannot verify its binding
+fails closed for catalog management.
+
 Enablement supports unattended observation, proposal and paired
 evaluation. An applicable automatic policy decides only after all
 independent recurrence, evaluation, veto and calibration requirements in

@@ -86,11 +86,47 @@ read grants still govern serving historical data.
 
 Start with local operator enablement and the core authority fence.
 Exercise the installed local prompt-free workflow and ordinary denial
-before expanding metadata and rebase. For VE the trusted provisioner
-must supply a verified workspace/agent coordinate and separate issue
-and revocation proof, as defined by the generic host integration. Keep
-the local operator path out of VE. Use a production-shaped verified
-host enrollment witness before claiming VE activation.
+before expanding metadata and rebase.
+
+### Managed host provisioning contract
+
+Memorii owns the generic provisioning port and its durable reconciliation.
+Trusted host composition injects a verifier and an already bound memory
+plane. The verifier resolves enrollment to one exact workspace partition,
+principal and agent, then returns a typed decision with the desired
+`enabled` or `paused` state and a monotonic per-coordinate enrollment
+revision. A later re-enrollment of the same coordinate must carry a newer
+revision. Compose the provisioning port in the deployment control path.
+Keep source receipts, task receipts, transcripts and agent-facing tools
+outside that path.
+
+On authorized enrollment, the host submits `enabled` by default unless
+workspace policy disables it. Policy disablement, agent removal and
+authority withdrawal submit `paused` for the same coordinate. The host
+retains the pending lifecycle operation and retries until Memorii confirms
+the durable result. The runtime refuses to manage the catalog if its
+trusted workspace binding cannot be verified. An invalid or absent
+enrollment decision cannot create or replace a grant.
+
+Memorii checks the verifier's coordinate against the bound workspace plane
+and applies the decision with CAS to the shared grant record. An exact
+retry returns the applied state and generation. An older revision or a
+different state at the same revision is refused. Each accepted newer
+revision advances the grant generation, even when the desired state is
+unchanged. Acknowledged withdrawal fences catalog mutations and invalidates
+prepared selections from older generations. A commit that wins the same
+store fence before withdrawal remains part of catalog history. The host
+does not report withdrawal complete until it receives acknowledgment.
+
+Memorii can implement and verify the contract with a production-shaped
+reference host that controls two workspace partitions. Cover enrollment
+by default, policy disabled at enrollment, retry after a lost
+acknowledgment, stale enable after withdrawal, identical agent IDs in two
+workspaces, invalid proof, and withdrawal before a selection write. Run
+the journey without a model key. VE implements its enrollment verifier
+and lifecycle calls when it wires its deployment. Reserve deployed VE
+qualification for that hookup. Memorii's contract and reference-host
+acceptance can proceed independently.
 
 ### First local operator checkpoint
 
@@ -265,5 +301,5 @@ superseded grant. The local host profile is validated at transaction
 admission. The explicit catalog pause operation is the durable revocation
 that serializes with catalog mutations.
 
-Verify the workspace-scoped enrollment authority before wiring managed
-enablement to these same mutation and recovery rules.
+Implement the managed provisioning port with a trusted reference host
+and verify it through the same mutation and recovery rules.

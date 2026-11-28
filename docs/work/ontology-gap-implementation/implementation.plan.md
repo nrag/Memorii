@@ -184,7 +184,7 @@ type-check or CI failure is classified by this planning task.
 
 ## Next action
 
-Verify the catalog grant issuance contract with the Virtual Employee
-workspace enrollment owner in milestone 2. Use the existing protected
-workspace partition and current agent binding. A generic source receipt
-by itself supplies no enrollment authority.
+Implement and verify the managed catalog provisioning port against a
+trusted reference host in milestone 2. Memorii owns the contract.
+Connecting Virtual Employee's production enrollment is separate
+deployment evidence and does not block the Memorii implementation.
