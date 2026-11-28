@@ -3,7 +3,7 @@
 - Work ID: ontology-read-workflow
 - Work type: implementation
 - Delivery fidelity: Level 2, for manual testing with real local host bindings, ordinary failures and scope protection
-- Status: active (v8 acceptance and PR verification)
+- Status: complete (Level 2)
 - Coordinator: main Codex task
 - Created: 2026-11-27
 - Last updated: 2026-11-27
@@ -50,9 +50,9 @@ exhaustive adversarial matrices and operational certification remain Level 3.
 
 ## Current State and Baseline
 
-**4/4 requirements implemented and locally verified. 0/1 milestones closed.**
-The managed-host workflow and local Package Smoke passed on the corrected
-candidate. Hosted gate evidence remains in progress. The prior
+**4/4 requirements verified at Level 2. 1/1 milestone closed.**
+The end-to-end host workflow, Package Smoke and all PR gates passed for
+`524fd8c6` on the shared v8 branch. The prior
 review froze design bytes at code base `9d661a3b`. Initial planning inspected
 `7c6a3a94a135ffc75dec9761595b337c0f4b7de5`, which advances new partitions
 to raw payload storage v8. The review baseline adds publication recovery and
@@ -146,9 +146,9 @@ the partition transaction. Inspection never invokes this sampling path.
 
 | Order | Checkpoint and observable result | Evidence maturity when passed |
 | --- | --- | --- |
-| 1 | Land a walking path through the packaged factory: operator read opt-in on provisioned default storage, inspect `bill due date`, pass the selected version and canonical bill ID to recall, get an authorized date and an empty case with no credentials. Scope, grants, protected release and side effect protections apply from the first path. | Implemented and locally verified for this path only; OCI-01 through OCI-04 remain incomplete at the parent. |
-| 2 | Bind the generic factory to the same core. Exercise both with `project owner` ambiguity, bill and work-item dates, authorized symmetric recall and distinct found/no-match/unsupported/clarification/error outcomes. Complete the full descriptor inventories and ordinary failure paths. | Locally verified on both real roots, pending complete proof set. |
-| 3 | Close version handoff, visibility/temporal/suppression, legacy preservation, and read-only witnesses. Run applicable gates once for the coherent candidate and get focused review. Update current-state docs from observed evidence. | Level 2 readiness after all criteria pass. CI-enforced and operational evidence are tracked separately. |
+| 1 | Land a walking path through the packaged factory: operator read opt-in on provisioned default storage, inspect `bill due date`, pass the selected version and canonical bill ID to recall, get an authorized date and an empty case with no credentials. Scope, grants, protected release and side effect protections apply from the first path. | Complete. The local and hosted managed-v8 journey passed. |
+| 2 | Bind the generic factory to the same core. Exercise both with `project owner` ambiguity, bill and work-item dates, authorized symmetric recall and distinct found/no-match/unsupported/clarification/error outcomes. Complete the full descriptor inventories and ordinary failure paths. | Complete. Both host roots and both catalog inventories passed. |
+| 3 | Close version handoff, visibility/temporal/suppression, legacy preservation, and read-only witnesses. Run applicable gates once for the coherent candidate and get focused review. Update current-state docs from observed evidence. | Complete at Level 2. The scoped reviews and hosted gates passed. |
 
 Do not start a second milestone for the two ports. Update the checkpoint
 result, requirement ledger, changed surfaces and sole next action after
@@ -576,16 +576,55 @@ Integration job passed all 146 cases in 615.20 seconds. With setup and
 cleanup, it took 12 minutes 32 seconds against a final cap of 15 minutes.
 The same head passed Benchmark Contracts and CodeQL.
 
-No unresolved approved-design choice. All Level 2 acceptance witnesses
-have local verification. Milestone closure requires current GitHub
-results, including all applicable unit shards and the timing aggregate.
-The baseline lint and type failures are resolved.
+The measured timing budget and reconciled gate contract were pushed at
+`524fd8c6`. [PR Gates run 46083808916](https://github.com/nrag/Memorii/actions/runs/46083808916)
+is the successful hosted acceptance run. Scoped Context Integration passed
+all 146 tests in 486.74 seconds and completed the full job in 10 minutes
+under the 15-minute cap. Static Analysis, Package Smoke, Durable Storage,
+Benchmark Contracts and CodeQL passed on the same PR head.
+All six unit shards, Unit Timing Inventory, Host Container Certification,
+Unit Tests and Semantic Ingestion passed. All 60 jobs in PR Gates completed
+successfully. [PR #126](https://github.com/nrag/Memorii/pull/126) reported 64
+passing checks including the CodeQL rollup and analyses.
 
-## Next Action
+## Closure Evidence
 
-Reconcile the current GitHub gate results before milestone closure.
+The tested PR head and GitHub merge checkout resolved to the same Git
+tree. The selected-level review covers the ontology workflow and the
+bounded gate fixes. Local macOS and offline Linux checks are recorded
+above. Hosted jobs establish the runner-specific results.
+
+```yaml
+base_revision: 885c7db7ad8bba1aa0dd7d88c8f162d26c3bed0d
+reviewed_revision: 524fd8c6029322b31f95f08ee2f078cbf92e34a4
+tested_revision: 5386369702013cd0d859be33331227fe39624fbd
+tested_tree_digest: "git-tree:3811da64415fb5398ab2f57a77e6005d3867f8a0"
+tree_state: clean_github_merge_checkout
+changed_surface_inventory_complete: true
+scope_delta_resolved: true
+authority_chains_complete: true
+required_local_jobs: [static_analysis, focused_ontology, gate_regressions, package_smoke, sdk]
+passed_local_jobs: [static_analysis, focused_ontology, gate_regressions, package_smoke, sdk]
+known_local_failures: []
+failure_exclusions: []
+workflow_identities: ["PR Gates sha256:260432d67b83cfb1ccc37c0ee6c88438a778380e00d41683b8ac1e215f0d3935", "CodeQL check rollup on PR #126"]
+ci_event: pull_request
+ci_executed_sha: 5386369702013cd0d859be33331227fe39624fbd
+ci_executed_ref: refs/pull/126/merge
+remaining_validated_p1_p2: []
+remaining_blocks_approval: []
+remaining_changes_required: []
+local_ci_parity: "Hosted Python 3.11 and 3.12 jobs provide runner evidence beyond the local environments"
+acceptance_gate_inventory: [Scoped Context Integration, Static Analysis, Package Smoke, Durable Storage Integration, Durable Runtime Integration, Host Container Certification, Unit Test Shards 0-5, Unit Timing Inventory, Unit Tests, Semantic Ingestion, Benchmark Contracts, CodeQL]
+github_run_urls: ["https://github.com/nrag/Memorii/actions/runs/46083808916", "https://github.com/nrag/Memorii/pull/126/checks"]
+pr_head_sha: 524fd8c6029322b31f95f08ee2f078cbf92e34a4
+pr_base_sha: 885c7db7ad8bba1aa0dd7d88c8f162d26c3bed0d
+merge_base_sha: 885c7db7ad8bba1aa0dd7d88c8f162d26c3bed0d
+required_checks_green: true
+```
 
 ## Outcome and Retrospective
 
-Both host bindings are implemented and the Level 2 end-to-end workflows
-passed locally. The milestone remains open until the hosted gates finish.
+Both host bindings passed the Level 2 workflow. The ontology milestone
+is closed on the shared v8 release branch. This closure records the
+ontology workflow and its integration gates at the tested revision.

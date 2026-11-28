@@ -1,10 +1,12 @@
 # Fit the scoped-context gate to the installed journey
 
+- Work ID: scoped-context-ci-budget
 - Work type: testing
 - Delivery fidelity: Level 2
-- Status: active
+- Status: complete (Level 2)
 - Coordinator: Codex
 - Parent WorkPlan: [ontology read workflow](implementation.plan.md)
+- Created: 2026-11-27
 - Last updated: 2026-11-27
 
 The installed workflow in the 146-case Scoped Context Integration gate
@@ -30,7 +32,11 @@ The updated timing ledger and workflow-structure checks passed locally.
 Independent review confirmed unchanged test selection, warning handling
 and aggregation.
 
-## Next action
+## Hosted result
 
-Confirm the hosted job completes under the new budget and record the
-GitHub run and executed revision.
+[PR Gates run 46083808916](https://github.com/nrag/Memorii/actions/runs/46083808916/job/140788634761)
+passed 146 scoped-context tests in 486.74 seconds with the 15-minute cap.
+The complete job took 10 minutes. PR head `524fd8c6` was tested on
+`refs/pull/126/merge` at `5386369702013cd0d859be33331227fe39624fbd`
+against main `885c7db7`. Package Smoke and Static Analysis passed in the
+same workflow. The parent plan tracks the rest of the PR gate results.
