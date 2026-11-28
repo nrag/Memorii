@@ -1,6 +1,6 @@
 # Review and recall an approved learned catalog
 
-- Order: 2. Status: durable result recovery, standing consent, managed reference-host provisioning, and the exact-parent installed read slice locally verified. Owner review, explicit rebase and remaining scope acceptance are open. Recovery checkpoint `74e70d06`. Local consent checkpoint `fecd58d4`.
+- Order: 2. Status: durable result recovery, standing consent, managed reference-host provisioning, owner review, explicit rebase and installed read scopes locally verified. Unavailable evaluation retry and hosted gates remain open. Recovery checkpoint `74e70d06`. Local consent checkpoint `fecd58d4`.
 - Requirements: partial OLE-02/04/05/06/07/10/13 and selected learned OCI behavior.
 - Dependencies: packaged discovery, plus approved exact-parent, owner-review and recovery design.
 
@@ -220,6 +220,17 @@ works already. Retrying unavailable isolated execution requires
 persisting and revalidating the exact registered executor, parent,
 corpus and budget. Keep this M2 criterion open and leave calibrated
 automatic promotion deferred as designed.
+
+Product checkpoint `5f6aae55`. The durable no-key JSONL journey
+reconstructed a provable parentless overlay, recorded eight fresh paired
+cases, selected a new version after explicit approval and confirmed the
+original version and claim records were byte-equivalent after selection.
+Rollback and reopen retained protected learned recall across both
+bindings. The binding denial initially surfaced the exact scope error
+instead of the generic owner error expected by the fixture. A focused
+reopen of those same persisted records verified both peer read and owner
+denials and both foreign-account startup refusals. The test now asserts
+the exact scope error.
 
 ## Acceptance and verification
 

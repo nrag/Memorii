@@ -76,7 +76,7 @@ the push range before publication.
 | Order | Packet | Observable completion | Status |
 | --- | --- | --- | --- |
 | 1 | [Packaged catalog discovery](milestones/packaged-catalog-discovery.plan.md) | Both installed bindings expose discover/clarify/recall without a key, starting with a bill due date. | Complete for Level 2. Hosted scoped context, static analysis and Package Smoke passed. |
-| 2 | [Learned catalog review and recall](milestones/learned-catalog-review-and-recall.plan.md) | Standing catalog management, evaluation recovery, and protected recall of a selected exact-parent `mentors` version. | Owner review, terminal rejection and refresh recovery verified. Installed rebase and scope witnesses are in verification. Exact-binding retry of unavailable evaluation and hosted gates remain open. |
+| 2 | [Learned catalog review and recall](milestones/learned-catalog-review-and-recall.plan.md) | Standing catalog management, evaluation recovery, and protected recall of a selected exact-parent `mentors` version. | Owner review, terminal rejection, refresh recovery, explicit rebase and local scope witnesses verified. Exact-binding retry of unavailable evaluation and hosted gates remain open. |
 | 3 | [Verified recurring gap](milestones/verified-recurring-gap.plan.md) | Two adapters yield one durable, scoped, explainable gap from independent evidence. | Queued behind 2 |
 | 4 | [Grounded relation creation](milestones/grounded-relation-creation.plan.md) | Observed and manual paths exercise a different relation through paired evaluation, owner selection and protected use. | Queued behind 3 |
 | 5 | [Learned entity subtype](milestones/learned-entity-subtype.plan.md) | An independently evidenced subtype is approved and usable with inherited capabilities. | Queued behind 4 |
@@ -93,7 +93,7 @@ recall boundary.
 | OLE-01 | 3, 4, 5 | Observation, admission, installed host | Disabled observer pending and preselection zero facts | not started |
 | OLE-02 | 2, 3, 4, 5 | Current grants and lineage | Exact child read grant enforced across both installed bindings. Broader lineage and scope evidence remain open. | in progress |
 | OLE-03 | 4, 5 | Closed edits and catalog/type registry | Separate typed edit paths | not started |
-| OLE-04 | 2, 4, 5 | Review, evaluation and selection | Exact parent selection and rollback verified. Owner review and explicit rebase remain open. | in progress |
+| OLE-04 | 2, 4, 5 | Review, evaluation and selection | Owner review, terminal rejection, exact-parent rebase and rollback verified. Unavailable evaluation retry and broader edits remain open. | in progress |
 | OLE-05 | 2, 4, 5 | Selected catalog and protected read/write | Both installed bindings verify the historical learned fact after rollback. Generic structured admission separately tracked. | in progress |
 | OLE-06 | 2, 4, 5 | Ordinary replay writer | Replay receipt and fact survive reopen; remaining edit families stay open. | in progress |
 | OLE-07 | 2, 3 | Recovery and scoped status | Durable evaluation publication recovery verified; broader recovery and status acceptance remain open. | in progress |
@@ -184,5 +184,5 @@ type-check or CI failure is classified by this planning task.
 
 ## Next action
 
-Finish verification of the frozen installed rebase and scope witness
-on both local bindings and record the applicable gate evidence.
+Bind and verify the durable exact-executor retry for an unavailable
+paired evaluation in milestone 2.

@@ -1805,7 +1805,7 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
     try:
         verify_scope_denials(peer_hermes)
         assert peer_hermes.inspect_catalog_relation({"kind": "name", "name": "mentors"}).status == "denied"
-        with pytest.raises(LearnedRelationError, match="owner authorization"):
+        with pytest.raises(LearnedRelationError, match="outside the installed binding"):
             peer_hermes.review_learned_candidate(rebased.proposal_id)
     finally:
         peer_hermes.shutdown()
@@ -1816,7 +1816,7 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
     try:
         verify_scope_denials(peer_generic)
         assert peer_generic.inspect_catalog_relation({"kind": "name", "name": "mentors"}).status == "denied"
-        with pytest.raises(LearnedRelationError, match="owner authorization"):
+        with pytest.raises(LearnedRelationError, match="outside the installed binding"):
             peer_generic.approve_learned_candidate(rebased.proposal_id)
     finally:
         peer_generic.close()
