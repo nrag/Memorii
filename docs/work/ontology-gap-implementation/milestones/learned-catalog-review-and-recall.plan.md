@@ -20,6 +20,8 @@ reproduced defect needs a separate investigation.
 The [evaluation recovery WorkPlan](../debug-learned-evaluation-recovery.plan.md)
 owns the targeted proposal-state and retry changes. Owner controls,
 parent proof and learned reads wait for that recovery boundary.
+The [owner and learned-read design](../design-learned-catalog-owner.plan.md)
+tracks the separate catalog-management authority decision.
 
 Represent the exact immutable packaged parent and validate the whole
 effective catalog. Old overlays without sufficient evidence are unavailable

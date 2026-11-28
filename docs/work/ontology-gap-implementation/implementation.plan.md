@@ -76,7 +76,7 @@ the push range before publication.
 | Order | Packet | Observable completion | Status |
 | --- | --- | --- | --- |
 | 1 | [Packaged catalog discovery](milestones/packaged-catalog-discovery.plan.md) | Both installed bindings expose discover/clarify/recall without a key, starting with a bill due date. | Complete for Level 2. Hosted scoped context, static analysis and Package Smoke passed. |
-| 2 | [Learned catalog review and recall](milestones/learned-catalog-review-and-recall.plan.md) | Owner decision and retry work. A selected exact-parent `mentors` version is inspectable and readable. | Active design readiness |
+| 2 | [Learned catalog review and recall](milestones/learned-catalog-review-and-recall.plan.md) | Owner decision and retry work. A selected exact-parent `mentors` version is inspectable and readable. | Durable-result recovery locally verified. Owner authorization decision pending. |
 | 3 | [Verified recurring gap](milestones/verified-recurring-gap.plan.md) | Two adapters yield one durable, scoped, explainable gap from independent evidence. | Queued behind 2 |
 | 4 | [Grounded relation creation](milestones/grounded-relation-creation.plan.md) | Observed and manual paths exercise a different relation through paired evaluation, owner selection and protected use. | Queued behind 3 |
 | 5 | [Learned entity subtype](milestones/learned-entity-subtype.plan.md) | An independently evidenced subtype is approved and usable with inherited capabilities. | Queued behind 4 |
@@ -184,5 +184,5 @@ type-check or CI failure is classified by this planning task.
 
 ## Next action
 
-Execute the [proposal-state recovery slice](debug-learned-evaluation-recovery.plan.md)
-for milestone 2 before widening learned catalog selection and recall.
+Resolve the owner authorization source and review the exact-parent,
+binding-pinned retry and learned-read design for milestone 2.

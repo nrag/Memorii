@@ -61,6 +61,7 @@ _KIND_VERSION = "learned_ontology_catalog_version_v1"
 _KIND_POINTER = "learned_ontology_catalog_pointer_v1"
 _KIND_ATTEMPT = "learned_ontology_activation_attempt_v1"
 _KIND_REPLAY = "learned_ontology_replay_operation_v1"
+_EVALUATION_DECISION_STATES = ("awaiting_decision", "approved_for_activation", "active", "rejected", "activation_conflict")
 
 
 def _digest(domain: bytes, value: object) -> str:
@@ -76,6 +77,10 @@ def _digest(domain: bytes, value: object) -> str:
 
 class LearnedRelationError(ValueError):
     """The closed learned-relation protocol rejected a request."""
+
+
+class _ProposalLifecycleConflict(LearnedRelationError):
+    """The durable proposal no longer matches the transition predecessor."""
 
 
 def validate_mentors_tool_proposal(proposal: object, *, arguments: dict[str, object]) -> None:
@@ -689,24 +694,62 @@ class LearnedRelationRuntime:
         return validated
 
     def record_evaluation(self, *, proposal_id: str, evaluation: PairedEvaluation) -> OntologyChangeProposal:
+        evaluation = PairedEvaluation.model_validate(evaluation.model_dump())
         proposal = self._require_proposal(proposal_id)
+        if proposal.evaluation is not None:
+            if proposal.lifecycle in {"draft", "validating", "validated"}:
+                raise LearnedRelationError("proposal is not awaiting evaluation")
+            if proposal.evaluation != evaluation:
+                raise LearnedRelationError("paired evaluation differs from the published result")
+            return self._finish_evaluation_publication(proposal)
         if proposal.lifecycle != "validated":
             raise LearnedRelationError("proposal is not awaiting evaluation")
-        evaluating = proposal.model_copy(update={"lifecycle": "evaluating"})
-        self._replace_proposal(proposal, evaluating)
+        evaluating = proposal.model_copy(update={"lifecycle": "evaluating", "evaluation": evaluation})
+        outcome = self._evaluation_outcome_lifecycle(evaluation)
+        successors = (outcome, *_EVALUATION_DECISION_STATES) if outcome == "evaluated" else (outcome,)
+        evaluating = self._publish_evaluation_transition(proposal, evaluating, successors=successors)
+        return self._finish_evaluation_publication(evaluating)
+
+    def _finish_evaluation_publication(self, proposal: OntologyChangeProposal) -> OntologyChangeProposal:
+        evaluation = proposal.evaluation
+        if evaluation is None:
+            # Early evaluating rows contain no result to finalize.
+            return proposal
+        if proposal.lifecycle == "evaluating":
+            outcome = self._evaluation_outcome_lifecycle(evaluation)
+            completed = proposal.model_copy(update={"lifecycle": outcome})
+            proposal = self._publish_evaluation_transition(
+                proposal, completed, successors=_EVALUATION_DECISION_STATES if outcome == "evaluated" else (),
+            )
+        if proposal.lifecycle == "evaluated":
+            if not evaluation.passes:
+                raise LearnedRelationError("candidate evaluation has not passed")
+            awaiting = proposal.model_copy(update={"lifecycle": "awaiting_decision"})
+            return self._publish_evaluation_transition(proposal, awaiting, successors=_EVALUATION_DECISION_STATES[1:])
+        return proposal
+
+    @staticmethod
+    def _evaluation_outcome_lifecycle(
+        evaluation: PairedEvaluation,
+    ) -> Literal["evaluation_unavailable", "evaluated", "rejected"]:
         if not evaluation.available:
-            lifecycle = "evaluation_unavailable"
-        elif evaluation.passes:
-            lifecycle = "evaluated"
-        else:
-            lifecycle = "rejected"
-        updated = evaluating.model_copy(update={"lifecycle": lifecycle, "evaluation": evaluation})
-        self._replace_proposal(evaluating, updated)
-        if lifecycle != "evaluated":
-            return updated
-        awaiting = updated.model_copy(update={"lifecycle": "awaiting_decision"})
-        self._replace_proposal(updated, awaiting)
-        return awaiting
+            return "evaluation_unavailable"
+        return "evaluated" if evaluation.passes else "rejected"
+
+    def _publish_evaluation_transition(
+        self, old: OntologyChangeProposal, new: OntologyChangeProposal, *, successors: tuple[str, ...],
+    ) -> OntologyChangeProposal:
+        try:
+            self._replace_proposal(old, new)
+        except _ProposalLifecycleConflict:
+            winner = self._require_proposal(old.proposal_id)
+            if (
+                winner.lifecycle not in (new.lifecycle, *successors)
+                or winner.model_copy(update={"lifecycle": new.lifecycle}) != new
+            ):
+                raise
+            return winner
+        return new
 
     def approve_candidate(self, *, proposal_id: str, principal_id: str, agent_id: str) -> OntologyChangeProposal:
         proposal = self._require_proposal(proposal_id)
@@ -816,13 +859,26 @@ class LearnedRelationRuntime:
         }
 
     def recover(self, scope: AgentLocalCatalogScope) -> None:
-        """Finish one interrupted selection and retry selected catalog replay.
+        """Finish published evaluations and interrupted selection for one scope.
 
-        Recovery reads only immutable control records.  A prepared attempt is
-        never treated as selected until its pointer CAS succeeds; a pointer
-        that already names the attempt is sufficient to finalize its durable
-        selected projection after a crash.
+        A durable evaluation can finish publication without executing inference.
+        A prepared selection must win its pointer CAS before becoming selected.
+        If the pointer already names the attempt, finalize selection and retry
+        its ordinary replay.
         """
+        for record in self._plane.list_records(source_kind=_KIND_PROPOSAL):
+            proposal = self._decode_proposal(record)
+            if (
+                proposal is not None
+                and proposal.proposal_id == record.memory_id
+                and proposal.catalog_scope == scope
+                and proposal.lifecycle in {"evaluating", "evaluated"}
+                and record.domain == MemoryDomain.EXECUTION
+                and record.status == CommitStatus.COMMITTED
+                and record.visibility == MemoryRecordVisibility.INTERNAL_CONTROL
+            ):
+                self._finish_evaluation_publication(proposal)
+
         attempts = []
         for record in self._plane.list_records(source_kind=_KIND_ATTEMPT):
             try:
@@ -1034,12 +1090,12 @@ class LearnedRelationRuntime:
         if persisted is None or predecessor is None:
             raise LearnedRelationError("proposal is unavailable")
         if predecessor != old:
-            raise LearnedRelationError("proposal lifecycle conflicted")
+            raise _ProposalLifecycleConflict("proposal lifecycle conflicted")
         record = self._proposal_record(new).model_copy(update={"memory_id": old.proposal_id})
         try:
             self._plane.conditionally_write_records((record,), preconditions=(RecordDigestPrecondition(memory_id=old.proposal_id, expected_digest=record_digest(persisted)),))
         except MemoryPlaneRevisionConflictError as exc:
-            raise LearnedRelationError("proposal lifecycle conflicted") from exc
+            raise _ProposalLifecycleConflict("proposal lifecycle conflicted") from exc
 
     def _write_version(self, item: OntologyCatalogVersion) -> None:
         record = self._version_record(item)
@@ -1202,7 +1258,7 @@ class LearnedRelationCandidateService:
                 or existing.proposal_digest != proposal.proposal_digest
             ):
                 raise LearnedRelationError("proposal identity collides")
-            return existing
+            return self._runtime._finish_evaluation_publication(existing)
         try:
             prepared = self._runtime.prepare_candidate(proposal)
         except (LearnedRelationError, MemoryPlaneRevisionConflictError):
@@ -1216,7 +1272,7 @@ class LearnedRelationCandidateService:
             ):
                 raise LearnedRelationError("proposal identity collides") from None
             if prepared.lifecycle != "validated":
-                return prepared
+                return self._runtime._finish_evaluation_publication(prepared)
         if self._evaluator is None:
             return self._runtime.record_evaluation(
                 proposal_id=prepared.proposal_id,

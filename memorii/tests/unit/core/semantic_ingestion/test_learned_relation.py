@@ -4,11 +4,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from memorii.core.memory_evolution.admission import source_admission_source_digest
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import JsonlMemoryPlaneStore
 from memorii.core.semantic_ingestion.catalog_authority import (
     AuthenticatedPrincipalAgent,
     CatalogAuthorityError,
+    CatalogAuthorityScope,
 )
 from memorii.core.semantic_ingestion.catalog_capture_pin import (
     CatalogCapturedTurnPin,
@@ -19,6 +22,23 @@ from memorii.core.semantic_ingestion.contracts import (
     ProviderFact,
     ProviderMention,
     ProviderSemanticProposal,
+)
+from memorii.core.semantic_ingestion.coverage_observation import (
+    CoverageObservationRepository,
+    CoverageSemanticOutcome,
+    CoverageSourceSpan,
+    ObserverBindingIdentity,
+    classify_coverage_observation,
+    new_coverage_observation,
+    start_coverage_observation,
+)
+from memorii.core.semantic_ingestion.coverage_recurrence import (
+    CoverageRecurrenceRepository,
+    RelationGapSignature,
+    VerifiedCoverageGap,
+    VerifiedCoverageGapRepository,
+    build_coverage_recurrence_group,
+    recurrence_owner_scope_digest,
 )
 from memorii.core.semantic_ingestion.hermes_captured_turn import HermesCapturedTurnLedger
 from memorii.core.semantic_ingestion.learned_relation import (
@@ -38,6 +58,7 @@ from memorii.core.semantic_ingestion.learned_relation import (
     RelationDeclaration,
     validate_mentors_tool_proposal,
 )
+from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 
 
 class _ReplayWriter:
@@ -214,6 +235,92 @@ def test_candidate_owner_rejects_missing_recurrence_without_control_or_fact_stat
     assert plane.list_records() == []
 
 
+def test_repeat_recurrence_admission_finishes_the_published_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "plane"))
+    writer = _ReplayWriter()
+    runtime = _runtime(writer, plane)
+    authenticated = _authenticated()
+    evaluator = FrozenMentorsPairedEvaluator(_isolated_case_executor())
+    result = evaluator.evaluate(_proposal())
+    evaluate_calls = []
+
+    def evaluate_once(proposal: OntologyChangeProposal) -> PairedEvaluation:
+        assert not evaluate_calls
+        evaluate_calls.append(proposal.proposal_id)
+        return result
+
+    monkeypatch.setattr(evaluator, "evaluate", evaluate_once)
+    service = LearnedRelationCandidateService(memory_plane=plane, runtime=runtime, evaluator=evaluator)
+    binding = ObserverBindingIdentity(
+        binding_version="observer:v1", provider="local", model="test-model",
+        prompt_version="prompt:v1", transport="in_process", egress_policy_digest="5" * 64,
+        output_schema_digest="6" * 64,
+    )
+    signature = RelationGapSignature.create(
+        normalized_relation_meaning="mentors", subject_type_id="Person", object_type_id="Person",
+        domain_id="organization", evidence_rule_id="direct_assertion:v1",
+    )
+    observed_scope_digest = recurrence_owner_scope_digest(
+        principal_id=authenticated.principal_id, agent_id=authenticated.agent_id,
+    )
+    observations = CoverageObservationRepository(plane)
+    verified_gaps = VerifiedCoverageGapRepository(plane)
+    evidence = []
+    for index, source_text in enumerate(("Ada mentors Bea.", "Cora mentors Dax.", "Eve mentors Fay."), start=1):
+        source = CanonicalMemoryRecord(
+            memory_id=f"source:{index}", domain=MemoryDomain.TRANSCRIPT, text=source_text,
+            status=CommitStatus.COMMITTED, source_kind="semantic_ingestion_source", is_raw_event=True,
+            visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        )
+        plane.write_records((source,))
+        queued = new_coverage_observation(
+            source_id=source.memory_id, source_digest=source_admission_source_digest(source), source_span=None,
+            source_scope_digest=observed_scope_digest, origin_lineage_digest=str(index) * 64,
+            session_id="session:one" if index < 3 else "session:two", principal_id=authenticated.principal_id,
+            agent_id=authenticated.agent_id, observed_at=datetime(2026, 9, 27, tzinfo=UTC),
+            catalog_scope=CatalogAuthorityScope(schema_version=1, kind="base"),
+            catalog_digest="a" * 64, observer_binding=binding,
+        )
+        observed = classify_coverage_observation(
+            start_coverage_observation(queued), semantic_outcome=CoverageSemanticOutcome.UNSUPPORTED_RELATION,
+            source_span=CoverageSourceSpan(start=0, end=len(source_text)),
+        )
+        observations.create(observed)
+        gap = VerifiedCoverageGap.from_observation(observed, signature=signature)
+        verified_gaps.create(gap)
+        evidence.append(gap)
+    group = build_coverage_recurrence_group(tuple(evidence), recurrence_scope_digest=observed_scope_digest)
+    CoverageRecurrenceRepository(plane).write(group, previous=None)
+
+    replace = runtime._replace_proposal
+
+    def interrupt_after_commit(old: OntologyChangeProposal, new: OntologyChangeProposal) -> None:
+        replace(old, new)
+        if new.lifecycle == "evaluating":
+            raise InterruptedError("evaluation result committed")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(runtime, "_replace_proposal", interrupt_after_commit)
+        with pytest.raises(InterruptedError, match="evaluation result committed"):
+            service.admit_recurrence(group_id=group.group_id, authenticated=authenticated)
+
+    before = plane.read_snapshot()
+    with pytest.raises(LearnedRelationError, match="outside the authenticated owner"):
+        service.admit_recurrence(
+            group_id=group.group_id,
+            authenticated=AuthenticatedPrincipalAgent(principal_id="user:two", agent_id=_SCOPE.agent_id),
+        )
+    assert plane.read_snapshot() == before
+
+    finished = service.admit_recurrence(group_id=group.group_id, authenticated=authenticated)
+    assert finished.lifecycle == "awaiting_decision"
+    assert finished.evaluation == result
+    assert evaluate_calls == [finished.proposal_id]
+    assert writer.calls == []
+
+
 def test_registered_evaluator_derives_frozen_paired_counts() -> None:
     evaluation = FrozenMentorsPairedEvaluator(
         _isolated_case_executor()
@@ -242,31 +349,249 @@ def test_registered_evaluator_is_unavailable_before_root_is_bound_or_when_vetoed
     assert vetoed.passes is False
 
 
-def test_restart_can_read_proposal_interrupted_during_evaluation_publication(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    ("interrupted_transition", "after_commit", "persisted_lifecycle", "resume_by_retry"),
+    (
+        ("evaluating", False, "validated", False),
+        ("evaluating", True, "evaluating", False),
+        ("evaluated", False, "evaluating", True),
+        ("evaluated", True, "evaluated", False),
+        ("awaiting_decision", False, "evaluated", True),
+        ("awaiting_decision", True, "awaiting_decision", True),
+    ),
+)
+def test_restart_finishes_only_durable_evaluation_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, interrupted_transition: str,
+    after_commit: bool, persisted_lifecycle: str, resume_by_retry: bool,
 ) -> None:
     path = tmp_path / "plane"
     writer = _ReplayWriter()
     runtime = _runtime(writer, MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
     proposal = runtime.prepare_candidate(_proposal())
     replace = runtime._replace_proposal
+    result = _passing_evaluation()
+
+    def interrupt_publication(old: OntologyChangeProposal, new: OntologyChangeProposal) -> None:
+        interrupted = new.lifecycle == interrupted_transition
+        if interrupted and not after_commit:
+            raise InterruptedError("evaluation publication interrupted")
+        replace(old, new)
+        if interrupted:
+            raise InterruptedError("evaluation publication interrupted")
+
+    monkeypatch.setattr(runtime, "_replace_proposal", interrupt_publication)
+    with pytest.raises(InterruptedError, match="evaluation publication interrupted"):
+        runtime.record_evaluation(proposal_id=proposal.proposal_id, evaluation=result)
+
+    plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path))
+    reopened = _runtime(writer, plane)
+    persisted = reopened._require_proposal(proposal.proposal_id)
+    assert persisted.lifecycle == persisted_lifecycle
+    assert persisted.evaluation == (None if persisted_lifecycle == "validated" else result)
+    assert reopened.status(_SCOPE)["candidate_count"] == 1
+
+    before = plane.read_snapshot()
+    reopened.recover(AgentLocalCatalogScope(principal_id="user:two", agent_id=_SCOPE.agent_id))
+    assert plane.read_snapshot() == before
+    if persisted_lifecycle == "validated":
+        reopened.recover(_SCOPE)
+        assert plane.read_snapshot() == before
+    else:
+        changed = FrozenMentorsPairedEvaluator().evaluate(proposal)
+        with pytest.raises(LearnedRelationError, match="differs from the published result"):
+            reopened.record_evaluation(proposal_id=proposal.proposal_id, evaluation=changed)
+        assert plane.read_snapshot() == before
+
+    if persisted_lifecycle == "validated" or resume_by_retry:
+        reopened.record_evaluation(proposal_id=proposal.proposal_id, evaluation=result)
+    else:
+        reopened.recover(_SCOPE)
+    finished = reopened._require_proposal(proposal.proposal_id)
+    assert finished.lifecycle == "awaiting_decision"
+    assert finished.evaluation == result
+    after = plane.read_snapshot()
+    reopened.recover(_SCOPE)
+    assert reopened.record_evaluation(proposal_id=proposal.proposal_id, evaluation=result) == finished
+    assert plane.read_snapshot() == after
+    assert writer.calls == []
+
+
+@pytest.mark.parametrize("outcome", ("evaluation_unavailable", "rejected"))
+def test_recovery_leaves_unavailable_or_vetoed_audits_inert(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, outcome: str,
+) -> None:
+    path = tmp_path / "plane"
+    writer = _ReplayWriter()
+    runtime = _runtime(writer, MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
+    proposal = runtime.prepare_candidate(_proposal())
+    evaluator = FrozenMentorsPairedEvaluator(
+        None if outcome == "evaluation_unavailable" else _isolated_case_executor(veto_case="scope-provenance-veto"),
+    )
+    result = evaluator.evaluate(proposal)
+    replace = runtime._replace_proposal
 
     def interrupt_after_commit(old: OntologyChangeProposal, new: OntologyChangeProposal) -> None:
         replace(old, new)
-        if new.lifecycle == "evaluating":
-            raise InterruptedError("evaluation publication interrupted")
+        raise InterruptedError("evaluation result committed")
 
     monkeypatch.setattr(runtime, "_replace_proposal", interrupt_after_commit)
-    with pytest.raises(InterruptedError, match="evaluation publication interrupted"):
-        runtime.record_evaluation(proposal_id=proposal.proposal_id, evaluation=_passing_evaluation())
+    with pytest.raises(InterruptedError, match="evaluation result committed"):
+        runtime.record_evaluation(proposal_id=proposal.proposal_id, evaluation=result)
 
-    reopened = _runtime(writer, MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
-    assert reopened._require_proposal(proposal.proposal_id) == proposal.model_copy(
-        update={"lifecycle": "evaluating"},
-    )
-    assert reopened.status(_SCOPE)["candidate_count"] == 1
+    plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path))
+    reopened = _runtime(writer, plane)
+    reopened.recover(_SCOPE)
+    finished = reopened._require_proposal(proposal.proposal_id)
+    assert finished.lifecycle == outcome
+    assert finished.evaluation == result
+    before = plane.read_snapshot()
+    assert reopened.record_evaluation(proposal_id=proposal.proposal_id, evaluation=result) == finished
     with pytest.raises(LearnedRelationError, match="candidate evaluation has not passed"):
         reopened.approve_candidate(proposal_id=proposal.proposal_id, principal_id="user:one", agent_id="agent:one")
+    assert plane.read_snapshot() == before
+    assert writer.calls == []
+
+
+def test_recovery_does_not_replace_an_unproven_legacy_evaluation(tmp_path: Path) -> None:
+    path = tmp_path / "plane"
+    writer = _ReplayWriter()
+    runtime = _runtime(writer, MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
+    proposal = runtime.prepare_candidate(_proposal())
+    legacy = proposal.model_copy(update={"lifecycle": "evaluating"})
+    runtime._replace_proposal(proposal, legacy)
+
+    plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path))
+    reopened = _runtime(writer, plane)
+    before = plane.read_snapshot()
+    reopened.recover(_SCOPE)
+    assert reopened._require_proposal(proposal.proposal_id) == legacy
+    with pytest.raises(LearnedRelationError, match="proposal is not awaiting evaluation"):
+        reopened.record_evaluation(proposal_id=proposal.proposal_id, evaluation=_passing_evaluation())
+    assert plane.read_snapshot() == before
+    assert writer.calls == []
+
+
+def test_result_with_invalid_digest_is_not_published() -> None:
+    plane = MemoryPlaneService()
+    runtime = _runtime(_ReplayWriter(), plane)
+    proposal = runtime.prepare_candidate(_proposal())
+    before = plane.read_snapshot()
+    altered = _passing_evaluation().model_copy(update={"binding_digest": "e" * 64})
+
+    with pytest.raises(ValueError, match="paired evaluation digest is invalid"):
+        runtime.record_evaluation(proposal_id=proposal.proposal_id, evaluation=altered)
+    assert plane.read_snapshot() == before
+
+
+@pytest.mark.parametrize("invalid_lifecycle", ("draft", "validating", "validated"))
+def test_result_on_prepublication_stage_is_not_a_successful_retry(invalid_lifecycle: str) -> None:
+    plane = MemoryPlaneService()
+    runtime = _runtime(_ReplayWriter(), plane)
+    proposal = runtime.prepare_candidate(_proposal())
+    result = _passing_evaluation()
+    inconsistent = proposal.model_copy(update={"lifecycle": invalid_lifecycle, "evaluation": result})
+    runtime._replace_proposal(proposal, inconsistent)
+    before = plane.read_snapshot()
+
+    with pytest.raises(LearnedRelationError, match="proposal is not awaiting evaluation"):
+        runtime.record_evaluation(proposal_id=proposal.proposal_id, evaluation=result)
+    assert plane.read_snapshot() == before
+
+
+@pytest.mark.parametrize(
+    ("persisted_lifecycle", "before_predecessor_read", "winner_finishes"),
+    (
+        ("evaluating", True, False),
+        ("evaluating", False, True),
+        ("evaluated", True, True),
+        ("evaluated", False, True),
+    ),
+)
+def test_startup_recovery_accepts_the_winning_same_result_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, persisted_lifecycle: str,
+    before_predecessor_read: bool, winner_finishes: bool,
+) -> None:
+    path = tmp_path / "plane"
+    writer = _ReplayWriter()
+    plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path))
+    recovery = _runtime(writer, plane)
+    proposal = recovery.prepare_candidate(_proposal())
+    result = _passing_evaluation()
+    interrupted = proposal.model_copy(update={"lifecycle": persisted_lifecycle, "evaluation": result})
+    recovery._replace_proposal(proposal, interrupted)
+    publisher = _runtime(writer, MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
+    published = False
+
+    def publish_winner() -> None:
+        nonlocal published
+        if published:
+            return
+        published = True
+        if winner_finishes:
+            publisher.record_evaluation(proposal_id=proposal.proposal_id, evaluation=result)
+        else:
+            publisher._replace_proposal(interrupted, interrupted.model_copy(update={"lifecycle": "evaluated"}))
+
+    if before_predecessor_read:
+        replace = recovery._replace_proposal
+
+        def publish_before_read(old: OntologyChangeProposal, new: OntologyChangeProposal) -> None:
+            publish_winner()
+            replace(old, new)
+
+        monkeypatch.setattr(recovery, "_replace_proposal", publish_before_read)
+    else:
+        write = plane.conditionally_write_records
+
+        def publish_before_cas(*args, **kwargs):
+            publish_winner()
+            return write(*args, **kwargs)
+
+        monkeypatch.setattr(plane, "conditionally_write_records", publish_before_cas)
+
+    recovery.recover(_SCOPE)
+
+    assert published
+    finished = publisher._require_proposal(proposal.proposal_id)
+    assert finished == interrupted.model_copy(update={"lifecycle": "awaiting_decision"})
+    before = plane.read_snapshot()
+    recovery.recover(_SCOPE)
+    assert plane.read_snapshot() == before
+    assert writer.calls == []
+
+
+@pytest.mark.parametrize("winner_change", ("same", "result", "evidence"))
+def test_concurrent_result_publishers_require_the_same_durable_proposal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, winner_change: str,
+) -> None:
+    path = tmp_path / "plane"
+    writer = _ReplayWriter()
+    runtime = _runtime(writer, MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
+    proposal = runtime.prepare_candidate(_proposal())
+    result = _passing_evaluation()
+    winner_result = FrozenMentorsPairedEvaluator().evaluate(proposal) if winner_change == "result" else result
+    publisher = _runtime(writer, MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
+    replace = runtime._replace_proposal
+
+    def publish_winner_first(old: OntologyChangeProposal, new: OntologyChangeProposal) -> None:
+        if winner_change == "evidence":
+            changed = proposal.model_copy(update={"evidence": proposal.evidence[:1]})
+            publisher._replace_proposal(proposal, changed)
+        publisher.record_evaluation(proposal_id=proposal.proposal_id, evaluation=winner_result)
+        replace(old, new)
+
+    monkeypatch.setattr(runtime, "_replace_proposal", publish_winner_first)
+    if winner_change == "same":
+        finished = runtime.record_evaluation(proposal_id=proposal.proposal_id, evaluation=result)
+        assert finished == publisher._require_proposal(proposal.proposal_id)
+    else:
+        with pytest.raises(LearnedRelationError, match="proposal lifecycle conflicted"):
+            runtime.record_evaluation(proposal_id=proposal.proposal_id, evaluation=result)
+
+    winner = publisher._require_proposal(proposal.proposal_id)
+    assert winner.lifecycle == ("evaluation_unavailable" if winner_change == "result" else "awaiting_decision")
+    assert winner.evaluation == winner_result
+    assert winner.evidence == (proposal.evidence[:1] if winner_change == "evidence" else proposal.evidence)
     assert writer.calls == []
 
 
