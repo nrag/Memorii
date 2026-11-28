@@ -1,6 +1,6 @@
 # Review and recall an approved learned catalog
 
-- Order: 2. Status: durable result recovery, standing consent, managed reference-host provisioning, owner review, explicit rebase, installed read scopes and exact-binding evaluation retry locally verified. Hosted gates remain open. Recovery checkpoint `74e70d06`. Local consent checkpoint `fecd58d4`.
+- Order: 2. Status: complete at Level 2. Recovery checkpoint `74e70d06`. Local consent checkpoint `fecd58d4`. Final tested product and regression head `04c1fbd9`.
 - Requirements: partial OLE-02/04/05/06/07/10/13 and selected learned OCI behavior.
 - Dependencies: packaged discovery, plus approved exact-parent, owner-review and recovery design.
 
@@ -319,6 +319,21 @@ The test now verifies pending discovery, no observer binding, and no
 proposal or gap after reopen. This changes the test expectation for the
 standing consent contract and leaves runtime byte-identical to `4d23b90c`.
 
+The full scoped-context suite passed all 146 tests locally from the product
+archive. The installed product wheel passed both the authenticated-source
+outage and restart journey with native Hermes parity and the owner
+review/rejection/reopen test in 459.71 seconds. The Hermes container had
+network disabled and no OpenAI key. An import assertion confirmed the
+distribution supplied the runtime under test.
+
+[PR Gates run 46121219562](https://github.com/nrag/Memorii/actions/runs/46121219562)
+tests the final code and test head `04c1fbd90ad5900be10cf4c8c15262c29a526ac3`.
+The checkout log confirms the `pull_request` merge
+`3d1dd7c3e94dc215d1674501b0892dd8b4f6a4e7` at `refs/pull/126/merge`.
+Its tree matches the PR head. Static Analysis, Package Smoke, Scoped
+Context Integration, Hermes Level 2 Product, Hermes Installed Image
+Lifecycle, and Benchmark Contracts passed on that checkout.
+
 ## Acceptance and verification
 
 - The local owner enables once and reopens or pauses the same agent
@@ -362,3 +377,65 @@ python -W error -m pytest -q -p no:cacheprovider \
 Close with installed restart/replay/rollback evidence, scoped decision and
 recovery review, applicable gates and no open in-scope P1/P2. This packet
 does not broaden the edit grammar or propose a new ontology.
+
+## Level 2 closure
+
+Complete for the M2 allocations of OLE-02/04/05/06/07/10/13 and OCI-01–04.
+The work witness is the owner-approved `mentors` relation, including
+exact-binding recovery, explicit rebase, scoped inspection, and protected
+recall after reopen. The separate signed-in household witness retains its
+packaged bill recall. Managed enrollment and withdrawal are verified at
+Memorii's reference-host boundary. Virtual Employee deployment qualification
+and automatic promotion calibration remain separate.
+
+All 60 jobs in [PR Gates run 46121219562](https://github.com/nrag/Memorii/actions/runs/46121219562)
+passed. [Unit Tests](https://github.com/nrag/Memorii/actions/runs/46121219562/job/140912186657)
+closed the aggregate after all six shards and the
+[host container gate](https://github.com/nrag/Memorii/actions/runs/46121219562/job/140905945354)
+passed. Independent review confirmed the retry and scope fixes and the
+test-only standing consent correction. The closure commit records that
+evidence and changes only WorkPlan documentation.
+
+```yaml
+base_revision: 52948673192536a6a3a0ddbad2ceff5ccfb03a3a
+reviewed_revision: 04c1fbd90ad5900be10cf4c8c15262c29a526ac3
+tested_revision: 04c1fbd90ad5900be10cf4c8c15262c29a526ac3
+tested_tree_digest: bc00f5923010faa4ed4e7a027001e024060bb3ea
+tree_state: clean tracked sources at test freeze, matching the hosted merge tree
+changed_surface_inventory_complete: true
+scope_delta_resolved: true
+authority_chains_complete: true
+required_local_jobs: &local_level2
+  - Focused learner, owner, scope, CLI, and package preparation regressions
+  - Offline installed retry, review, rebase, and protected recall
+  - Scoped Context Integration selection
+  - Benchmark Contract Tests selection
+  - Ruff, Pyright, identity hygiene, shard discovery, and source manifest validation
+passed_local_jobs: *local_level2
+known_local_failures: []
+failure_exclusions: []
+workflow_identities:
+  - path: .github/workflows/pr-gates.yml
+    sha256: 8ff8272b7a5e43d123f71693edafa11cf0988810f8af4c3041cedcf7ae5906af
+ci_event: pull_request
+ci_executed_sha: 3d1dd7c3e94dc215d1674501b0892dd8b4f6a4e7
+ci_executed_ref: refs/pull/126/merge
+remaining_validated_p1_p2: []
+remaining_blocks_approval: []
+remaining_changes_required: []
+local_ci_parity: Local macOS Python 3.12.16 and an offline Linux Hermes image supplement the hosted runner and dependency matrix.
+acceptance_gate_inventory:
+  - Static Analysis
+  - Package Smoke and Observation Ledger Activation
+  - Scoped Context Integration
+  - Hermes Level 2 Product and Hermes Installed Image Lifecycle
+  - Semantic Ingestion and its dependencies
+  - Benchmark Contracts and its dependencies
+  - Unit Tests, all six unit shards, timing inventory, and host container certification
+github_run_urls:
+  - https://github.com/nrag/Memorii/actions/runs/46121219562
+pr_head_sha: 04c1fbd90ad5900be10cf4c8c15262c29a526ac3
+pr_base_sha: 885c7db7ad8bba1aa0dd7d88c8f162d26c3bed0d
+merge_base_sha: 885c7db7ad8bba1aa0dd7d88c8f162d26c3bed0d
+required_checks_green: true
+```
