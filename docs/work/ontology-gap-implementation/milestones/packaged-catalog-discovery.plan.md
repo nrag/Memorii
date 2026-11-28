@@ -1,12 +1,12 @@
 # Discover the packaged catalog and recall a fact
 
-- Order: 1. Status: blocked on subject selection. Readiness baseline: `c0fa889a`; approved design and candidate head pending.
+- Order: 1. Status: in progress. Readiness baseline: `c0fa889a`; planning commit `3f8fb2fa`; candidate head pending.
 - Requirements: OCI-01–04 and partial OLE-08/09/10/14. Parent coverage is unchanged until revision-bound evidence is recorded.
 - Dependencies: existing packaged exact read closure, current host read opt-in and verified caller context.
 
 The [linked discovery design](../../learned-ontology/design-packaged-catalog-discovery.plan.md)
-owns the unresolved subject authority decision. Hosting an exact recall port
-with a canonical subject ID does not establish a subject search contract.
+passed targeted design and validation review. The host supplies the verified
+subject. Otherwise use unresolved recall for clarification.
 
 ## Execution boundary
 
@@ -18,13 +18,12 @@ Hermes and generic factories use that path. Existing Hermes tool listing
 may pin a captured turn. Review the actual host tool hook, listing and
 invocation together to avoid requiring captured-turn state or a write grant.
 
-Freeze tool registration, bounded discovery semantics, result ordering and
-ambiguity, and the source of verified subject selection first. Section 13
-has two exact lookup arms. Preserve those semantics. If discovery extends
-lookup or exposes subject search, record the new contract and disclosure
-boundaries in the linked design before coding. No persisted mutation or
-migration is expected. Existing exact clients retain their response
-semantics. Roll back exposure at its host binding.
+Section 13 freezes identical host-neutral browse, inspect and recall tool
+schemas for both bindings, a separate 16-descriptor page and version-bound
+cursor, and unchanged exact lookup rules. Use dedicated pure listing and
+read dispatch. Existing exact clients and captured-turn writer tools
+retain their response and authorization semantics. No persisted mutation
+or migration is expected. Roll back exposure at its host binding.
 
 ## Acceptance and verification
 
@@ -54,3 +53,13 @@ Close with both real tool journeys, current applicable gates and a focused
 test and scope review. Add the new tool registration paths to the binding
 and identity ledgers at implementation. Agent tool-choice quality is
 recorded separately from the deterministic installed acceptance.
+
+## Delegation and evidence
+
+- `catalog_tool_design_review` (Terra, read-only) verified the scoped tool,
+  paging, authority and validation design. Closed without findings.
+- `catalog_discovery_writer` (Terra, sole runtime and test writer) owns
+  shared read workflow and host adapter changes plus focused verification.
+- Coordinator ran 7 exact inspection and diagnosis unit tests on the
+  readiness baseline with macOS Python 3.12.16 and warnings as errors.
+  All passed. Installed baseline validation running separately.

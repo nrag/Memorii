@@ -3,7 +3,7 @@
 - Work ID: ontology-gap-implementation
 - Work type: implementation
 - Delivery fidelity: Level 2 for signed-in local work and household trials
-- Status: blocked
+- Status: active
 - Coordinator: Codex
 - Created: 2026-11-27
 - Last updated: 2026-11-27
@@ -46,8 +46,8 @@ the push range before publication.
   operator-secret hardening. The prior hosted exact-read
   closure exercised head `524fd8c6` via [workflow run 46083808916](https://github.com/nrag/Memorii/actions/runs/46083808916).
   New behavior requires new evidence.
-- The governing ontology design's working-copy SHA-256 is
-  `ef1880d49a47bc06d73c02d95b16561ab628499cf04245038faff9dae939af13`.
+- The frozen discovery design's canonical SHA-256 is
+  `da3f80598686bf68b1c1db73aee745f981c3e5ead82d1809a845ca35574d6955`.
   The reviewed [capability audit](../learned-ontology/ontology-capability-audit.md)
   SHA-256 is `259a83e09810f5be09f2733d3291e59187488d2691e383eac1a8736a0226485e`.
   The audit and roadmap supply scope and evidence. Each packet names the
@@ -73,7 +73,7 @@ the push range before publication.
 
 | Order | Packet | Observable completion | Status |
 | --- | --- | --- | --- |
-| 1 | [Packaged catalog discovery](milestones/packaged-catalog-discovery.plan.md) | Both installed bindings expose discover/clarify/recall without a key, starting with a bill due date. | Blocked on subject selection decision |
+| 1 | [Packaged catalog discovery](milestones/packaged-catalog-discovery.plan.md) | Both installed bindings expose discover/clarify/recall without a key, starting with a bill due date. | In progress |
 | 2 | [Learned catalog review and recall](milestones/learned-catalog-review-and-recall.plan.md) | Owner decision and retry work. A selected exact-parent `mentors` version is inspectable and readable. | Queued behind 1 |
 | 3 | [Verified recurring gap](milestones/verified-recurring-gap.plan.md) | Two adapters yield one durable, scoped, explainable gap from independent evidence. | Queued behind 2 |
 | 4 | [Grounded relation creation](milestones/grounded-relation-creation.plan.md) | Observed and manual paths exercise a different relation through paired evaluation, owner selection and protected use. | Queued behind 3 |
@@ -176,8 +176,10 @@ type-check or CI failure is classified by this planning task.
   review on real-path correctness, ordinary failures, isolation and recovery.
 - Keep the index and active packet current after each material result. Move
   the active pointer only after evidence and the milestone push are recorded.
+- The user selected the host's verified canonical subject ID. No subject
+  search is in scope. The Section 13 tool and browse design passed focused
+  independent review and the sole product writer started the discovery slice.
 
 ## Next action
 
-Record the subject-selection decision in the linked discovery design for
-packet 1 before freezing its tool and browse contract.
+Verify the installed catalog discovery and recall candidate for packet 1.

@@ -627,6 +627,40 @@ subject ID, a fact, a claim count, a historical query, or a capability
 beyond the protected reader's existing rules. Metadata is data for the
 host to display or interpret, never executable instructions.
 
+### Host tool discovery and bounded catalog browsing
+
+An authenticated host exposes three read tools named
+`memorii_browse_catalog`, `memorii_inspect_catalog_relation`, and
+`memorii_diagnose_structured_recall`. Both installed bindings advertise the
+same function schemas when their read binding is composed. A dedicated
+read-only tool list requires no active turn. Hermes also includes the
+read tools in its standard list, alongside any eligible captured-turn tools.
+The captured-turn tools retain their separate pin and authorization contract.
+Dispatch of a read tool bypasses the captured-turn runtime. Tool descriptors
+are static and convey no authority. Each invocation reuses the current
+verified host ingress and protected read/release path.
+
+`memorii_browse_catalog` uses a separate closed object. The first request is
+`{}`. Subsequent requests contain exactly `after_predicate_id` and
+`expected_catalog_version_digest`, validated by the existing ID and digest
+grammars. A successful `listed` result contains `catalog_version_digest`,
+up to 16 complete relation descriptors in exact predicate ID order, and
+`next_after_predicate_id` when another page exists. Use the last listed ID
+as the next cursor. The supplied cursor must exist in the verified catalog.
+An invalid cursor returns `invalid_request`. A different selected digest
+returns `catalog_changed` before cursor evaluation. Invalid request, denied,
+unavailable and changed responses are status-only. Verify the complete
+selected catalog before paging and apply the same release check as exact
+inspection. Browsing never reads facts or enumerates subjects.
+
+The host supplies a verified canonical subject ID. An absent identity uses
+diagnosis with `kind: unresolved` and `reference: subject` to ask for
+clarification. No subject-name or subject enumeration tool is added.
+The exact request shapes above and in Section 12 remain the tool arguments
+for the other two operations. Tool results serialize the closed typed
+responses as JSON objects. Discovery, browsing, and recall require no
+model, credentials, outbound transport or durable read-time writes.
+
 ### Declaration projection and authority
 
 The read service projects the exact active catalog accepted by Section 12.

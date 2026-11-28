@@ -3,7 +3,7 @@
 - Work ID: packaged-catalog-discovery-design
 - Work type: design
 - Delivery fidelity: Level 2 local work and household testing
-- Status: blocked
+- Status: complete (Level 2 design)
 - Coordinator: Codex
 - Created: 2026-11-27
 - Last updated: 2026-11-27
@@ -32,28 +32,25 @@ the only source of read-tool registration. The generic root has no tool
 list. Neither root's exact diagnosis resolves a subject from its name. The
 installed integration supplies a canonical provisioned subject ID.
 
-## Proposed contract and decision
+## Contract and decision
 
 Use a shared host-neutral tool schema and dispatcher behind the two
 verified bindings, with the Hermes registration as a thin host adapter.
 Expose the current exact inspection and diagnosis shapes unchanged.
-Propose a separate bounded browse operation over the authorized catalog
+Use a separate bounded browse operation over the authorized catalog
 projection sorted by exact predicate ID. Browse metadata follows the same
 catalog snapshot and release checks and contains no fact or subject
-payload. Define its page bounds, version handoff and typed outcomes when
-freezing the design. Register the tool schema independently of captured-turn
+payload. Section 13 defines its page bounds, version handoff and typed
+outcomes. Register the tool schema independently of captured-turn
 state. A tool description confers no invocation authority.
 
-The user-visible decision is **who resolves a bill or work-item name to
-a verified subject identity**. The recommended Level 2 boundary uses a
-canonical ID supplied by the authenticated host and returns clarification
-when the host cannot identify the subject. This is the existing Sections
-12–13 boundary. If the user needs a natural-language bill-name journey
-with no host-supplied ID, a separate subject lookup may disclose candidate
-identities. Its permission, discoverability, ambiguity, stale-selection,
-and release semantics must be resolved in this design before implementation.
-The ability to recall one fact by known ID supplies no authority to enumerate
-subjects.
+The user selected a verified canonical identifier from the host. When
+absent, the host invokes unresolved recall and asks for clarification.
+The normative tool names, closed browse grammar, page and version
+semantics, release rules and compatibility behavior are specified in
+Section 13. The existing inspected predicates and stored authority remain
+unchanged. The read-only list has no captured-turn dependency, while
+the combined Hermes list preserves the existing write-tool behavior.
 
 ## Verification and completion
 
@@ -63,14 +60,18 @@ subjects.
 - Exercise bill due date, ambiguous work relation, absent verified subject,
   stale selected version, and withdrawn or foreign account authority.
   Verify payload-free denial and no read-time mutation.
-- Verify full retained behavior of existing exact ID and name inputs. If a
-  subject lookup is approved, add a bounded same-account ambiguity and
-  current-grant release witness to the matrix before coding.
+- Verify full retained behavior of existing exact ID and name inputs, and
+  page through a complete default catalog. Repeat with an invalid cursor
+  and stale digest. Use the production catalog projection and protected
+  release, with a tripwire on the fact reader.
 - Freeze the decision and wire/result shapes, map both real composition
   roots, verify feasibility and obtain targeted independent design review.
   Link the approved revision or digest to the implementation packet.
 
-## Next action
+## Review and handoff
 
-Record the user's subject-resolution decision and freeze the corresponding
-tool and browse contract.
+The focused independent reviewer passed the Section 13 delta and installed
+acceptance without approval findings. The reviewed canonical design SHA-256
+is `da3f80598686bf68b1c1db73aee745f981c3e5ead82d1809a845ca35574d6955`.
+The existing exact workflows and provider hooks establish the composition
+seams. The implementation packet owns browse dispatch and release proof.
