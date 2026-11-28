@@ -39,7 +39,17 @@ The semantic observer accepts source content only when its authenticated origin,
 
 The canonical source and memory-domain distinctions in `docs/design/memorii_spec.md`, `docs/design/memorii_storage_details.md`, `docs/design/event_model.md`, `docs/IMPLEMENTATION_RULES.md`, and `docs/design/semantic_ingestion_architecture.md` remain authoritative. A learned relation can describe semantic knowledge only when its domain policy permits it. User preferences, episodes, execution state, and solver observations need their own domain contracts. A model's fluent proposal is neither a catalog version nor a fact.
 
-### Current gap analysis for the read workflow
+### Ontology lifecycle gap analysis
+
+The [current lifecycle audit](../work/learned-ontology/ontology-capability-audit.md)
+traces packaged and learned ontology from creation through protected recall.
+V8 closed exact packaged inspection and recall diagnosis for the two
+authenticated bindings. Broader tool discovery, learned catalog reads, and
+schema creation beyond the deterministic no-key `mentors` case remain open.
+The [gap closure WorkPlan](../work/learned-ontology/design-gap-closure.plan.md)
+records the proposed delivery order and acceptance evidence.
+
+#### Read workflow analysis before v8
 
 The three-predicate profile above describes the original seed path. The
 installed default release now verifies 53 typed corpus relations plus its
