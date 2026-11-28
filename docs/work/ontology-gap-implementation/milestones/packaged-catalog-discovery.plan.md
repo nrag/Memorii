@@ -1,6 +1,6 @@
 # Discover the packaged catalog and recall a fact
 
-- Order: 1. Status: verification pending. Readiness baseline: `c0fa889a`; design commit `326a8b6c`; pushed candidate `665319c0e44fcedd848c3f6ce8e8a5b2f19b3df1`.
+- Order: 1. Status: complete (Level 2 ontology scope). Readiness baseline: `c0fa889a`; stock implementation `694e5651`; verified candidate `05663f3467872130c4822b959d5b2fbc6f82c4e2`.
 - Requirements: OCI-01–04 and partial OLE-08/09/10/14. Parent coverage is unchanged until revision-bound evidence is recorded.
 - Dependencies: existing packaged exact read closure, current host read opt-in and verified caller context.
 
@@ -166,6 +166,25 @@ and malformed identities. Existing configured Hermes proof retains object
 dispatch in its installed test. The real Linux router proof still covers
 positive absent raw identity. No runtime bytes, proof pins, or workflow
 limits changed in the follow-up.
+
+## Level 2 closure
+
+[Hosted Scoped Context Integration](https://github.com/nrag/Memorii/actions/runs/46099951038/job/140839900915)
+passed all 146 tests in 748.99 seconds on merge checkout `a927d50` of
+PR head `05663f3467872130c4822b959d5b2fbc6f82c4e2`.
+[Hosted Package Smoke](https://github.com/nrag/Memorii/actions/runs/46099951038/job/140839900726)
+and Static Analysis passed on the same candidate. The consolidated local
+scope suite ran in 333.91 seconds, and the three focused stock ABI/identity
+unit regressions passed in 1.32 seconds. The fixture restores foreign
+primary denial and configured object dispatch without extra startups.
+
+The candidate, test-only timing follow-up, and proof refresh are on the
+existing v8 branch. The user assigned the independent Durable Storage
+Integration failure to parallel v8 work. This closure applies to the
+installed ontology discovery scope. That failure remains a branch release
+blocker. Wider OLE requirements remain partial in the index.
+
+`remaining_validated_p1_p2: []` for the Level 2 discovery slice.
 
 ## Package Smoke repair
 

@@ -24,7 +24,9 @@ relation, a manually submitted candidate with the observer and model disabled,
 and a separate learned subtype. The existing catalog stays useful without
 API keys. The signed-in account owns its local household logs and fact scope.
 
-**0/5 milestones closed. 0 requirements newly verified by this plan.**
+**1/5 milestones closed.** The packaged discovery and protected read
+portion of OCI-01–04 is verified. The learned read portion and the four
+partially exercised OLE requirements still have downstream acceptance.
 The v8 packaged exact read and the narrow learned `mentors` evidence carry
 forward at their recorded revisions. All 14 OLE rows below reflect the status
 of the additional work. Close in order. Each milestone requires its frozen
@@ -73,8 +75,8 @@ the push range before publication.
 
 | Order | Packet | Observable completion | Status |
 | --- | --- | --- | --- |
-| 1 | [Packaged catalog discovery](milestones/packaged-catalog-discovery.plan.md) | Both installed bindings expose discover/clarify/recall without a key, starting with a bill due date. | Stock Hermes and Package Smoke verified. Streamlined integration gate pending. |
-| 2 | [Learned catalog review and recall](milestones/learned-catalog-review-and-recall.plan.md) | Owner decision and retry work. A selected exact-parent `mentors` version is inspectable and readable. | Queued behind 1 |
+| 1 | [Packaged catalog discovery](milestones/packaged-catalog-discovery.plan.md) | Both installed bindings expose discover/clarify/recall without a key, starting with a bill due date. | Complete for Level 2. Hosted scoped context, static analysis and Package Smoke passed. |
+| 2 | [Learned catalog review and recall](milestones/learned-catalog-review-and-recall.plan.md) | Owner decision and retry work. A selected exact-parent `mentors` version is inspectable and readable. | Active design readiness |
 | 3 | [Verified recurring gap](milestones/verified-recurring-gap.plan.md) | Two adapters yield one durable, scoped, explainable gap from independent evidence. | Queued behind 2 |
 | 4 | [Grounded relation creation](milestones/grounded-relation-creation.plan.md) | Observed and manual paths exercise a different relation through paired evaluation, owner selection and protected use. | Queued behind 3 |
 | 5 | [Learned entity subtype](milestones/learned-entity-subtype.plan.md) | An independently evidenced subtype is approved and usable with inherited capabilities. | Queued behind 4 |
@@ -182,5 +184,5 @@ type-check or CI failure is classified by this planning task.
 
 ## Next action
 
-Verify the streamlined stock Hermes coverage on the current hosted
-Scoped Context Integration run.
+Open the linked evaluation recovery slice for milestone 2 before widening
+learned catalog selection and recall.
