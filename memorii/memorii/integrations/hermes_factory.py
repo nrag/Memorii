@@ -528,10 +528,9 @@ def _build_local_level2_runtime_binding(
 
     now = datetime.now(UTC)
     authorization = local_level2_bootstrap_authorization_from_sidecar(sidecar, now=now)
-    operator_id = (
-        "memorii:hermes:operator:"
-        + sha256((f"memorii.hermes.local-level2-operator.v1:{authorization.installation_id}").encode()).hexdigest()
-    )
+    from memorii.integrations.hermes_local_authority import local_operator_id
+
+    operator_id = local_operator_id(authorization.installation_id)
     agent_id = _canonical_agent_id(getattr(context, "agent_identity", None))
     stock_read = getattr(context, "stock_catalog_read", False) is True and getattr(context, "catalog_read_opt_in", None) is None
     stock_identity_preexisting = (
@@ -906,8 +905,13 @@ def _build_local_level2_runtime_binding(
             )
         ),
     ))
+    from memorii.core.semantic_ingestion.catalog_management import CatalogManagementRepository
+
     learned_scope = AgentLocalCatalogAuthorityScope(
         principal_id=operator_id, agent_id=agent_id,
+    )
+    catalog_management = CatalogManagementRepository(
+        memory_plane, partition_id=f"local:{authorization.installation_id}", scope=learned_scope,
     )
     # Startup owns the two selection crash windows.  Recovery only retries
     # immutable retained evidence through the same installed writer root.
@@ -1024,7 +1028,10 @@ def _build_local_level2_runtime_binding(
         approve_learned_candidate=approve_learned_candidate,
         select_prior_learned_version=select_prior_learned_version,
         learned_ontology_runtime=learned_runtime,
-        learned_ontology_status=lambda: learned_runtime.status(learned_scope),
+        learned_ontology_status=lambda: {
+            **learned_runtime.status(learned_scope),
+            "catalog_management": catalog_management.status(),
+        },
         issue_origin_receipt=ingress_resolver.issue_origin_receipt,
         issue_forwarding_receipt=ingress_resolver.issue_forwarding_receipt,
     )

@@ -1,6 +1,6 @@
 # Review and recall an approved learned catalog
 
-- Order: 2. Status: durable result recovery locally verified; owner authorization choice pending. Implementation base: `52948673`; recovery checkpoint `74e70d06`.
+- Order: 2. Status: durable result recovery and local standing-consent commands locally verified. Runtime enforcement and managed enrollment are open. Recovery checkpoint `74e70d06`.
 - Requirements: partial OLE-02/04/05/06/07/10/13 and selected learned OCI behavior.
 - Dependencies: packaged discovery, plus approved exact-parent, owner-review and recovery design.
 
@@ -21,7 +21,16 @@ The [evaluation recovery WorkPlan](../debug-learned-evaluation-recovery.plan.md)
 owns the targeted proposal-state and retry changes. Owner controls,
 parent proof and learned reads wait for that recovery boundary.
 The [owner and learned-read design](../design-learned-catalog-owner.plan.md)
-tracks the separate catalog-management authority decision.
+records local one-time consent, automatic trusted VE provisioning, and
+the separate evidence gate for unattended promotion.
+
+The local checkpoint adds `enable-local-catalog-management`,
+`pause-local-catalog-management`, and `catalog-management-status` to
+`memorii-hermes --help`. Each subcommand takes `--hermes-home`. Four
+focused tests cover both persistent layouts, reopen, idempotence,
+installation mismatch and a concurrent pause winning stale enablement.
+Scoped Ruff and Pyright checks pass. These commands persist consent;
+existing learner actions still require the next runtime enforcement slice.
 
 Represent the exact immutable packaged parent and validate the whole
 effective catalog. Old overlays without sufficient evidence are unavailable
@@ -32,6 +41,15 @@ Freeze any persisted schema compatibility policy before implementation.
 
 ## Acceptance and verification
 
+- The local owner enables once and reopens or pauses the same agent
+  policy without an API key. A verified VE provisioner enables on eligible
+  workspace enrollment and withdraws authority on disablement or removal.
+  Same identifiers in another workspace do not join. Grant withdrawal
+  before a management commit wins the authority precondition.
+- Enabled learning proceeds without per-candidate review. Without applicable
+  calibrated promotion evidence, an evaluated candidate remains pending.
+  Manual review is available to the authorized owner. Automatic activation
+  requires the exact permitted policy and evidence.
 - Owner can view the proposed declaration, verified evidence references,
   paired parent/candidate outcomes, abstentions, vetoes, parent/version
   status and recorded decision. Rejection is terminal across reopen.

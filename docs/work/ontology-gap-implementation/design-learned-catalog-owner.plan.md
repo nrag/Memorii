@@ -3,7 +3,7 @@
 - Work ID: learned-catalog-owner-and-read-design
 - Work type: design
 - Delivery fidelity: Level 2, installed local agent work and household trials
-- Status: blocked on owner authorization choice
+- Status: active, enablement decision approved
 - Coordinator: Codex
 - Created: 2026-11-27
 - Last updated: 2026-11-27
@@ -30,23 +30,111 @@ bounded catalog metadata reads and reuses the historical version-key owner.
 Keep that work separate. Review the immutable installed evidence path when
 both changes are composed.
 
-## Material authority decision
+## Approved enablement decision
 
 The governing contract separates catalog management from fact grants and
-catalog visibility for protected reads. Select how the first local owner
-explicitly acquires the distinct management authority:
+catalog visibility for protected reads. The user approved one standing
+policy with two trusted provisioning paths:
 
-- A separate local catalog-management opt-in. The verified signed-in
-  profile owner explicitly enables scoped review decisions, selection,
-  and rollback. Review the revocation and persistence owner before coding.
-- Existing trusted host setup. An installer supplies a distinct scoped
-  catalog-management capability through verified host configuration.
-  Stock setup stays a separate future capability.
+- The signed-in local profile owner enables learning once for that
+  agent's exact catalog. Persist the opt-in across launches. Pause or
+  revoke it through the same operator boundary. Starting the agent or
+  enabling an unrelated tool grants no management permission.
+- Virtual Employee enables the policy by default when its trusted
+  provisioner enrolls an agent in a workspace, subject to workspace
+  policy. The verified generic host setup issues the distinct scoped
+  authority. Workspace disablement, agent removal, and a revoked
+  provisioning binding withdraw it. Agent or workspace labels supplied
+  in transcripts or tool arguments confer no authority.
 
-Neither option authorizes management from a source transcript, a read
-grant, a fact-write grant, or a model result. Both require current grant
-checks at the mutation boundary and an authority-linked selection
-precondition. A stale identity cannot mutate a catalog.
+Use the same scope-owned policy in core. Its identity includes the
+verified installation or workspace partition and the exact authenticated
+agent catalog coordinate. A local consent and VE provisioning receipt
+can select policy for their own coordinate only. The partition is key
+even when principal, agent, or delivery IDs coincide. Do not enable
+tenant-wide publication or read another user's facts under workspace
+enrollment. Evidence, candidate, and fact access retain their own grants.
+
+Standing enablement lets the learner collect scoped evidence, group
+recurrences, propose, and evaluate unattended. The activation decision
+remains result-specific. Existing paired evaluation, mandatory vetoes,
+observed same-scope recurrence, the calibrated 0.95 promotion threshold,
+and exact evaluator/scope applicability all remain required for
+automatic promotion. Until that evidence exists, candidates remain
+pending and normal packaged reads continue without a key. Manual review
+is available for exceptions and early testing. An enabled policy grants
+no provider transport or network authorization.
+
+## Authority write and revocation contract
+
+Keep a versioned, typed management record separate from fact and read
+grants. The canonical owner uses the current record as a conditional
+write precondition on a management mutation. Issuance and revocation
+compare and replace that same coordinate. Retry of the same enablement
+is idempotent. A new enablement after revocation has a newer generation,
+so an old prepared attempt cannot resume under it. Source adapter
+configuration and publisher output cannot create the record.
+
+Manual decision, automated decision and rollback carry distinct actor
+or policy evidence. Record proposal, exact evaluation, policy identity
+and generation, owner scope, parent version and decision in durable
+selection evidence. On restart, verify a prepared attempt's original
+authority before pointer CAS. Finish bookkeeping for an already selected
+attempt from its durable witness. Suspend future selection when the
+policy is paused on the exact coordinate. Existing current fact and
+read grants still govern serving historical data.
+
+Start with local operator enablement and the core authority fence.
+Exercise the installed local prompt-free workflow and ordinary denial
+before expanding metadata and rebase. For VE the trusted provisioner
+must supply a verified workspace/agent coordinate and separate issue
+and revocation proof, as defined by the generic host integration. Keep
+the local operator path out of VE. Use a production-shaped verified
+host enrollment witness before claiming VE activation.
+
+### First local operator checkpoint
+
+Add enable, pause and status to the installed `memorii-hermes` operator
+CLI. Verify the OS owner, private installation identity and matching
+persisted primary operator context. Derive the canonical operator from
+that installation and use the context's canonical primary agent. This
+setup authority is independent of the expiring runtime profile and
+transport authorization. Runtime consumption requires current host
+authority in addition to the standing policy.
+No free-form agent label or caller-supplied installation is sufficient
+for a grant. Another agent requires a verified profile registration path.
+Select the same initialized managed or recognized legacy store as the
+factory, with legacy bootstrap disabled. No semantic worker, write-tool
+authority, credential or model provider participates.
+
+The repository stores one current closed v1 management policy record
+for the installation partition and exact agent catalog. An absent
+record reports disabled. Enable and pause compare and replace the typed
+record at its deterministic coordinate, incrementing the generation on
+a state change. An identical retry reports the existing generation.
+Reads reject incorrect record type, scope/partition and malformed bytes.
+Report only state, generation and authority origin through status.
+Factory-managed status uses the same repository and scope.
+
+The first checkpoint provisions and displays standing authorization.
+It does not consume it yet for candidate or pointer mutations. The next
+checkpoint fences those actual writes and attaches the learning policy.
+No new managed action is exposed until its precondition and revocation
+tests pass. The Virtual Employee adapter requires the separate verified
+workspace enrollment issuer and store fence. The generic source root
+alone lacks that provisioning proof.
+
+The focused Level 2 design review passed this checkpoint boundary.
+The preflight identified `memorii-hermes` and the canonical persistent
+plane selector as the local composition path. It also confirmed that
+current generic production source verification and managed enrollment
+carry source or task authority, with no current workspace catalog grant
+issuer. The installed local command verifies the stable private
+installation and persisted primary owner independently of the
+expiring model-transport sidecar. The implementation reviewer flagged
+wording that could imply the CLI required the sidecar. The design now
+states which proof setup uses and which additional check consumption
+requires.
 
 ## Exact version and recovery constraints
 
@@ -62,8 +150,8 @@ precondition. A stale identity cannot mutate a catalog.
   selection and the pending refresh separately. Retry preserves the
   selected attempt identity. Current suppression and protected-release
   checks remain after read assembly.
-- The independent evaluation repair may proceed with no owner-management
-  decision. Executing evaluation and retrying an unrecorded result require
+- The independent evaluation repair does not consume the owner-management
+  grant. Executing evaluation and retrying an unrecorded result require
   exact same-parent and pinned binding/corpus/budget evidence. Startup can
   finalize a result already durable without invoking evaluation.
 
@@ -169,7 +257,8 @@ still needs a concrete, reviewed version and artifact rule.
 
 ## Completion and next action
 
-Freeze the chosen authority source and scope-revocation semantics, the
-version/projection and explicit-rebase contracts, and installed positive
-and ordinary failure tests. Complete focused independent review before
-owner or read-path implementation.
+Attach the verified local consent to the runtime. Compare the current
+grant record in the same conditional write as a proposal or pointer
+mutation. Bind any prepared selection to that generation so recovery
+can finalize a proven selected pointer without letting an older attempt
+select after pause and re-enable.

@@ -11,7 +11,9 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import secrets
+import stat
 import tempfile
 from collections import Counter
 from collections.abc import Mapping
@@ -322,6 +324,64 @@ def _inspection_summary(
     }
 
 
+def local_operator_id(installation_id: str) -> str:
+    return "memorii:hermes:operator:" + hashlib.sha256(
+        f"memorii.hermes.local-level2-operator.v1:{installation_id}".encode()
+    ).hexdigest()
+
+
+def local_catalog_management(*, hermes_home: Path, state: str | None = None) -> dict[str, object]:
+    """Manage only the verified installation's persisted primary catalog."""
+    from memorii.core.persistence.factory import select_persistent_memory_plane
+    from memorii.core.semantic_ingestion.catalog_authority import AgentLocalCatalogAuthorityScope
+    from memorii.core.semantic_ingestion.catalog_management import CatalogManagementRepository
+    from memorii.stores.sqlite.darwin_acl import require_no_extended_acl
+    from memorii.stores.sqlite.private_storage import read_private_file
+
+    root = _canonical_home(hermes_home) / "memorii"
+    root_stat = root.lstat()
+    if (not stat.S_ISDIR(root_stat.st_mode) or root_stat.st_uid != os.geteuid()
+            or root_stat.st_mode & 0o022):
+        raise LocalLevel2AuthorityError("installation directory is not owner controlled")
+    require_no_extended_acl(root)
+    installation_raw = read_private_file(root / "installation-id", limit=66)
+    if not re.fullmatch(rb"[0-9a-f]{64}\n", installation_raw):
+        raise LocalLevel2AuthorityError("installation identity is invalid")
+    installation_id = installation_raw[:-1].decode("ascii")
+    raw = read_private_file(root / "local-operator-context.json", limit=4097)
+    if len(raw) > 4096:
+        raise LocalLevel2AuthorityError("local operator context is invalid")
+    try:
+        context = json.loads(raw, object_pairs_hook=_reject_duplicate_keys, parse_constant=_reject_constant)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise LocalLevel2AuthorityError("local operator context is invalid") from exc
+    if (not isinstance(context, dict) or set(context) != {
+            "schema", "installation_id", "primary_agent_id", "raw_user_consistency_digest"}
+            or context["schema"] != "memorii.hermes.local-operator-context.v1"
+            or context["installation_id"] != installation_id
+            or not isinstance(context["primary_agent_id"], str)
+            or not re.fullmatch(r"(?:memorii:hermes:agent:[0-9a-f]{64}|memorii\.hermes\.agent\.absent\.v1)", context["primary_agent_id"])
+            or not isinstance(context["raw_user_consistency_digest"], str)
+            or not re.fullmatch(r"[0-9a-f]{64}", context["raw_user_consistency_digest"])):
+        raise LocalLevel2AuthorityError("local operator context is invalid")
+    scope = AgentLocalCatalogAuthorityScope(principal_id=local_operator_id(installation_id),
+                                             agent_id=context["primary_agent_id"])
+    selection = select_persistent_memory_plane(root)
+    try:
+        repository = CatalogManagementRepository(selection.memory_plane,
+            partition_id=f"local:{installation_id}", scope=scope)
+        if state == "enabled":
+            return repository.set_state("enabled")
+        if state == "paused":
+            return repository.set_state("paused")
+        if state is not None:
+            raise ValueError("invalid management state")
+        return repository.status()
+    finally:
+        if selection.administration is not None:
+            selection.administration.close()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Manage local Level 2 Hermes Memorii authority.")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -338,8 +398,19 @@ def main(argv: list[str] | None = None) -> int:
     status.add_argument("--hermes-home", type=Path, required=True)
     inspect = commands.add_parser("inspect")
     inspect.add_argument("--hermes-home", type=Path, required=True)
+    for name in ("enable-local-catalog-management", "pause-local-catalog-management", "catalog-management-status"):
+        command = commands.add_parser(name)
+        command.add_argument("--hermes-home", type=Path, required=True)
     args = parser.parse_args(argv)
 
+    if args.command in {"enable-local-catalog-management", "pause-local-catalog-management", "catalog-management-status"}:
+        state = {"enable-local-catalog-management": "enabled", "pause-local-catalog-management": "paused", "catalog-management-status": None}[args.command]
+        try:
+            print(_canonical_json(local_catalog_management(hermes_home=args.hermes_home, state=state)).decode("ascii"))
+            return 0
+        except (OSError, RuntimeError, ValueError) as error:
+            print(_canonical_json({"available": False, "reason": str(error)}).decode("ascii"))
+            return 1
     if args.command == "authorize-local-level2":
         if not args.acknowledge_openai_egress:
             parser.error("authorize-local-level2 requires --acknowledge-openai-egress")

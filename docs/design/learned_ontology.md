@@ -240,6 +240,29 @@ A personal namespace ID is the authenticated personal user's stable ID; a tenant
 
 The packaged `base` is changed only by product release authority. A tenant administrator controls its tenant namespace; an authenticated user controls a personal namespace or tenant-user overlay only within grants delegated by the tenant; an agent overlay is controlled by that namespace/user owner or an explicitly delegated catalog grant bound to the same agent identity. Only an agent overlay may enable the calibrated automatic policy in this initial design. An observation from a narrower source never grants authority to activate a parent catalog. Catalog activation grants are separate from fact-scope grants, and both are checked at activation and read time.
 
+### Standing catalog management
+
+In a local installation the signed-in profile owner enables learning once
+for the exact agent catalog. The durable setting remains enabled across
+launches until the owner pauses or revokes it. In a managed integration
+such as Virtual Employee, the trusted provisioner enables the same
+policy by default when it enrolls an agent, subject to workspace policy.
+The grant is bound to the verified installation or workspace partition,
+the principal, and the exact agent catalog. Workspace disablement,
+agent removal, or authority withdrawal stops future selection. Enrollment
+supplies no other fact, catalog-read, provider or egress grant.
+
+Enablement supports unattended observation, proposal and paired
+evaluation. An applicable automatic policy decides only after all
+independent recurrence, evaluation, veto and calibration requirements in
+Section 5 pass for that exact binding and scope. Incomplete evidence
+leaves the proposal pending. The owner may review exceptions separately.
+The learner records the exact result and policy generation behind each
+automatic decision. Authority must be current at the durable selection
+boundary. A prepared attempt from a revoked generation cannot continue
+under a later grant. Rollback follows the same scoped authority and
+history rules as an explicit selection.
+
 Lookup starts at the most specific coordinate for which the caller has an authenticated binding and an active pointer, then follows that coordinate's one parent chain. Each published version is a **complete immutable effective catalog** with a digest of its exact parent version, not an unordered union of current overlays. If the child pointer is active, a later parent update does not silently alter its meaning; the child stays pinned to the parent digest recorded at publication until an authorized rebase is validated and selected. A missing/invalid child pointer fails closed for that child instead of falling back to a broader catalog; absence of a child pointer permits explicit parent selection. A retired required capability makes the affected version unavailable until revalidated. In-flight work pins the selected effective version before proposal egress; replay keeps its recorded owner coordinate and catalog digest and rechecks current grants. No cross-agent or cross-tenant replay is inferred from matching source text.
 
 Every committed fact records both its ordinary fact scope and the `CatalogAuthorityScope`/catalog digest that authorized its relation or type. A protected read must satisfy both gates: the caller's current fact-scope grant and visibility to that catalog-owner coordinate. An agent-local fact is visible only to the same authenticated agent binding and authorized user/tenant principal, even when another agent has the same ordinary user or tenant fact-scope grant. A fact created under a broader parent catalog follows that parent's visibility policy. Historical reads resolve the stored owner and digest; rollback and later wider catalog promotion do not widen earlier agent-local facts. Making those facts visible more widely requires a separately authorized, evidence-preserving replay through the wider catalog and normal writer. This rule is enforced before relation rendering, search snippets, or result counts can disclose the agent-local fact.
