@@ -66,7 +66,7 @@ class ManagedSpoolSnapshot:
     high_water_mark: int
 
 
-def _store_file(directory: Path, store_id: str) -> Path:
+def managed_spool_store_path(directory: Path, store_id: str) -> Path:
     try:
         if UUID(store_id).hex != store_id:
             raise ValueError("noncanonical UUID")
@@ -154,7 +154,7 @@ class SqliteManagedSpool:
 
     def __init__(self, directory: Path, store_id: str) -> None:
         self.store_id = store_id
-        self.path = _store_file(directory, store_id)
+        self.path = managed_spool_store_path(directory, store_id)
         try:
             with self._open() as connection:
                 if connection.execute("PRAGMA journal_mode = WAL").fetchone()[0] != "wal":
@@ -188,7 +188,7 @@ class SqliteManagedSpool:
     @contextmanager
     def pin_backlog(cls, directory: Path, *, store_id: str) -> Iterator[sqlite3.Connection]:
         """Pin a selected spool via an observational, read-only connection."""
-        path = _store_file(directory, store_id)
+        path = managed_spool_store_path(directory, store_id)
         try:
             prepare_private_sqlite(path, require_existing=True)
             uri = path.absolute().as_uri() + "?mode=ro"
@@ -219,7 +219,7 @@ class SqliteManagedSpool:
         cls, directory: Path, store_id: str, entries: Callable[[], Iterator[tuple[ManagedSpoolEntry, bytes]]],
     ) -> Path:
         """Prepare and verify a complete unopened store under the owner's legacy lock."""
-        destination = _store_file(directory, store_id)
+        destination = managed_spool_store_path(directory, store_id)
         if destination.exists() or destination.is_symlink():
             return cls.verify_stage(directory, store_id, entries)
         try:
@@ -251,7 +251,7 @@ class SqliteManagedSpool:
     def verify_stage(
         directory: Path, store_id: str, entries: Callable[[], Iterator[tuple[ManagedSpoolEntry, bytes]]],
     ) -> Path:
-        path = _store_file(directory, store_id)
+        path = managed_spool_store_path(directory, store_id)
         try:
             prepare_private_sqlite(path, require_existing=True)
             uri = path.absolute().as_uri() + "?mode=ro"

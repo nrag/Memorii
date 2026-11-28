@@ -133,7 +133,7 @@ def test_backup_copies_the_pinned_pair_while_a_signed_writer_advances(
             _set_mode(operator, owner, "read_only")
             return writer.acquire_verified_snapshot().tuple_digest
 
-    original_copy = operator_backup._sqlite_backup
+    original_copy = operator_backup.copy_sqlite_backup
     advanced: list[str] = []
     archive = tmp_path / "archive"
     with ThreadPoolExecutor(max_workers=1) as executor, StorageAdministrationService(installation) as service:
@@ -146,7 +146,7 @@ def test_backup_copies_the_pinned_pair_while_a_signed_writer_advances(
                 advanced.append(executor.submit(publish).result(timeout=_TIMEOUT))
             original_copy(source, destination)
 
-        monkeypatch.setattr(operator_backup, "_sqlite_backup", copy_after_publication)
+        monkeypatch.setattr(operator_backup, "copy_sqlite_backup", copy_after_publication)
         backups = BackupRestoreOperator(StorageAdministrationOperator(service))
         owner = mint_owner_capability(service, _OWNER)
         manifest = backups.create_backup(
@@ -169,8 +169,8 @@ def test_backup_copies_the_pinned_pair_while_a_signed_writer_advances(
 def test_copy_failure_closes_both_pins_and_leaves_the_archive_path_retryable(
     installation: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failed_copy: str,
 ) -> None:
-    original_copy = operator_backup._sqlite_backup
-    original_open = operator_backup._open_backup_snapshot
+    original_copy = operator_backup.copy_sqlite_backup
+    original_open = operator_backup.open_backup_snapshot
     sources: list[sqlite3.Connection] = []
     archive = tmp_path / "archive"
 
@@ -191,8 +191,8 @@ def test_copy_failure_closes_both_pins_and_leaves_the_archive_path_retryable(
         backups = BackupRestoreOperator(StorageAdministrationOperator(service))
         owner = mint_owner_capability(service, _OWNER)
         with monkeypatch.context() as broken:
-            broken.setattr(operator_backup, "_open_backup_snapshot", observed_pin)
-            broken.setattr(operator_backup, "_sqlite_backup", interrupted_copy)
+            broken.setattr(operator_backup, "open_backup_snapshot", observed_pin)
+            broken.setattr(operator_backup, "copy_sqlite_backup", interrupted_copy)
             with pytest.raises(OperatorError, match="could not capture pinned backup snapshots"):
                 backups.create_backup(
                     capability=owner, archive_root=archive, reason="inject copy failure", recovery_key=_RECOVERY_KEY,
@@ -228,7 +228,7 @@ def test_backup_refuses_a_generation_switch_after_both_snapshots_are_pinned(
             )
             return intent.candidate_publication.payload_digest()
 
-    original_copy = operator_backup._sqlite_backup
+    original_copy = operator_backup.copy_sqlite_backup
     upgrades: list[str] = []
     archive = tmp_path / "archive"
     with ThreadPoolExecutor(max_workers=1) as executor, StorageAdministrationService(installation) as service:
@@ -239,7 +239,7 @@ def test_backup_refuses_a_generation_switch_after_both_snapshots_are_pinned(
                 upgrades.append(executor.submit(upgrade).result(timeout=_TIMEOUT))
             original_copy(source, destination)
 
-        monkeypatch.setattr(operator_backup, "_sqlite_backup", copy_after_upgrade)
+        monkeypatch.setattr(operator_backup, "copy_sqlite_backup", copy_after_upgrade)
         backups = BackupRestoreOperator(StorageAdministrationOperator(service))
         owner = mint_owner_capability(service, _OWNER)
         with pytest.raises(OperatorError, match="backup authority changed before archive publication"):
@@ -256,7 +256,7 @@ def test_backup_refuses_a_generation_switch_after_both_snapshots_are_pinned(
 def test_second_pin_failure_closes_the_first_without_copying(
     installation: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    original_open = operator_backup._open_backup_snapshot
+    original_open = operator_backup.open_backup_snapshot
     sources: list[sqlite3.Connection] = []
     archive = tmp_path / "archive"
 
@@ -271,8 +271,8 @@ def test_second_pin_failure_closes_the_first_without_copying(
     def unexpected_copy(_source: sqlite3.Connection, _destination: Path) -> None:
         pytest.fail("SQLite copy started with only one participant pinned")
 
-    monkeypatch.setattr(operator_backup, "_open_backup_snapshot", interrupt_partition_pin)
-    monkeypatch.setattr(operator_backup, "_sqlite_backup", unexpected_copy)
+    monkeypatch.setattr(operator_backup, "open_backup_snapshot", interrupt_partition_pin)
+    monkeypatch.setattr(operator_backup, "copy_sqlite_backup", unexpected_copy)
     with StorageAdministrationService(installation) as service:
         owner = mint_owner_capability(service, _OWNER)
         backups = BackupRestoreOperator(StorageAdministrationOperator(service))
@@ -290,7 +290,7 @@ def test_second_pin_failure_closes_the_first_without_copying(
 def test_pin_checks_the_partition_watermark_before_any_copy(
     installation: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    original_open = operator_backup._open_backup_snapshot
+    original_open = operator_backup.open_backup_snapshot
     archive = tmp_path / "archive"
 
     @contextmanager
@@ -305,8 +305,8 @@ def test_pin_checks_the_partition_watermark_before_any_copy(
     def unexpected_copy(_source: sqlite3.Connection, _destination: Path) -> None:
         pytest.fail("copy started with a participant outside the selected watermark")
 
-    monkeypatch.setattr(operator_backup, "_open_backup_snapshot", pin_after_publication_tamper)
-    monkeypatch.setattr(operator_backup, "_sqlite_backup", unexpected_copy)
+    monkeypatch.setattr(operator_backup, "open_backup_snapshot", pin_after_publication_tamper)
+    monkeypatch.setattr(operator_backup, "copy_sqlite_backup", unexpected_copy)
     with StorageAdministrationService(installation) as service:
         owner = mint_owner_capability(service, _OWNER)
         backups = BackupRestoreOperator(StorageAdministrationOperator(service))
@@ -353,7 +353,7 @@ def test_backup_refuses_a_suppression_committed_during_copy(
             )
             return governance.apply_forget(capability=owner, plan=plan).suppression_id
 
-    original_copy = operator_backup._sqlite_backup
+    original_copy = operator_backup.copy_sqlite_backup
     suppressed: list[str] = []
     archive = tmp_path / "archive"
     with ThreadPoolExecutor(max_workers=1) as executor, StorageAdministrationService(installation) as service:
@@ -362,7 +362,7 @@ def test_backup_refuses_a_suppression_committed_during_copy(
                 suppressed.append(executor.submit(forget).result(timeout=_TIMEOUT))
             original_copy(source, destination)
 
-        monkeypatch.setattr(operator_backup, "_sqlite_backup", copy_after_forget)
+        monkeypatch.setattr(operator_backup, "copy_sqlite_backup", copy_after_forget)
         owner = mint_owner_capability(service, _OWNER)
         backups = BackupRestoreOperator(StorageAdministrationOperator(service))
         with pytest.raises(OperatorError, match="backup authority changed before archive publication"):
@@ -381,7 +381,7 @@ def test_erasure_waits_for_backup_plaintext_cleanup(
     copy_started = Event()
     erasure_waiting = Event()
     partition = installation / "partition"
-    original_copy = operator_backup._sqlite_backup
+    original_copy = operator_backup.copy_sqlite_backup
     original_guard = operator_backup.backup_lifetime_guard
 
     @contextmanager
@@ -419,7 +419,7 @@ def test_erasure_waits_for_backup_plaintext_cleanup(
             return governance.apply_erasure(capability=owner, plan=reviewed, erase=True).incomplete
 
     monkeypatch.setattr(operator_backup, "backup_lifetime_guard", observed_guard)
-    monkeypatch.setattr(operator_backup, "_sqlite_backup", copy_during_erasure_request)
+    monkeypatch.setattr(operator_backup, "copy_sqlite_backup", copy_during_erasure_request)
     with ThreadPoolExecutor(max_workers=2) as executor:
         backup = executor.submit(make_backup)
         assert copy_started.wait(timeout=_TIMEOUT)

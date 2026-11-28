@@ -312,7 +312,7 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _snapshot_digest(path: Path) -> str:
+def sqlite_snapshot_digest(path: Path) -> str:
     _require_snapshot_without_sidecars(path)
     if path.is_symlink() or not path.is_file():
         raise OperatorError("integrity_error: staged SQLite snapshot must be a regular file")
@@ -327,7 +327,7 @@ def _require_snapshot_without_sidecars(path: Path) -> None:
             raise OperatorError("integrity_error: staged SQLite snapshot contains a live sidecar")
 
 
-def _copy_private_restore_media(source: Path, destination: Path) -> None:
+def copy_private_restore_media(source: Path, destination: Path) -> None:
     with open_private_file(source) as original:
         descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(descriptor, "wb") as output:
@@ -338,12 +338,12 @@ def _copy_private_restore_media(source: Path, destination: Path) -> None:
 
 def _copy_attested_partition(source: Path, target: Path, expected_digest: str) -> None:
     """Copy only the immutable SQLite bytes named by the attestation."""
-    _copy_private_restore_media(source, target)
-    if _snapshot_digest(target) != expected_digest:
+    copy_private_restore_media(source, target)
+    if sqlite_snapshot_digest(target) != expected_digest:
         raise OperatorError("integrity_error: restore partition changed during copy")
 
 
-def _suppression_snapshot_digest(directory: Path) -> str:
+def digest_suppression_snapshot(directory: Path) -> str:
     if directory.is_symlink() or (directory.exists() and not directory.is_dir()):
         raise OperatorError("integrity_error: suppression snapshot must be a directory")
     entries: list[tuple[str, str]] = []
@@ -370,7 +370,7 @@ def backup_lifetime_guard(service: StorageAdministrationService, *, exclusive: b
 
 
 @contextmanager
-def _open_backup_snapshot(path: Path) -> Iterator[sqlite3.Connection]:
+def open_backup_snapshot(path: Path) -> Iterator[sqlite3.Connection]:
     require_private_directory(path.parent)
     require_private_sqlite(path)
     with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as connection:
@@ -381,7 +381,7 @@ def _open_backup_snapshot(path: Path) -> Iterator[sqlite3.Connection]:
         yield connection
 
 
-def _sqlite_backup(source: sqlite3.Connection, destination: Path) -> None:
+def copy_sqlite_backup(source: sqlite3.Connection, destination: Path) -> None:
     """Copy a transaction already pinned by a verified read on this handle."""
     deadline = time.monotonic() + _SQLITE_BACKUP_TIMEOUT_SECONDS
 
@@ -413,8 +413,8 @@ class _BackupAuthority:
 def _backup_suppression_watermark(service: StorageAdministrationService) -> tuple[str, str]:
     control = service.installation_root / "control"
     return (
-        _suppression_snapshot_digest(control / "suppressions"),
-        _suppression_snapshot_digest(control / "suppressions-archive"),
+        digest_suppression_snapshot(control / "suppressions"),
+        digest_suppression_snapshot(control / "suppressions-archive"),
     )
 
 
@@ -430,8 +430,8 @@ def _pin_backup_sources(
     partition_path = service.partition_path()
     control_identity = service._partition_file_identity(control_path)
     partition_identity = service._partition_file_identity(partition_path)
-    control = stack.enter_context(_open_backup_snapshot(control_path))
-    data = stack.enter_context(_open_backup_snapshot(partition_path))
+    control = stack.enter_context(open_backup_snapshot(control_path))
+    data = stack.enter_context(open_backup_snapshot(partition_path))
 
     # BEGIN alone does not establish a SQLite read snapshot. Read the exact
     # rows that bind each transaction while holding the publication fence.
@@ -523,10 +523,10 @@ def _atomic_write(path: Path, payload: bytes) -> None:
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
-    _sync_directory(path.parent)
+    fsync_directory(path.parent)
 
 
-def _sync_directory(path: Path) -> None:
+def fsync_directory(path: Path) -> None:
     directory = os.open(path, os.O_RDONLY)
     try:
         os.fsync(directory)
@@ -534,7 +534,7 @@ def _sync_directory(path: Path) -> None:
         os.close(directory)
 
 
-def _validate_participant(participant: BackupParticipant) -> Path:
+def validate_backup_participant(participant: BackupParticipant) -> Path:
     """A participant filename must be a plain basename inside the archive."""
     filename = Path(participant.filename)
     if (
@@ -607,10 +607,10 @@ class BackupRestoreOperator:
                         if service._control.read_managed_spool_binding() is not None:
                             spool = open_managed_spool(service)
                             spool_snapshot = snapshots.enter_context(spool.pin_snapshot())
-                    _sqlite_backup(control, copies / "control.sqlite3")
-                    _sqlite_backup(partition, copies / "partition.sqlite3")
+                    copy_sqlite_backup(control, copies / "control.sqlite3")
+                    copy_sqlite_backup(partition, copies / "partition.sqlite3")
                     if spool_snapshot is not None:
-                        _sqlite_backup(spool_snapshot.connection, copies / f"{_MANAGED_SPOOL_PARTICIPANT}.sqlite3")
+                        copy_sqlite_backup(spool_snapshot.connection, copies / f"{_MANAGED_SPOOL_PARTICIPANT}.sqlite3")
             except (
                 ConsumerDeliveryError, ControlJournalChainError, ControlStateError, OSError, sqlite3.Error,
                 StorageAdministrationError, ValidationError,
@@ -664,7 +664,7 @@ class BackupRestoreOperator:
                 manifest_digest="0" * 64,
                 manifest_signature="0" * 128,
             )
-            _verify_staged_backup(service, copies, manifest)
+            verify_staged_backup(service, copies, manifest)
             digest = manifest.unsigned_digest()
             key_id = service._signer_key_id
             signature = service._signing.sign(key_id, _SIGNING_PURPOSE, digest)
@@ -722,7 +722,7 @@ class BackupRestoreOperator:
                     ):
                         raise OperatorError("conflict: managed spool selection changed before backup publication")
                     os.replace(encrypted, archive_root)
-                    _sync_directory(archive_root.parent)
+                    fsync_directory(archive_root.parent)
             except (
                 ControlJournalChainError, ControlStateError, PermissionError,
                 StorageAdministrationError, ValidationError,
@@ -767,7 +767,7 @@ class BackupRestoreOperator:
             expected_ids.add(_MANAGED_SPOOL_PARTICIPANT)
         seen_ids: set[str] = set()
         for participant in manifest.participants:
-            filename = _validate_participant(participant)
+            filename = validate_backup_participant(participant)
             if participant.participant_id in seen_ids:
                 raise OperatorError(
                     f"invalid_request: duplicate participant id"
@@ -880,17 +880,17 @@ class BackupRestoreOperator:
             staging = Path(scratch)
             require_private_directory(staging)
             for participant in manifest.participants:
-                source = archive_root / _validate_participant(participant)
+                source = archive_root / validate_backup_participant(participant)
                 decrypt_backup_participant(
                     source, staging / f"{participant.participant_id}.sqlite3",
                     key=content_key, nonce=base64.b64decode(participant.nonce),
                     expected_digest=participant.sha256, expected_size=participant.size_bytes,
                 )
-            source = _verify_staged_backup(service, staging, manifest)
-            control_snapshot_digest = _snapshot_digest(staging / "control.sqlite3")
-            partition_snapshot_digest = _snapshot_digest(staging / "partition.sqlite3")
+            source = verify_staged_backup(service, staging, manifest)
+            control_snapshot_digest = sqlite_snapshot_digest(staging / "control.sqlite3")
+            partition_snapshot_digest = sqlite_snapshot_digest(staging / "partition.sqlite3")
             spool_snapshot_digest = (
-                _snapshot_digest(staging / f"{_MANAGED_SPOOL_PARTICIPANT}.sqlite3")
+                sqlite_snapshot_digest(staging / f"{_MANAGED_SPOOL_PARTICIPANT}.sqlite3")
                 if manifest.managed_spool is not None else None
             )
             with service.verified_operation_context() as (state, finalized):
@@ -900,13 +900,13 @@ class BackupRestoreOperator:
                 # Stage current suppression evidence rather than the older
                 # control snapshot's view of eligible records.
                 current_suppressions = service.installation_root / "control" / "suppressions"
-                suppression_snapshot_digest = _suppression_snapshot_digest(current_suppressions)
+                suppression_snapshot_digest = digest_suppression_snapshot(current_suppressions)
                 staging_suppressions = staging / "suppressions"
                 if current_suppressions.is_dir():
                     staging_suppressions.mkdir(mode=0o700)
                     for journal in sorted(current_suppressions.glob("forget-*.json")):
                         _atomic_write(staging_suppressions / journal.name, journal.read_bytes())
-                if _suppression_snapshot_digest(staging_suppressions) != suppression_snapshot_digest:
+                if digest_suppression_snapshot(staging_suppressions) != suppression_snapshot_digest:
                     raise OperatorError("conflict: suppression evidence changed during restore staging")
                 unsigned = RestoreStagingAttestation(
                     plan_digest=plan.plan_digest,
@@ -930,7 +930,7 @@ class BackupRestoreOperator:
                 attestation = unsigned.model_copy(update={"signature": signature})
                 _atomic_write(staging / _RESTORE_ATTESTATION, (attestation.model_dump_json() + "\n").encode())
                 os.replace(staging, staging_root)
-                _sync_directory(staging_root.parent)
+                fsync_directory(staging_root.parent)
         return staging_root
 
     def verify_staged_restore(
@@ -968,14 +968,14 @@ class BackupRestoreOperator:
             ):
                 raise OperatorError("conflict: staging does not match the reviewed restore plan")
             if (
-                _snapshot_digest(staging_root / "control.sqlite3") != attestation.control_snapshot_digest
-                or _snapshot_digest(staging_root / "partition.sqlite3") != attestation.partition_snapshot_digest
-                or _suppression_snapshot_digest(staging_root / "suppressions") != attestation.suppression_snapshot_digest
+                sqlite_snapshot_digest(staging_root / "control.sqlite3") != attestation.control_snapshot_digest
+                or sqlite_snapshot_digest(staging_root / "partition.sqlite3") != attestation.partition_snapshot_digest
+                or digest_suppression_snapshot(staging_root / "suppressions") != attestation.suppression_snapshot_digest
             ):
                 raise OperatorError("integrity_error: staged restore bytes differ from the attestation")
             spool_snapshot = staging_root / f"{_MANAGED_SPOOL_PARTICIPANT}.sqlite3"
             if attestation.spool_snapshot_digest is not None:
-                if _snapshot_digest(spool_snapshot) != attestation.spool_snapshot_digest:
+                if sqlite_snapshot_digest(spool_snapshot) != attestation.spool_snapshot_digest:
                     raise OperatorError("integrity_error: staged managed intake differs from its attestation")
             elif spool_snapshot.exists() or spool_snapshot.is_symlink():
                 raise OperatorError("integrity_error: staged managed intake is outside its attestation")
@@ -1102,17 +1102,17 @@ class BackupRestoreOperator:
                 with service.partition().manual_write_transaction():
                     if target.exists() or target.is_symlink():
                         existing = selected_partition_path(partition_root, finalized.data_generation_id)
-                        if _snapshot_digest(existing) != attestation.partition_snapshot_digest:
+                        if sqlite_snapshot_digest(existing) != attestation.partition_snapshot_digest:
                             raise OperatorError("conflict: occupied generation does not match reviewed staging")
                     else:
-                        _sync_directory(Path(scratch))
+                        fsync_directory(Path(scratch))
                         os.rename(scratch, target)
-                        _sync_directory(generations)
+                        fsync_directory(generations)
                     _atomic_write(
                         service.installation_root / "control" / PARTITION_GENERATION_SELECTOR,
                         (selector.model_dump_json() + "\n").encode(),
                     )
-                    _sync_directory(service.installation_root / "control")
+                    fsync_directory(service.installation_root / "control")
                     return selector
 
     def activate_older_restore(
@@ -1314,7 +1314,7 @@ class BackupRestoreOperator:
             ):
                 if not service._matches_materialization(connection, publication, partition=compacted):
                     raise OperatorError("integrity_error: compacted generation does not replay to its signed tuple")
-        _snapshot_digest(working)
+        sqlite_snapshot_digest(working)
         with working.open("rb") as database:
             os.fsync(database.fileno())
         return publication
@@ -1332,9 +1332,9 @@ class BackupRestoreOperator:
             service._signer_key_id, PARTITION_GENERATION_SIGNATURE_PURPOSE, unsigned.unsigned_digest(),
         )})
         with service.partition().manual_write_transaction():
-            _sync_directory(working)
+            fsync_directory(working)
             os.rename(working, generations / publication.data_generation_id)
-            _sync_directory(generations)
+            fsync_directory(generations)
             service._control.write_generation_change(
                 intent,
                 service._journal_entry(
@@ -1346,7 +1346,7 @@ class BackupRestoreOperator:
                 service.installation_root / "control" / PARTITION_GENERATION_SELECTOR,
                 (selector.model_dump_json() + "\n").encode(),
             )
-            _sync_directory(service.installation_root / "control")
+            fsync_directory(service.installation_root / "control")
         outcome = service._recover_generation_change(intent)
         if outcome.disposition != "finalized":
             raise OperatorError("integrity_error: restored generation did not finalize")
@@ -1357,7 +1357,7 @@ class BackupRestoreOperator:
         service: StorageAdministrationService, attestation: RestoreStagingAttestation,
     ) -> None:
         live_suppressions = service.installation_root / "control" / "suppressions"
-        if _suppression_snapshot_digest(live_suppressions) != attestation.suppression_snapshot_digest:
+        if digest_suppression_snapshot(live_suppressions) != attestation.suppression_snapshot_digest:
             raise OperatorError("conflict: live suppression watermark changed after staging")
 
     @staticmethod
@@ -1379,7 +1379,7 @@ class BackupRestoreOperator:
             raise OperatorError("conflict: restore staging requires read_only mode")
 
 
-def _verify_staged_backup(
+def verify_staged_backup(
     service: StorageAdministrationService, staging: Path, manifest: InstallationBackupManifest,
 ) -> _VerifiedBackup:
     from memorii.core.harness_state.consumer import ConsumerDeliveryError
@@ -1505,27 +1505,27 @@ def boot_restored_installation(
             for name, target in (("control.sqlite3", control_root / "control.sqlite3"), ("partition.sqlite3", partition)):
                 source = staging_root / name
                 _require_snapshot_without_sidecars(source)
-                _copy_private_restore_media(source, target)
+                copy_private_restore_media(source, target)
             with closing(sqlite3.connect(partition.absolute().as_uri() + "?mode=ro&immutable=1", uri=True)) as connection:
                 if PartitionDataRepository.requires_managed_restore(connection):
                     raise OperatorError("needs_reconciliation: managed runtime state requires a staged generation restore")
             keys_target = control_root / "keys"
             ensure_private_directory(keys_target)
             for key in sorted(signing_keys_directory.glob("*.key")):
-                _copy_private_restore_media(key, keys_target / key.name)
+                copy_private_restore_media(key, keys_target / key.name)
             staged_suppressions = staging_root / "suppressions"
             if staged_suppressions.exists() or staged_suppressions.is_symlink():
                 require_private_directory(staged_suppressions)
                 target = control_root / "suppressions"
                 ensure_private_directory(target)
                 for journal in staged_suppressions.glob("forget-*.json"):
-                    _copy_private_restore_media(journal, target / journal.name)
+                    copy_private_restore_media(journal, target / journal.name)
             with StorageAdministrationService(working) as service:
                 if service._control_state().installation_id != identity:
                     raise OperatorError("integrity_error: staged control identity does not match the anchor")
             prepare_installation_root(installation_root)
             os.replace(working, installation_root)
-            _sync_directory(installation_root.parent)
+            fsync_directory(installation_root.parent)
     except OSError as exc:
         raise OperatorError("denied: restore media and destination must be private to the storage owner") from exc
     except sqlite3.DatabaseError as exc:

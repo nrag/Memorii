@@ -36,14 +36,14 @@ from memorii.core.storage_administration.operator import StorageAdministrationOp
 from memorii.core.storage_administration.operator_backup import (
     BackupRestoreOperator,
     InstallationBackupManifest,
-    _copy_private_restore_media,
-    _open_backup_snapshot,
-    _snapshot_digest,
-    _sqlite_backup,
-    _suppression_snapshot_digest,
-    _sync_directory,
-    _validate_participant,
-    _verify_staged_backup,
+    copy_private_restore_media,
+    copy_sqlite_backup,
+    digest_suppression_snapshot,
+    fsync_directory,
+    open_backup_snapshot,
+    sqlite_snapshot_digest,
+    validate_backup_participant,
+    verify_staged_backup,
 )
 from memorii.core.storage_administration.recovery_authority import (
     IndependentRecoveryCustody,
@@ -153,7 +153,7 @@ def _stage_archive(
         None,
     )
     for participant in manifest.participants:
-        source = archive / _validate_participant(participant)
+        source = archive / validate_backup_participant(participant)
         require_private_file(source)
         decrypt_backup_participant(
             source, temporary / f"{participant.participant_id}.sqlite3", key=key,
@@ -167,7 +167,7 @@ def _restore_spool(
     binding: InstalledManagedSpoolBinding | None, manifest: InstallationBackupManifest, source: Path, destination: Path,
     publication: RuntimePublicationState,
 ) -> str | None:
-    from memorii.core.harness_state.managed_spool_store import SqliteManagedSpool, _store_file
+    from memorii.core.harness_state.managed_spool_store import SqliteManagedSpool, managed_spool_store_path
 
     watermark = manifest.managed_spool
     if (binding is None) != (watermark is None) or (
@@ -179,16 +179,16 @@ def _restore_spool(
     spool = destination / "spool" / "managed"
     ensure_private_directory(spool.parent)
     ensure_private_directory(spool)
-    path = _store_file(spool, watermark.store_id)
-    _copy_private_restore_media(source / "managed-spool.sqlite3", path)
+    path = managed_spool_store_path(spool, watermark.store_id)
+    copy_private_restore_media(source / "managed-spool.sqlite3", path)
     selected = SqliteManagedSpool(spool, watermark.store_id)
     selected.hold_prior_generation(
         installation_id=publication.installation_id, repository_id=publication.repository_id,
         generation_id=publication.data_generation_id,
     )
-    _sync_directory(spool)
-    _sync_directory(spool.parent)
-    return _snapshot_digest(path)
+    fsync_directory(spool)
+    fsync_directory(spool.parent)
+    return sqlite_snapshot_digest(path)
 
 
 def _read_activation(root: Path, trust_key: bytes) -> InstallationRecoveryActivation:
@@ -201,7 +201,7 @@ def _read_activation(root: Path, trust_key: bytes) -> InstallationRecoveryActiva
 
 
 def _require_inert_root(service: StorageAdministrationService, marker: InstallationRecoveryActivation) -> None:
-    from memorii.core.harness_state.managed_spool_store import _store_file
+    from memorii.core.harness_state.managed_spool_store import managed_spool_store_path
 
     state = service._control_state()
     expected = marker.activation_state
@@ -224,13 +224,13 @@ def _require_inert_root(service: StorageAdministrationService, marker: Installat
             if registry.recovery_snapshot().digest() != marker.read_grant_denials_digest:
                 raise RecoveryAuthorityError("integrity_error: replacement read denials changed since staging")
     if marker.suppression_snapshots != (
-        _suppression_snapshot_digest(control / "suppressions"), _suppression_snapshot_digest(control / "suppressions-archive"),
+        digest_suppression_snapshot(control / "suppressions"), digest_suppression_snapshot(control / "suppressions-archive"),
     ):
         raise RecoveryAuthorityError("integrity_error: inert replacement suppression changed since staging")
     binding = service._control.read_managed_spool_binding()
     if (binding is None) != (marker.managed_spool_digest is None) or (
-        binding is not None and marker.managed_spool_digest != _snapshot_digest(
-            _store_file(service.installation_root / "spool" / "managed", binding.store_id),
+        binding is not None and marker.managed_spool_digest != sqlite_snapshot_digest(
+            managed_spool_store_path(service.installation_root / "spool" / "managed", binding.store_id),
         )
     ):
         raise RecoveryAuthorityError("integrity_error: inert replacement spool changed since staging")
@@ -259,7 +259,7 @@ def _publish_replacement(
     elif current != marker.pending_head:
         raise RecoveryAuthorityError("conflict: different independent recovery transition")
     os.rename(candidate, destination)
-    _sync_directory(destination.parent)
+    fsync_directory(destination.parent)
 
 
 def stage_replacement_restore(
@@ -324,11 +324,11 @@ def stage_replacement_restore(
             ensure_private_directory(working)
             ensure_private_directory(control)
             ensure_private_directory(keys)
-            _copy_private_restore_media(sources["storage-owner", "control_snapshot"], control / "control.sqlite3")
+            copy_private_restore_media(sources["storage-owner", "control_snapshot"], control / "control.sqlite3")
             key_name = f"{authority.signer_key_id}.key"
             if Path(key_name).name != key_name or key_name.startswith("."):
                 raise RecoveryAuthorityError("invalid_request: retained signer identity is invalid")
-            _copy_private_restore_media(retained_signing_keys / key_name, keys / key_name)
+            copy_private_restore_media(retained_signing_keys / key_name, keys / key_name)
             _materialize_suppressions(sources["active", "suppression"], control / "suppressions")
             _materialize_suppressions(sources["archived", "suppression"], control / "suppressions-archive")
             read_denials = None
@@ -373,7 +373,7 @@ def stage_replacement_restore(
                 source_manifest = _stage_archive(operator, archive, staged_archive, recovery_key=data_recovery_key)
                 if source_manifest.manifest_digest != plan.archive_digest:
                     raise RecoveryAuthorityError("conflict: archive differs from reviewed replacement")
-                source = _verify_staged_backup(service, staged_archive, source_manifest)
+                source = verify_staged_backup(service, staged_archive, source_manifest)
                 if (
                     source.publication.repository_id != anchor.repository_id
                     or source.publication.vector.partition_ordinal > current.vector.partition_ordinal
@@ -384,7 +384,7 @@ def stage_replacement_restore(
                 partition_root = working / "partition"
                 ensure_private_directory(partition_root)
                 target = partition_root / "partition.sqlite3"
-                _copy_private_restore_media(staged_archive / "partition.sqlite3", target)
+                copy_private_restore_media(staged_archive / "partition.sqlite3", target)
                 publication = operator._prepare_restored_generation(
                     target, source=source.publication, live=current, preview_digest=plan.digest(),
                     require_upgrade=False, raw_payloads=False,
@@ -427,8 +427,8 @@ def stage_replacement_restore(
                 activation = InstallationRecoveryActivation(
                     plan=plan, pending_head=pending, publication=publication, activation_state=ready,
                     suppression_snapshots=(
-                        _suppression_snapshot_digest(control / "suppressions"),
-                        _suppression_snapshot_digest(control / "suppressions-archive"),
+                        digest_suppression_snapshot(control / "suppressions"),
+                        digest_suppression_snapshot(control / "suppressions-archive"),
                     ), managed_spool_digest=spool_digest,
                     read_grant_denials_digest=None if read_denials is None else read_denials.digest(),
                     activation_journal=entry, signer_key_id=authority.signer_key_id, signature="0" * 128,
@@ -438,15 +438,15 @@ def stage_replacement_restore(
                 )})
                 write_private_file(control / _ACTIVATION_FILE, activation.model_dump_json().encode("utf-8"), exclusive=True)
 
-            _snapshot_digest(control / "control.sqlite3")
-            _sync_directory(control)
-            _sync_directory(partition_root)
-            _sync_directory(working)
+            sqlite_snapshot_digest(control / "control.sqlite3")
+            fsync_directory(control)
+            fsync_directory(partition_root)
+            fsync_directory(working)
             with locked_file(destination.parent / ".replacement-publish.lock", exclusive=True, private=True):
                 if prepared.exists() or prepared.is_symlink():
                     raise RecoveryAuthorityError("conflict: a prepared replacement already exists")
                 os.rename(working, prepared)
-                _sync_directory(destination.parent)
+                fsync_directory(destination.parent)
                 _publish_replacement(prepared, destination, activation, custody)
             return activation
     except (InvalidTag, OSError, ValueError) as exc:
@@ -480,13 +480,13 @@ def _snapshot_successor(
     service: StorageAdministrationService, marker: InstallationRecoveryActivation, scratch: Path,
 ) -> tuple[InstallationControlRecoveryBundle, tuple[Path, ...]]:
     destination = scratch / "control.sqlite3"
-    with _open_backup_snapshot(service.control_path()) as source:
+    with open_backup_snapshot(service.control_path()) as source:
         source.execute("SELECT id FROM installation_control").fetchone()
-        _sqlite_backup(source, destination)
+        copy_sqlite_backup(source, destination)
     with ControlDatabase(destination, journal_verifier=service._verify_journal_signature) as control:
         control.write_control_state(marker.activation_state, marker.activation_journal)
         control.validate_journal()
-    _snapshot_digest(destination)
+    sqlite_snapshot_digest(destination)
     root = service.installation_root / "control"
     denials = None
     if marker.read_grant_denials_digest is not None:

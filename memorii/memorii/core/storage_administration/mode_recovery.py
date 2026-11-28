@@ -20,12 +20,12 @@ from memorii.core.storage_administration.operator import (
     OwnerCapability,
     require_owner_capability,
 )
-from memorii.core.storage_administration.operator_backup import _sync_directory, backup_lifetime_guard
+from memorii.core.storage_administration.operator_backup import backup_lifetime_guard, fsync_directory
 from memorii.core.storage_administration.read_grant_recovery import (
     ReadGrantRecoveryOwner,
-    _Digest,
-    _Identity,
-    _Watermark,
+    RecoveryDigest,
+    RecoveryIdentity,
+    RecoveryWatermark,
 )
 from memorii.core.storage_administration.recovery_authority import (
     InstallationRecoveryAnchor,
@@ -50,10 +50,10 @@ _PLAN_BYTES = 64 * 1024
 class _ModeRecoveryPlan(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    operation_id: _Identity
-    predecessor: _Digest
-    request_digest: _Digest
-    before_authority_digest: _Digest
+    operation_id: RecoveryIdentity
+    predecessor: RecoveryDigest
+    request_digest: RecoveryDigest
+    before_authority_digest: RecoveryDigest
     before: InstallationControlState
     target: InstallationMode
     applied: InstallationControlJournalEntry
@@ -80,7 +80,7 @@ class _ModeRecoveryPlan(BaseModel):
         )
 
 
-def _mode_watermark(owner: ReadGrantRecoveryOwner, capability: OwnerCapability) -> _Watermark:
+def _mode_watermark(owner: ReadGrantRecoveryOwner, capability: OwnerCapability) -> RecoveryWatermark:
     service = owner._service
     require_owner_capability(service, capability)
     state = service._control_state()
@@ -93,11 +93,11 @@ def _mode_watermark(owner: ReadGrantRecoveryOwner, capability: OwnerCapability) 
         or (change is not None and change.phase == "prepared")
     ):
         raise RecoveryAuthorityError("needs_reconciliation: mode recovery requires settled publication authority")
-    return _Watermark(state, publication, service._control.next_journal_position(), owner._current_suppressions())
+    return RecoveryWatermark(state, publication, service._control.next_journal_position(), owner._current_suppressions())
 
 
 def _make_plan(
-    owner: ReadGrantRecoveryOwner, watermark: _Watermark, request: ModeChangeRequest,
+    owner: ReadGrantRecoveryOwner, watermark: RecoveryWatermark, request: ModeChangeRequest,
     operation_id: str, predecessor: str,
 ) -> _ModeRecoveryPlan:
     state = watermark.state
@@ -132,14 +132,14 @@ def _ensure_pending_guard(path: Path, plan: _ModeRecoveryPlan) -> None:
             raise RecoveryAuthorityError("conflict: local mode transition guard selects a different operation") from None
 
 
-def _ready(watermark: _Watermark, plan: _ModeRecoveryPlan) -> _Watermark:
+def _ready(watermark: RecoveryWatermark, plan: _ModeRecoveryPlan) -> RecoveryWatermark:
     return watermark._replace(
         state=plan.ready_state(), position=(plan.activation.revision + 1, plan.activation.entry_digest),
     )
 
 
 def _activate(
-    owner: ReadGrantRecoveryOwner, watermark: _Watermark, plan: _ModeRecoveryPlan, path: Path,
+    owner: ReadGrantRecoveryOwner, watermark: RecoveryWatermark, plan: _ModeRecoveryPlan, path: Path,
     anchor: InstallationRecoveryAnchor,
 ) -> None:
     ready = _ready(watermark, plan)
@@ -159,7 +159,7 @@ def _activate(
         owner._service._control.write_control_state(ready.state, plan.activation)
     if pending:
         path.unlink()
-        _sync_directory(path.parent)
+        fsync_directory(path.parent)
 
 
 def change_mode_with_recovery(

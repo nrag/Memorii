@@ -20,9 +20,9 @@ from memorii.core.storage_administration.operator import (
     StorageAdministrationOperator,
     require_owner_capability,
 )
-from memorii.core.storage_administration.operator_backup import _sync_directory, backup_lifetime_guard
+from memorii.core.storage_administration.operator_backup import backup_lifetime_guard, fsync_directory
 from memorii.core.storage_administration.operator_governance import ForgetPlan, GovernanceOperator
-from memorii.core.storage_administration.read_grant_recovery import ReadGrantRecoveryOwner, _Watermark
+from memorii.core.storage_administration.read_grant_recovery import ReadGrantRecoveryOwner, RecoveryWatermark
 from memorii.core.storage_administration.recovery_authority import (
     InstallationRecoveryHead,
     PendingRecoveryHead,
@@ -62,7 +62,7 @@ def _new_plan(
     request: ForgetPlan,
     operation_id: str,
     predecessor: str,
-    before: _Watermark,
+    before: RecoveryWatermark,
 ) -> _SuppressionPlan:
     governance = GovernanceOperator(StorageAdministrationOperator(owner._service))
     reviewed = governance.plan_forget(capability=capability, selectors=request.selectors, scope_note=request.scope_note)
@@ -173,7 +173,7 @@ def apply_suppression_with_recovery(
                 if plan is None:
                     plan = expected
                     ensure_private_directory(operations)
-                    _sync_directory(owner._control)
+                    fsync_directory(owner._control)
                     payload = plan.model_dump_json().encode()
                     if len(payload) > MAX_RECOVERY_METADATA_BYTES:
                         raise RecoveryAuthorityError("resource_exhausted: recovery operation exceeds its byte limit")
@@ -272,12 +272,12 @@ def apply_suppression_with_recovery(
                 if live_record is None:
                     path = _record_path(owner, plan.record)
                     ensure_private_directory(path.parent)
-                    _sync_directory(owner._control)
+                    fsync_directory(owner._control)
                     write_private_file(path, (plan.record.model_dump_json() + "\n").encode())
                 else:
                     # A prior writer could have stopped after rename but before
                     # syncing the entry, so repeat the barrier before SQLite.
-                    _sync_directory(_record_path(owner, plan.record).parent)
+                    fsync_directory(_record_path(owner, plan.record).parent)
                 service._control.write_control_state(next_state, journal)
             elif watermark != applied:
                 raise RecoveryAuthorityError(

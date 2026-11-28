@@ -22,9 +22,9 @@ from memorii.core.storage_administration.operator import (
 )
 from memorii.core.storage_administration.operator_backup import (
     BackupRestoreOperator,
-    _copy_private_restore_media,
-    _open_backup_snapshot,
-    _sqlite_backup,
+    copy_private_restore_media,
+    copy_sqlite_backup,
+    open_backup_snapshot,
 )
 from memorii.core.storage_administration.operator_governance import ForgetTargetSelector, GovernanceOperator
 from memorii.core.storage_administration.read_grant_recovery import ReadGrantRecoveryOwner
@@ -90,9 +90,9 @@ def _retain_current_authority(service: StorageAdministrationService, custody_roo
     assert publication is not None
     journal = service._control.read_journal()
     control_snapshot = scratch / "control.sqlite3"
-    with _open_backup_snapshot(service.control_path()) as source:
+    with open_backup_snapshot(service.control_path()) as source:
         source.execute("SELECT id FROM installation_control").fetchone()
-        _sqlite_backup(source, control_snapshot)
+        copy_sqlite_backup(source, control_snapshot)
     payloads = {
         ("storage-owner", "control_journal"): [item.model_dump(mode="json") for item in journal],
         ("storage-owner", "public_trust"): [item.model_dump(mode="json") for item in service._control.list_trust_entries()],
@@ -168,7 +168,7 @@ def test_older_archive_restores_inert_and_retries_publish_before_sealed_activati
         write_suppression_record(original / "control", suppression)
         custody, bundle, public_key = _retain_current_authority(source, tmp_path / "custody", tmp_path / "snapshot")
         key_name = f"{source._signer_key_id}.key"
-        _copy_private_restore_media(original / "control" / "keys" / key_name, media / key_name)
+        copy_private_restore_media(original / "control" / "keys" / key_name, media / key_name)
     original.rename(tmp_path / "unavailable-original")
     plan = ReplacementRestorePlan(
         archive_digest=manifest.manifest_digest, predecessor=custody.current_sealed().digest(),
@@ -284,7 +284,7 @@ def test_live_read_grant_partial_effect_seals_and_survives_older_restore(tmp_pat
         with pytest.raises(GrantRegistryError, match="stale_grant"):
             registry.require_current(grant_id, 1)
         key_name = f"{signer_id}.key"
-        _copy_private_restore_media(original / "control" / "keys" / key_name, media / key_name)
+        copy_private_restore_media(original / "control" / "keys" / key_name, media / key_name)
 
     with StorageAdministrationService(original) as source:
         owner = ReadGrantRecoveryOwner(source, custody=custody, public_key=public_key, recovery_key=_CONTROL_KEY)

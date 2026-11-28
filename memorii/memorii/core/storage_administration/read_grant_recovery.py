@@ -26,10 +26,10 @@ from memorii.core.storage_administration.control_recovery_export import (
 )
 from memorii.core.storage_administration.operator import OwnerCapability, require_owner_capability
 from memorii.core.storage_administration.operator_backup import (
-    _open_backup_snapshot,
-    _snapshot_digest,
-    _sqlite_backup,
     backup_lifetime_guard,
+    copy_sqlite_backup,
+    open_backup_snapshot,
+    sqlite_snapshot_digest,
 )
 from memorii.core.storage_administration.recovery_authority import (
     IndependentRecoveryCustody,
@@ -49,12 +49,12 @@ from memorii.stores.sqlite.control import ControlDatabase
 from memorii.stores.sqlite.private_storage import ensure_private_directory, read_private_file, write_private_file
 
 _READ_GRANTS = "read-grants"
-_Digest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
-_Identity = Annotated[str, Field(min_length=1, max_length=512)]
+RecoveryDigest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+RecoveryIdentity = Annotated[str, Field(min_length=1, max_length=512)]
 _Suppressions = tuple[tuple[SuppressionRecord, ...], tuple[SuppressionRecord, ...]]
 
 
-class _Watermark(NamedTuple):
+class RecoveryWatermark(NamedTuple):
     state: InstallationControlState
     publication: RuntimePublicationState
     position: tuple[int, str]
@@ -81,13 +81,13 @@ class ReadGrantRecoveryRevocation(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
     protocol_version: Literal[1] = 1
-    operation_id: _Identity
-    predecessor: _Digest
-    local_authority_digest: _Digest
-    before_digest: _Digest
+    operation_id: RecoveryIdentity
+    predecessor: RecoveryDigest
+    local_authority_digest: RecoveryDigest
+    before_digest: RecoveryDigest
     before_count: Annotated[int, Field(ge=0, strict=True)]
     denial: GrantDenial
-    effect_digest: _Digest
+    effect_digest: RecoveryDigest
 
     def digest(self) -> str:
         return canonical_json_digest(self.model_dump(mode="json"))
@@ -126,7 +126,7 @@ class ReadGrantRecoveryOwner:
             read_recovery_suppressions(self._control / "suppressions-archive"),
         )
 
-    def _maintenance_watermark(self, capability: OwnerCapability) -> _Watermark:
+    def _maintenance_watermark(self, capability: OwnerCapability) -> RecoveryWatermark:
         service = self._service
         require_owner_capability(service, capability)
         state, publication = service.current_publication_in_fence()
@@ -137,24 +137,24 @@ class ReadGrantRecoveryOwner:
         ):
             raise RecoveryAuthorityError("conflict: read-grant recovery requires settled read-only maintenance")
         position = service._control.next_journal_position()
-        return _Watermark(state, publication, position, self._current_suppressions())
+        return RecoveryWatermark(state, publication, position, self._current_suppressions())
 
     def _pin_control(self, stack: ExitStack) -> sqlite3.Connection:
-        connection = stack.enter_context(_open_backup_snapshot(self._service.control_path()))
+        connection = stack.enter_context(open_backup_snapshot(self._service.control_path()))
         connection.execute("SELECT id FROM installation_control").fetchone()
         return connection
 
     def _retain_bundle(
-        self, workspace: Path, pinned: sqlite3.Connection, watermark: _Watermark, denials: GrantDenialSnapshot,
+        self, workspace: Path, pinned: sqlite3.Connection, watermark: RecoveryWatermark, denials: GrantDenialSnapshot,
         *, activation: InstallationControlJournalEntry | None = None,
     ) -> InstallationRecoveryAnchor:
         snapshot = workspace / "control.sqlite3"
-        _sqlite_backup(pinned, snapshot)
+        copy_sqlite_backup(pinned, snapshot)
         state, publication, _, suppressions = watermark
         if activation is not None:
             with ControlDatabase(snapshot, journal_verifier=self._service._verify_journal_signature) as control:
                 control.write_control_state(state, activation)
-        _snapshot_digest(snapshot)
+        sqlite_snapshot_digest(snapshot)
         manifest, paths = export_control_recovery(
             self._service, snapshot=snapshot, state=state, publication=publication, output=workspace,
             custody_id=self._custody._identity[0], suppressions=suppressions, grant_denials=denials,
@@ -206,7 +206,7 @@ class ReadGrantRecoveryOwner:
                 custody._register_locked(head)
             return head
 
-    def _register_mode_owner(self, watermark: _Watermark) -> None:
+    def _register_mode_owner(self, watermark: RecoveryWatermark) -> None:
         service = self._service
         state, publication = watermark.state, watermark.publication
         binding = canonical_json_digest({
@@ -226,7 +226,7 @@ class ReadGrantRecoveryOwner:
         )
 
     def _make_plan(
-        self, predecessor: InstallationRecoveryHead, before: GrantDenialSnapshot, watermark: _Watermark,
+        self, predecessor: InstallationRecoveryHead, before: GrantDenialSnapshot, watermark: RecoveryWatermark,
         grant_id: str, operation_id: str,
     ) -> ReadGrantRecoveryRevocation:
         denial = GrantDenial(grant_id=grant_id, epoch=before.epochs().get(grant_id, 1) + 1, revoked_at_unix=int(time.time()))
@@ -271,7 +271,7 @@ class ReadGrantRecoveryOwner:
 
     @staticmethod
     def _require_retained_watermark(
-        retained: _RetainedGrantProof, watermark: _Watermark,
+        retained: _RetainedGrantProof, watermark: RecoveryWatermark,
     ) -> None:
         anchor = retained.anchor
         if (

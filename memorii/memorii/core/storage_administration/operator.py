@@ -126,7 +126,7 @@ class StorageAdministrationOperator:
 
     def _status_pinned_root(self, snapshots: ExitStack) -> InstallationStatus:
         from memorii.core.harness_state.managed_spool_store import SqliteManagedSpool
-        from memorii.core.storage_administration.operator_backup import _open_backup_snapshot
+        from memorii.core.storage_administration.operator_backup import open_backup_snapshot
 
         service = self._administration
         artifact = installed_artifact_status()
@@ -162,7 +162,7 @@ class StorageAdministrationOperator:
                 partition = service.partition()
                 path = service.partition_path()
                 identity = service._partition_file_identity(path)
-                connection = snapshots.enter_context(_open_backup_snapshot(path))
+                connection = snapshots.enter_context(open_backup_snapshot(path))
                 row = partition.read_publication_row(connection)
                 if (
                     row is None or row["tuple_digest"] != finalized.payload_digest()

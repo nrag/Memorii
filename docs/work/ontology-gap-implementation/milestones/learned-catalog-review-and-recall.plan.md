@@ -239,6 +239,41 @@ All five changed product files match the wheel's frozen build source.
 The [hosted PR Gates run](https://github.com/nrag/Memorii/actions/runs/46118653960)
 for product/test head `1a5816b0` was queued at verification handoff.
 
+## Durable evaluation retry checkpoint
+
+Baseline `7c32ea7d` on `codex/durable-delivery-implementation`.
+PR [126](https://github.com/nrag/Memorii/pull/126) is the active v8
+integration. The earlier owner/rebase product run passed Static Analysis
+and Package Smoke. Its [Benchmark Contract Tests job](https://github.com/nrag/Memorii/actions/runs/46118653960/job/140898033936)
+failed on 20 cross-module private imports in the parallel v8 installation
+recovery and managed spool code. The separate gate mapper reproduced the
+same failure on the baseline. Record it against the storage/harness owner.
+Do not change storage behavior or weaken the architecture check for M2.
+To unblock the branch, a disjoint worker made the shared helper and type
+names explicit in their existing owners and updated the callsites.
+An inverse-rename AST comparison established identifier-only changes.
+The 35 architecture tests and 55 recovery/operator tests passed, along
+with scoped Ruff and Pyright. The seven owned release pins were refreshed.
+
+The implementation worker owns the retry runtime and focused tests.
+The code mapper traces the exact composition, and the coordinator owns
+the plan, review, source pins, and hosted gate verification. Preserve
+the unrelated Virtual Employee and v8 hardening work.
+
+| Verification | Required observation |
+| --- | --- |
+| Unavailable and interrupted execution | Persist the scoped attempt before calling the executor. A new process resumes the same proposal, immutable parent, evidence and exact registered binding. Keep the unavailable generation's result. |
+| Stale work | Changed package execution identity, corpus, budget, parent, management authority or retained source prevents execution or publication. A late completion cannot replace a newer generation. |
+| Legacy and terminal states | An old unavailable row without the attempt proof stays inert. Published result recovery consumes exact stored bytes. Approved or terminal proposals do not execute again. |
+| Installed no-key path | The factory registers the verified evaluator before the retry sweep. The reopened learner can reach owner review without selecting or replaying facts. |
+
+Reuse the canonical installed package-root digest with a named executor
+contract, along with the fixed corpus, budget and verified selected parent.
+The package identity covers executable composition, writer and protected
+reader dependencies shipped in the package. The Level 2 comparison is
+against identical registered package bytes. Deployment compatibility
+across supported platform and interpreter upgrades remains separate.
+
 ## Acceptance and verification
 
 - The local owner enables once and reopens or pauses the same agent

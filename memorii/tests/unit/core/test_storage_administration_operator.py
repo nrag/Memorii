@@ -408,7 +408,7 @@ def test_backup_create_verify_and_restore_round_trip(tmp_path: Path) -> None:
             BackupParticipant as _Participant,
         )
         from memorii.core.storage_administration.operator_backup import (
-            _validate_participant as _validate,
+            validate_backup_participant as _validate,
         )
 
         hostile = _Participant(
@@ -769,7 +769,7 @@ def test_backup_refuses_a_captured_partition_outside_the_fenced_tuple(
 
     operator, service, capability = _fenced_operator(tmp_path)
     try:
-        original = operator_backup._sqlite_backup
+        original = operator_backup.copy_sqlite_backup
 
         def corrupt_copy(source: Path, destination: Path) -> None:
             original(source, destination)
@@ -778,7 +778,7 @@ def test_backup_refuses_a_captured_partition_outside_the_fenced_tuple(
                     connection.execute("UPDATE runtime_revision_state SET runtime_revision = 7")
                     connection.commit()
 
-        monkeypatch.setattr(operator_backup, "_sqlite_backup", corrupt_copy)
+        monkeypatch.setattr(operator_backup, "copy_sqlite_backup", corrupt_copy)
         backups = operator_backup.BackupRestoreOperator(operator)
         archive = tmp_path / "archive"
         live = service.acquire_verified_snapshot()
