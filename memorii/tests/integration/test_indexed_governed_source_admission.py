@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -78,9 +79,12 @@ def test_managed_source_read_waits_for_live_publication(
                 pause()
             original_finalize(candidate)
 
-        def acquire(handle: BinaryIO, *, exclusive: bool) -> None:
+        def acquire(handle: BinaryIO, *, exclusive: bool, **options: bool) -> None:
             nonlocal entered_while_pending
-            if get_ident() == reader_thread and handle.name == str(lock_path) and not attempted.is_set():
+            if (
+                get_ident() == reader_thread and not attempted.is_set()
+                and os.path.samestat(os.fstat(handle.fileno()), lock_path.stat())
+            ):
                 assert not exclusive
                 try:
                     fcntl.flock(handle.fileno(), fcntl.LOCK_SH | fcntl.LOCK_NB)
@@ -90,7 +94,7 @@ def test_managed_source_read_waits_for_live_publication(
                     entered_while_pending = True
                     attempted.set()
                     return
-            original_acquire(handle, exclusive=exclusive)
+            original_acquire(handle, exclusive=exclusive, **options)
 
         def publish() -> None:
             if writer_kind == "runtime":
