@@ -76,7 +76,7 @@ the push range before publication.
 | Order | Packet | Observable completion | Status |
 | --- | --- | --- | --- |
 | 1 | [Packaged catalog discovery](milestones/packaged-catalog-discovery.plan.md) | Both installed bindings expose discover/clarify/recall without a key, starting with a bill due date. | Complete for Level 2. Hosted scoped context, static analysis and Package Smoke passed. |
-| 2 | [Learned catalog review and recall](milestones/learned-catalog-review-and-recall.plan.md) | Standing catalog management, evaluation recovery, and protected recall of a selected exact-parent `mentors` version. | Local opt-in and its runtime grant fence verified. Managed enrollment, calibrated promotion and broader learned-read acceptance remain open. |
+| 2 | [Learned catalog review and recall](milestones/learned-catalog-review-and-recall.plan.md) | Standing catalog management, evaluation recovery, and protected recall of a selected exact-parent `mentors` version. | Local opt-in and managed reference-host enrollment verified. Calibrated promotion and broader learned-read acceptance remain open. |
 | 3 | [Verified recurring gap](milestones/verified-recurring-gap.plan.md) | Two adapters yield one durable, scoped, explainable gap from independent evidence. | Queued behind 2 |
 | 4 | [Grounded relation creation](milestones/grounded-relation-creation.plan.md) | Observed and manual paths exercise a different relation through paired evaluation, owner selection and protected use. | Queued behind 3 |
 | 5 | [Learned entity subtype](milestones/learned-entity-subtype.plan.md) | An independently evidenced subtype is approved and usable with inherited capabilities. | Queued behind 4 |
@@ -184,7 +184,7 @@ type-check or CI failure is classified by this planning task.
 
 ## Next action
 
-Implement and verify the managed catalog provisioning port against a
-trusted reference host in milestone 2. Memorii owns the contract.
-Connecting Virtual Employee's production enrollment is separate
-deployment evidence and does not block the Memorii implementation.
+Verify the exact-parent learned-catalog inspection and protected recall
+journey across the installed read bindings in milestone 2. Virtual
+Employee deployment qualification remains separate from the verified
+Memorii managed provisioning port.

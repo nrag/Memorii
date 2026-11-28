@@ -1,6 +1,6 @@
 # Review and recall an approved learned catalog
 
-- Order: 2. Status: durable result recovery, local standing consent and the local runtime mutation fence verified. Managed enrollment and calibrated promotion remain open. Recovery checkpoint `74e70d06`. Local consent checkpoint `fecd58d4`.
+- Order: 2. Status: durable result recovery, local standing consent, and managed reference-host provisioning verified. Calibrated promotion and broader learned-read acceptance remain open. Recovery checkpoint `74e70d06`. Local consent checkpoint `fecd58d4`.
 - Requirements: partial OLE-02/04/05/06/07/10/13 and selected learned OCI behavior.
 - Dependencies: packaged discovery, plus approved exact-parent, owner-review and recovery design.
 
@@ -45,12 +45,40 @@ proposal and that checking host authority only at admission missed
 withdrawal before the write. The implementation makes preparation an
 atomic insert and retries a validated proposal on renewed eligible
 submission. The write callback verifies host authority at transaction
-admission. The reviewer confirmed the remediation. The managed
-provisioning contract can be implemented and verified in Memorii with
-a trusted reference host and two workspace partitions. Production
-qualification follows when Virtual Employee implements the enrollment
-verifier and lifecycle delivery. Source and task enrollment receipts
-do not confer this authority.
+admission. The reviewer confirmed the remediation.
+
+## Managed provisioning checkpoint
+
+Trusted deployment setup constructs `ManagedCatalogProvisioning` in
+`memorii.core.semantic_ingestion.catalog_management` with a durable
+workspace plane, the partition and agent catalog coordinate, and a
+verifier for that coordinate. Enrollment and withdrawal call
+`reconcile()`. The typed receipt includes the persisted enrollment
+revision and grant generation. `build_learned_runtime()` binds the
+same workspace plane and installs the exact-scope grant and transaction
+checks. The verifier must revalidate without calling back into that
+memory plane while a write is open.
+
+The implementation preserves local v1 records. The managed v2 payload
+adds the enrollment revision under the same grant coordinate and has a
+separate origin. Policy writes, proposal transitions and selections
+share the storage CAS. The no-key reference journey uses two persistent
+managed SQLite partitions. It exercises default enrollment, initial
+disablement, exact retry, stale and conflicting revisions after reopen,
+same-state revision advance, withdrawal before selection, and denial
+across workspaces with the same principal and agent IDs.
+
+Independent review found and verified the fix for a same-workspace
+scope gap in idempotent selection and recovery. The regression also
+checks that a distinct agent in the same workspace cannot select, inspect
+or recover the selected catalog. The focused learner and CLI modules
+passed 45 tests. Scoped Ruff, Pyright and identity hygiene passed.
+All 1,968 source manifest entries match.
+
+This closes Memorii's reference-host provisioning slice. Production
+qualification follows when Virtual Employee wires its trusted enrollment
+verifier and lifecycle delivery to the port. A source or task receipt
+alone confers no provisioning authority.
 
 Represent the exact immutable packaged parent and validate the whole
 effective catalog. Old overlays without sufficient evidence are unavailable

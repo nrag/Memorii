@@ -8,6 +8,7 @@ from memorii.core.memory_evolution.admission import source_admission_source_dige
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import JsonlMemoryPlaneStore
+from memorii.core.persistence.factory import open_managed_partition
 from memorii.core.semantic_ingestion.catalog_authority import (
     AuthenticatedPrincipalAgent,
     CatalogAuthorityError,
@@ -17,7 +18,12 @@ from memorii.core.semantic_ingestion.catalog_capture_pin import (
     CatalogCapturedTurnPin,
     PackageIndexedCatalogBundleLocator,
 )
-from memorii.core.semantic_ingestion.catalog_management import CatalogManagementRepository
+from memorii.core.semantic_ingestion.catalog_management import (
+    CatalogManagementRepository,
+    ManagedCatalogAuthorityError,
+    ManagedCatalogEnrollmentDecision,
+    ManagedCatalogProvisioning,
+)
 from memorii.core.semantic_ingestion.contracts import (
     ProviderEntityObject,
     ProviderFact,
@@ -60,6 +66,7 @@ from memorii.core.semantic_ingestion.learned_relation import (
     RelationDeclaration,
     validate_mentors_tool_proposal,
 )
+from memorii.core.storage_administration.service import StorageAdministrationService
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 
 
@@ -725,6 +732,139 @@ def test_pause_at_pointer_commit_blocks_selection_and_old_attempt_on_reopen(tmp_
     assert writer.calls == []
     activation = reopened.activate_candidate(proposal_id=proposal.proposal_id, **owner)
     assert activation.status == "selected"
+
+
+def test_reference_host_reconciles_and_fences_managed_catalogs(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    workspace_one = tmp_path / "workspace-one"
+    workspace_two = tmp_path / "workspace-two"
+    for path in (workspace_one, workspace_two):
+        with StorageAdministrationService(path) as admin:
+            admin.initialize()
+
+    class ReferenceEnrollment:
+        def __init__(self, partition: str, scope: AgentLocalCatalogScope = _SCOPE) -> None:
+            self.partition = partition
+            self.scope = scope
+            self.current: ManagedCatalogEnrollmentDecision | None = None
+
+        def publish(self, revision: int, *, learning_allowed: bool = True) -> None:
+            self.current = ManagedCatalogEnrollmentDecision(
+                partition_id=self.partition,
+                catalog_scope=self.scope,
+                state="enabled" if learning_allowed else "paused",
+                enrollment_revision=revision,
+            )
+
+        def verify(self) -> ManagedCatalogEnrollmentDecision | None:
+            return self.current
+
+        def bind(self, plane: MemoryPlaneService) -> ManagedCatalogProvisioning:
+            return ManagedCatalogProvisioning(
+                plane, partition_id=self.partition, scope=self.scope, verify_enrollment=self.verify,
+            )
+
+    host_one = ReferenceEnrollment("workspace-one")
+    host_two = ReferenceEnrollment("workspace-two")
+    admin_one, plane_one = open_managed_partition(workspace_one)
+    admin_two, plane_two = open_managed_partition(workspace_two)
+    writer = _ReplayWriter()
+    owner = {"principal_id": _SCOPE.principal_id, "agent_id": _SCOPE.agent_id}
+    try:
+        one = host_one.bind(plane_one)
+        two = host_two.bind(plane_two)
+        runtime = one.build_learned_runtime(replay_writer=writer)
+        peer_runtime = two.build_learned_runtime(replay_writer=writer)
+        with pytest.raises(ManagedCatalogAuthorityError, match="unavailable"):
+            one.reconcile()
+        host_one.publish(revision=1)
+        enrollment = one.reconcile()
+        assert (enrollment.state, enrollment.generation, enrollment.enrollment_revision) == ("enabled", 1, 1)
+        assert one.reconcile() == enrollment
+        assert one.enabled_write_fence(_SCOPE) is not None
+
+        # Even with identical principal and agent IDs, a cross-wired
+        # workspace decision cannot provision the peer.
+        host_two.current = host_one.current
+        with pytest.raises(ManagedCatalogAuthorityError, match="unavailable"):
+            two.reconcile()
+        host_two.publish(revision=1, learning_allowed=False)
+        denied = two.reconcile()
+        assert (denied.state, denied.generation) == ("paused", 1)
+        with pytest.raises(CatalogManagementUnavailable):
+            peer_runtime.prepare_candidate(_proposal())
+        assert peer_runtime.status(_SCOPE)["candidate_count"] == 0
+
+        proposal = runtime.prepare_candidate(_proposal())
+        assert runtime.record_evaluation(
+            proposal_id=proposal.proposal_id, evaluation=_passing_evaluation(),
+        ).lifecycle == "awaiting_decision"
+        approved = runtime.approve_candidate(proposal_id=proposal.proposal_id, **owner)
+        write = plane_one.conditionally_write_records
+
+        def withdraw_before_pointer(records, **kwargs):
+            if records[0].memory_id.startswith("learned-catalog-pointer:"):
+                host_one.publish(revision=2, learning_allowed=False)
+                assert one.reconcile().generation == 2
+            return write(records, **kwargs)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(plane_one, "conditionally_write_records", withdraw_before_pointer)
+            with pytest.raises(CatalogManagementUnavailable):
+                runtime.activate_candidate(proposal_id=proposal.proposal_id, **owner)
+        assert runtime.status(_SCOPE)["active_version_digest"] is None
+        assert writer.calls == []
+    finally:
+        admin_one.close()
+        admin_two.close()
+
+    reopened_admin, reopened_plane = open_managed_partition(workspace_one)
+    try:
+        one = host_one.bind(reopened_plane)
+        runtime = one.build_learned_runtime(replay_writer=writer)
+        assert one.reconcile().generation == 2
+        host_one.publish(revision=1)
+        with pytest.raises(ManagedCatalogAuthorityError, match="stale or conflicting"):
+            one.reconcile()
+        host_one.publish(revision=2)
+        with pytest.raises(ManagedCatalogAuthorityError, match="stale or conflicting"):
+            one.reconcile()
+        assert one.enabled_write_fence(_SCOPE) is None
+        host_one.publish(revision=3)
+        assert one.reconcile().generation == 3
+        runtime.recover(_SCOPE)
+        assert runtime.status(_SCOPE)["active_version_digest"] is None
+        assert runtime._require_proposal(proposal.proposal_id) == approved
+        assert writer.calls == []
+        activation = runtime.activate_candidate(proposal_id=proposal.proposal_id, **owner)
+        assert activation.status == "selected"
+        host_one.publish(revision=4)
+        fence = one.enabled_write_fence(_SCOPE)
+        assert fence is None
+        refreshed = one.reconcile()
+        assert refreshed.generation == 4
+        assert one.enabled_write_fence(_SCOPE) is not None
+
+        same_workspace_peer = ReferenceEnrollment(
+            "workspace-one", AgentLocalCatalogScope(principal_id=_SCOPE.principal_id, agent_id="agent:two"),
+        )
+        same_workspace_peer.publish(revision=1)
+        peer = same_workspace_peer.bind(reopened_plane)
+        peer.reconcile()
+        peer_runtime = peer.build_learned_runtime(replay_writer=writer)
+        peer_owner = {"principal_id": _SCOPE.principal_id, "agent_id": "agent:two"}
+        with pytest.raises(LearnedRelationError, match="outside the installed binding"):
+            peer_runtime.activate_candidate(proposal_id=proposal.proposal_id, **peer_owner)
+        with pytest.raises(LearnedRelationError, match="outside the installed binding"):
+            peer_runtime.select_prior_version(
+                catalog_scope=_SCOPE, target_version_digest=activation.target_version_digest, **peer_owner,
+            )
+        with pytest.raises(LearnedRelationError, match="outside the installed binding"):
+            peer_runtime.status(_SCOPE)
+        with pytest.raises(LearnedRelationError, match="outside the installed binding"):
+            peer_runtime.recover(_SCOPE)
+    finally:
+        reopened_admin.close()
 
 
 def test_host_authority_is_checked_inside_the_approval_write(monkeypatch) -> None:

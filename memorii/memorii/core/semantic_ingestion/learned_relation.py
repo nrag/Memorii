@@ -686,14 +686,21 @@ class LearnedRelationRuntime:
                  management_fence_for_scope: Callable[
                      [AgentLocalCatalogScope], RecordDigestPrecondition | None
                  ] | None = None,
-                 validate_management_host: Callable[[], None] | None = None) -> None:
+                 validate_management_host: Callable[[], None] | None = None,
+                 bound_scope: AgentLocalCatalogScope | None = None) -> None:
         self._plane = memory_plane
         self._replay_writer = replay_writer
         self._policy_for_scope = policy_for_scope
         self._management_fence_for_scope = management_fence_for_scope
         self._validate_management_host = validate_management_host
+        self._bound_scope = bound_scope
+
+    def _require_bound_scope(self, scope: AgentLocalCatalogScope) -> None:
+        if self._bound_scope is not None and self._bound_scope != scope:
+            raise LearnedRelationError("catalog scope is outside the installed binding")
 
     def _management_fence(self, scope: AgentLocalCatalogScope) -> tuple[RecordDigestPrecondition, ...]:
+        self._require_bound_scope(scope)
         if self._management_fence_for_scope is None:
             return ()
         fence = self._management_fence_for_scope(scope)
@@ -798,6 +805,7 @@ class LearnedRelationRuntime:
 
     def activate_candidate(self, *, proposal_id: str, principal_id: str, agent_id: str) -> OntologyActivation:
         proposal = self._require_proposal(proposal_id)
+        self._require_bound_scope(proposal.catalog_scope)
         policy = self._policy_for_scope(proposal.catalog_scope)
         if (principal_id, agent_id) != (policy.owner_principal_id, policy.owner_agent_id):
             raise LearnedRelationError("catalog owner authorization is required")
@@ -840,6 +848,7 @@ class LearnedRelationRuntime:
 
     def select_prior_version(self, *, catalog_scope: AgentLocalCatalogScope, target_version_digest: str,
                              principal_id: str, agent_id: str) -> OntologyActivation:
+        self._require_bound_scope(catalog_scope)
         policy = self._policy_for_scope(catalog_scope)
         if (principal_id, agent_id) != (policy.owner_principal_id, policy.owner_agent_id):
             raise LearnedRelationError("catalog owner authorization is required")
@@ -868,6 +877,7 @@ class LearnedRelationRuntime:
         return self._select(attempt=attempt, expected_pointer=pointer, management_fence=fence)
 
     def status(self, scope: AgentLocalCatalogScope) -> dict[str, object]:
+        self._require_bound_scope(scope)
         pointer = self._load_pointer(scope)
         proposals = [self._decode_proposal(record) for record in self._plane.list_records(source_kind=_KIND_PROPOSAL)]
         outcomes: dict[str, int] = {}
@@ -906,6 +916,7 @@ class LearnedRelationRuntime:
         If the pointer already names the attempt, finalize selection and retry
         its ordinary replay.
         """
+        self._require_bound_scope(scope)
         for record in self._plane.list_records(source_kind=_KIND_PROPOSAL):
             proposal = self._decode_proposal(record)
             if (
