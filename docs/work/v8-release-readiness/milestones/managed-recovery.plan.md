@@ -39,5 +39,5 @@ Installed replacement recovery still needs the complete authoritative live
 deny-state writers and codecs, independently configured custody and isolation,
 historical signer rotation, a bounded streaming journal reader, and process
 cuts through each public opener and rollback path. The current offline
-reader fails closed above its 256 KiB control record bound. The installed
+reader fails closed above its 16 MiB metadata bound. The installed
 operator does not expose replacement bootstrap from this partial state.

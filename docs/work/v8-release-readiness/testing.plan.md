@@ -66,6 +66,23 @@ recalled and then denied the revoked scope. This is local macOS functional
 evidence for a worktree wheel. It does not replace the candidate-bound host,
 recovery and platform runs.
 
+Runtime checkpoint `2a9e140b` built from its committed source archive as
+wheel `4a07d3a6a9bf08a1195878ec4e03cb591dd488c40b8caddb4a82b5d3f27594d9`.
+Its installed CLI rehearsal and eight additional out-of-checkout tests
+passed. A separate wheel from `74e70d06`, digest
+`e8eef73a35910035004ec44f7cfa142912b2efce8b5118cd319244df904bcd51`,
+created the baseline pre-index v8 installation and signed archive. The
+checkpoint wheel verified the staged backfill, selected a new v8 generation
+and reported readiness. The committed archive matched all 1,966 installed
+proof member pins. Local Durable Storage passed 81 tests, and the focused
+operator, backup and recovery verification passed 70 tests after review.
+
+The SDK passed 20 localhost and transport tests, installed tarball proof
+and generated contract parity. Its npm production dependency audit reported
+zero advisories. Python 3.12 advisory scans of the locked reference base and
+resolved provider plus live extras reported no known advisories. These
+results do not cover the OS image package inventories.
+
 ## Next action
 
 Repeat the exact installed host and Hermes checks on a single candidate

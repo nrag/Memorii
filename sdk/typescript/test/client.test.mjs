@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { RuntimeStateClient, RuntimeClientError } from "../dist/index.js";
+import "./host-transport.test.mjs";
 
 test("loopback guard accepts loopback hosts and refuses everything else", () => {
   for (const baseUrl of [
@@ -15,11 +16,88 @@ test("loopback guard accepts loopback hosts and refuses everything else", () => 
     "http://0.0.0.0:8734",
     "http://127.0.0.1.evil.example",
     "http://127.0.0.1@evil.example",
+    "http://secret@127.0.0.1",
+    "http://127.1",
+    "http://2130706433",
+    "http://%31%32%37.0.0.1",
+    "http://localhost:8734/prefix?credential=secret",
+    "http://localhost:8734/prefix#secret",
     "https://127.0.0.1",
     "http://example.test",
   ]) {
     assert.throws(() => new RuntimeStateClient({ baseUrl: bad, credential: "x" }), /loopback/);
   }
+});
+
+test("a loopback base prefix works without following a redirect", async () => {
+  const requests = [];
+  const server = createServer((request, response) => {
+    requests.push(request.url);
+    response.writeHead(307, { location: "/untrusted" });
+    response.end();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const client = new RuntimeStateClient({
+      baseUrl: `http://localhost:${server.address().port}/prefix///`,
+      credential: "test-token",
+    });
+    await assert.rejects(client.getState("task:one"), { code: "unavailable" });
+    assert.deepEqual(requests, ["/prefix/v1/runtime/state"]);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("a stalled body is aborted after headers and error details stay private", async () => {
+  const server = createServer((request, response) => {
+    response.writeHead(200, { "content-type": "application/json" });
+    response.write('{"private":"synthetic');
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const client = new RuntimeStateClient({
+      baseUrl: `http://127.0.0.1:${server.address().port}`,
+      credential: "test-token",
+      timeoutMs: 150,
+    });
+    await assert.rejects(client.getState("task:one"), (error) => {
+      assert.equal(error.code, "unavailable");
+      assert.equal(error.httpStatus, 200);
+      assert.equal(error.detail, null);
+      assert.ok(!error.message.includes("synthetic"));
+      return true;
+    });
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("streamed oversized responses and unrecognized error codes produce closed failures", async () => {
+  const oversized = createServer((request, response) => {
+    response.writeHead(200, { "content-type": "application/json" });
+    response.write('{"text":"');
+    response.end(`${"x".repeat(1 << 20)}"}`);
+  });
+  await new Promise((resolve) => oversized.listen(0, "127.0.0.1", resolve));
+  try {
+    const client = new RuntimeStateClient({
+      baseUrl: `http://127.0.0.1:${oversized.address().port}`,
+      credential: "test-token",
+    });
+    await assert.rejects(client.getState("task:one"), { code: "unavailable", httpStatus: 200 });
+  } finally {
+    oversized.closeAllConnections();
+    await new Promise((resolve) => oversized.close(resolve));
+  }
+  const client = new RuntimeStateClient({
+    baseUrl: await serve(502, { code: "PRIVATE-MARKER", detail: "PRIVATE-MARKER" }),
+    credential: "test-token",
+  });
+  await assert.rejects(client.getState("task:one"), {
+    code: "unavailable", httpStatus: 502, detail: null, message: "502 unavailable",
+  });
 });
 
 test("unauthenticated error maps to the closed code", async () => {
