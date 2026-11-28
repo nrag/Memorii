@@ -115,6 +115,14 @@ verification and restore. The native capacity reports above remain bound to
 the staged wheel. The current reference fixture driver can also populate
 fresh v8 without a legacy conversion event.
 
+## Fresh v8 Native Linux Results
+
+The [dedicated PhoenixNAP result](linux/f2b1e25a/README.md) records both
+fresh-v8 workloads on revision `f2b1e25a`. Balanced passed at 10.961 s
+acquisition p95. Concentrated measured 11.047 s and failed the 11 s gate.
+All other budgeted series passed. Both workloads completed with zero errors
+or driver retries. Exact-candidate native macOS evidence remains open.
+
 ## Next Action
 
 Carry this exact-wheel evidence into the [parent release conformance
