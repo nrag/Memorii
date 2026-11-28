@@ -12,14 +12,20 @@ operation.
 
 from __future__ import annotations
 
+import os
+import secrets
+import tempfile
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from memorii.core.memory_plane.file_lock import locked_file
 from memorii.core.persistence.contracts import canonical_json_digest
 from memorii.core.storage_administration.service import (
     StorageAdministrationService,
 )
+from memorii.stores.sqlite.private_storage import ensure_private_directory, read_private_file
 
 InstallationMode = Literal["active", "read_only", "bypass"]
 
@@ -199,20 +205,25 @@ def _owner_capability_secret(administration: StorageAdministrationService) -> by
     logged, or included in any export. Holder of this secret can mint
     capabilities; the directory permissions are the trust boundary.
     """
-    import secrets as _secrets
-
     secret_path = administration.installation_root / "control" / "keys" / "owner-capability.secret"
-    secret_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    try:
-        return secret_path.read_bytes().strip()
-    except FileNotFoundError:
-        material = _secrets.token_hex(32).encode("ascii")
-        temporary = secret_path.with_suffix(".tmp")
-        temporary.write_bytes(material + b"\n")
-        import os as _os
-
-        _os.chmod(temporary, 0o600)
-        _os.replace(temporary, secret_path)
+    ensure_private_directory(secret_path.parent)
+    with locked_file(secret_path.with_suffix(".lock"), exclusive=True, private=True):
+        try:
+            material = read_private_file(secret_path, limit=66).removesuffix(b"\n")
+        except FileNotFoundError:
+            material = secrets.token_hex(32).encode("ascii")
+            descriptor, name = tempfile.mkstemp(prefix=".owner-capability.", dir=secret_path.parent)
+            temporary = Path(name)
+            try:
+                with os.fdopen(descriptor, "wb") as output:
+                    output.write(material + b"\n")
+                    output.flush()
+                    os.fsync(output.fileno())
+                os.replace(temporary, secret_path)
+            finally:
+                temporary.unlink(missing_ok=True)
+        if len(material) != 64:
+            raise OperatorError("integrity_error: owner capability key is malformed")
         return material
 
 

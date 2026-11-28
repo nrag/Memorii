@@ -24,6 +24,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from memorii.core.persistence.runtime_contracts import OperationOrigin, OperationOriginCoordinate, RuntimeCommandRequest
+from memorii.stores.sqlite.private_storage import ensure_private_directory
 
 
 class ConsumerDeliveryError(RuntimeError):
@@ -66,7 +67,7 @@ class ManagedRuntimeSpool:
 
     def __init__(self, directory: str | Path) -> None:
         self._directory = Path(directory)
-        self._directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        ensure_private_directory(self._directory)
 
     def _path(self, coordinate: OperationOriginCoordinate) -> Path:
         identity = (
@@ -176,7 +177,7 @@ class LocalDurableSpool:
 
     def __init__(self, spool_directory: str | Path) -> None:
         self._directory = Path(spool_directory)
-        self._directory.mkdir(parents=True, exist_ok=True)
+        ensure_private_directory(self._directory)
         self._records_path = self._directory / "intake.jsonl"
         self._lock_path = self._directory / "intake.lock"
 
@@ -236,7 +237,7 @@ class LocalDurableSpool:
             # The filename is the operation id's digest, never client text,
             # so a hostile operation id cannot traverse the directory.
             deliveries = self._directory / "deliveries"
-            deliveries.mkdir(mode=0o700, exist_ok=True)
+            ensure_private_directory(deliveries)
             content_path = deliveries / f"{digest}.json"
             descriptor = os.open(
                 content_path,

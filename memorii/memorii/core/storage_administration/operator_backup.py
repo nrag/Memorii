@@ -79,6 +79,14 @@ from memorii.stores.sqlite.partition import (
     RAW_MEMORY_PAYLOAD_SCHEMA_VERSION,
     PartitionDataRepository,
 )
+from memorii.stores.sqlite.private_storage import (
+    ensure_private_directory,
+    open_private_file,
+    prepare_installation_root,
+    prepare_private_sqlite,
+    require_private_directory,
+    require_private_sqlite,
+)
 from memorii.stores.sqlite.raw_memory_payloads import RawPayloadFramingError, validate_upgrade_framing
 
 _BACKUP_MARKER = "backup-complete.json"
@@ -275,22 +283,32 @@ def _sha256_file(path: Path) -> str:
 
 
 def _snapshot_digest(path: Path) -> str:
+    _require_snapshot_without_sidecars(path)
+    if path.is_symlink() or not path.is_file():
+        raise OperatorError("integrity_error: staged SQLite snapshot must be a regular file")
+    require_private_sqlite(path)
+    return _sha256_file(path)
+
+
+def _require_snapshot_without_sidecars(path: Path) -> None:
     for extension in ("-wal", "-shm", "-journal"):
         sidecar = path.with_name(path.name + extension)
         if sidecar.is_symlink() or sidecar.exists():
             raise OperatorError("integrity_error: staged SQLite snapshot contains a live sidecar")
-    if path.is_symlink() or not path.is_file():
-        raise OperatorError("integrity_error: staged SQLite snapshot must be a regular file")
-    return _sha256_file(path)
+
+
+def _copy_private_restore_media(source: Path, destination: Path) -> None:
+    with open_private_file(source) as original:
+        descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "wb") as output:
+            shutil.copyfileobj(original, output, length=_CHUNK)
+            output.flush()
+            os.fsync(output.fileno())
 
 
 def _copy_attested_partition(source: Path, target: Path, expected_digest: str) -> None:
     """Copy only the immutable SQLite bytes named by the attestation."""
-    with source.open("rb") as original, target.open("xb") as clone:
-        os.fchmod(clone.fileno(), 0o600)
-        shutil.copyfileobj(original, clone, length=_CHUNK)
-        clone.flush()
-        os.fsync(clone.fileno())
+    _copy_private_restore_media(source, target)
     if _snapshot_digest(target) != expected_digest:
         raise OperatorError("integrity_error: restore partition changed during copy")
 
@@ -315,11 +333,16 @@ class _VerifiedBackup:
 def backup_lifetime_guard(service: StorageAdministrationService, *, exclusive: bool):
     # Erasure takes this before the publication fence, so it cannot finish
     # while a backup still retains readers or plaintext outside that fence.
-    return locked_file(service.installation_root / "control" / ".backup-lifetime.lock", exclusive=exclusive)
+    return locked_file(
+        service.installation_root / "control" / ".backup-lifetime.lock",
+        exclusive=exclusive, private=True,
+    )
 
 
 @contextmanager
 def _open_backup_snapshot(path: Path) -> Iterator[sqlite3.Connection]:
+    require_private_directory(path.parent)
+    require_private_sqlite(path)
     with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as connection:
         connection.row_factory = sqlite3.Row
         if connection.execute("PRAGMA journal_mode").fetchone()[0] != "wal":
@@ -338,9 +361,9 @@ def _sqlite_backup(source: sqlite3.Connection, destination: Path) -> None:
 
     if not source.in_transaction:
         raise OperatorError("integrity_error: backup source is missing its pinned read transaction")
+    prepare_private_sqlite(destination)
     with closing(sqlite3.connect(str(destination))) as copy:
         source.backup(copy, pages=512, progress=check_deadline, sleep=0.01)
-    os.chmod(destination, 0o600)
 
 
 @dataclass(frozen=True)
@@ -459,14 +482,17 @@ def _require_backup_authority(
     require_owner_capability(service, capability)
 
 
-def _atomic_write(path: Path, payload: bytes, mode: int = 0o600) -> None:
-    temporary = path.with_name(f".{path.name}.tmp")
-    with temporary.open("wb") as handle:
-        handle.write(payload)
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.chmod(temporary, mode)
-    os.replace(temporary, path)
+def _atomic_write(path: Path, payload: bytes) -> None:
+    descriptor, name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary = Path(name)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
     _sync_directory(path.parent)
 
 
@@ -531,8 +557,9 @@ class BackupRestoreOperator:
             # An abrupt process exit may leave SQLite plaintext behind. Keep
             # it in the tree the installation's erasure operation owns.
             copies = Path(plaintext)
+            require_private_directory(copies)
             encrypted = Path(scratch) / "encrypted"
-            encrypted.mkdir(mode=0o700)
+            ensure_private_directory(encrypted)
             try:
                 with ExitStack() as snapshots:
                     with service.verified_operation_context() as (state, finalized):
@@ -796,6 +823,7 @@ class BackupRestoreOperator:
         )
         with tempfile.TemporaryDirectory(prefix=".restore-", dir=staging_root.parent) as scratch:
             staging = Path(scratch)
+            require_private_directory(staging)
             for participant in manifest.participants:
                 source = archive_root / _validate_participant(participant)
                 decrypt_backup_participant(
@@ -859,6 +887,7 @@ class BackupRestoreOperator:
         if attestation_path.is_symlink() or not attestation_path.is_file():
             raise OperatorError("integrity_error: restore staging attestation is missing")
         try:
+            require_private_directory(staging_root)
             attestation = RestoreStagingAttestation.model_validate_json(attestation_path.read_bytes())
             valid = attestation.signer_key_id == service._signer_key_id and service._signing.verify(
                 attestation.signer_key_id,
@@ -888,7 +917,7 @@ class BackupRestoreOperator:
                 self._require_restore_watermark(service, plan, state, finalized)
                 self._require_staging_suppression(service, attestation)
         except StorageAdministrationError as exc:
-            raise OperatorError(f"unavailable: live restore watermark could not be verified: {exc}") from exc
+            raise OperatorError("unavailable: live restore watermark could not be verified") from exc
         except (OSError, ValidationError) as exc:
             raise OperatorError("integrity_error: restore staging evidence could not be verified") from exc
         return attestation
@@ -932,7 +961,7 @@ class BackupRestoreOperator:
                     self._require_staging_suppression(service, attestation)
                     deltas = self._preview_inventory(service, uri)
         except StorageAdministrationError as exc:
-            raise OperatorError(f"unavailable: live restore watermark could not be verified: {exc}") from exc
+            raise OperatorError("unavailable: live restore watermark could not be verified") from exc
         except RawPayloadFramingError as exc:
             raise OperatorError(f"unsupported_configuration: {exc}") from exc
         except (OSError, sqlite3.DatabaseError) as exc:
@@ -974,7 +1003,7 @@ class BackupRestoreOperator:
         generations = partition_root / "generations"
         if partition_root.is_symlink() or generations.is_symlink():
             raise OperatorError("integrity_error: generation storage must not use symlinks")
-        generations.mkdir(mode=0o700, exist_ok=True)
+        ensure_private_directory(generations)
         with tempfile.TemporaryDirectory(prefix=".exact-current-restore-", dir=generations) as scratch:
             staged_copy = Path(scratch) / "partition.sqlite3"
             _copy_attested_partition(
@@ -1091,7 +1120,7 @@ class BackupRestoreOperator:
         generations = partition_root / "generations"
         if partition_root.is_symlink() or generations.is_symlink():
             raise OperatorError("integrity_error: generation storage must not use symlinks")
-        generations.mkdir(mode=0o700, exist_ok=True)
+        ensure_private_directory(generations)
         try:
             if preview.raw_payload_upgrade is not None:
                 size = preview.raw_payload_upgrade.source_partition_bytes
@@ -1157,7 +1186,7 @@ class BackupRestoreOperator:
             preview_digest=preview_digest,
         )
         with (
-            PartitionDataRepository(working, require_existing=True) as staged,
+            PartitionDataRepository(working, require_existing=True, protected_storage_root=working.parent) as staged,
             staged.transaction(write=True) as connection,
         ):
             upgrade_needed = staged.read_schema_version(connection) < LEGACY_RUNTIME_UPGRADE_SCHEMA_VERSION
@@ -1205,7 +1234,7 @@ class BackupRestoreOperator:
             with closing(sqlite3.connect(working)) as connection:
                 connection.execute("VACUUM")
             with (
-                PartitionDataRepository(working, require_existing=True) as compacted,
+                PartitionDataRepository(working, require_existing=True, protected_storage_root=working.parent) as compacted,
                 compacted.transaction(write=False) as connection,
             ):
                 if not service._matches_materialization(connection, publication, partition=compacted):
@@ -1282,7 +1311,7 @@ def _verify_staged_backup(
     try:
         with (
             ControlDatabase(staging / "control.sqlite3", journal_verifier=service._verify_journal_signature) as control,
-            PartitionDataRepository(staging / "partition.sqlite3") as partition,
+            PartitionDataRepository(staging / "partition.sqlite3", protected_storage_root=staging) as partition,
         ):
             control.validate_journal()
             state = control.read_control_state()
@@ -1363,67 +1392,52 @@ def boot_restored_installation(
     from the archive. The staged participants must carry the anchor's
     identity; current suppression state travels via the reapplied journals.
     """
-    import shutil as _shutil
-
-    from memorii.core.storage_administration.operator import OperatorError as _OpError
-    from memorii.core.storage_administration.service import (
-        StorageAdministrationService,
-    )
-
-    if installation_root.exists() and any(installation_root.iterdir()):
-        raise _OpError(
+    if installation_root.is_symlink() or (installation_root.exists() and any(installation_root.iterdir())):
+        raise OperatorError(
             "invalid_request: fresh-host boot requires an empty installation root"
         )
-    staged_control = staging_root / "control.sqlite3"
-    staged_partition = staging_root / "partition.sqlite3"
-    for required in (staged_control, staged_partition):
-        if not required.is_file():
-            raise _OpError(
-                f"integrity_error: staged participant missing: {required.name}"
-            )
-    try:
-        with closing(sqlite3.connect(staged_partition.resolve().as_uri() + "?mode=ro", uri=True)) as connection:
-            if PartitionDataRepository.requires_managed_restore(connection):
-                raise _OpError("needs_reconciliation: managed runtime state requires a staged generation restore")
-    except sqlite3.DatabaseError as exc:
-        raise _OpError("integrity_error: staged partition runtime inventory cannot be read") from exc
     identity = str(anchor.get("installation_id", ""))
     if not identity:
-        raise _OpError("invalid_request: anchor is missing the installation identity")
-    control_root = installation_root / "control"
-    partition_root = installation_root / "partition"
-    control_root.mkdir(parents=True, exist_ok=True)
-    partition_root.mkdir(parents=True, exist_ok=True)
-    _shutil.copyfile(staged_control, control_root / "control.sqlite3")
-    _shutil.copyfile(staged_partition, partition_root / "partition.sqlite3")
-    os.chmod(control_root / "control.sqlite3", 0o600)
-    os.chmod(partition_root / "partition.sqlite3", 0o600)
-    # Owner-retained signing keys arrive out-of-band (never in the archive)
-    # and become the fresh host's key material.
-    keys_target = control_root / "keys"
-    keys_target.mkdir(parents=True, exist_ok=True)
-    os.chmod(keys_target, 0o700)
-    for key_file in sorted(signing_keys_directory.glob("*.key")):
-        _shutil.copyfile(key_file, keys_target / key_file.name)
-        os.chmod(keys_target / key_file.name, 0o600)
-    # Suppressions reapplied into staging travel with the boot so revoked
-    # evidence stays revoked on the fresh host.
-    staged_suppressions = staging_root / "suppressions"
-    if staged_suppressions.is_dir():
-        target = control_root / "suppressions"
-        target.mkdir(parents=True, exist_ok=True)
-        for journal in staged_suppressions.glob("forget-*.json"):
-            _shutil.copyfile(journal, target / journal.name)
-    # The booted control state must resolve as a coherent installation.
-    service = StorageAdministrationService(installation_root)
+        raise OperatorError("invalid_request: anchor is missing the installation identity")
     try:
-        state = service._control_state()
-        if state.installation_id != identity:
-            raise _OpError(
-                "integrity_error: staged control identity does not match the anchor"
-            )
-    finally:
-        service.close()
+        require_private_directory(staging_root)
+        require_private_directory(signing_keys_directory)
+        installation_root.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix=".restore-boot-", dir=installation_root.parent) as scratch:
+            working = Path(scratch)
+            require_private_directory(working)
+            control_root, partition_root = working / "control", working / "partition"
+            ensure_private_directory(control_root)
+            ensure_private_directory(partition_root)
+            partition = partition_root / "partition.sqlite3"
+            for name, target in (("control.sqlite3", control_root / "control.sqlite3"), ("partition.sqlite3", partition)):
+                source = staging_root / name
+                _require_snapshot_without_sidecars(source)
+                _copy_private_restore_media(source, target)
+            with closing(sqlite3.connect(partition.absolute().as_uri() + "?mode=ro&immutable=1", uri=True)) as connection:
+                if PartitionDataRepository.requires_managed_restore(connection):
+                    raise OperatorError("needs_reconciliation: managed runtime state requires a staged generation restore")
+            keys_target = control_root / "keys"
+            ensure_private_directory(keys_target)
+            for key in sorted(signing_keys_directory.glob("*.key")):
+                _copy_private_restore_media(key, keys_target / key.name)
+            staged_suppressions = staging_root / "suppressions"
+            if staged_suppressions.exists() or staged_suppressions.is_symlink():
+                require_private_directory(staged_suppressions)
+                target = control_root / "suppressions"
+                ensure_private_directory(target)
+                for journal in staged_suppressions.glob("forget-*.json"):
+                    _copy_private_restore_media(journal, target / journal.name)
+            with StorageAdministrationService(working) as service:
+                if service._control_state().installation_id != identity:
+                    raise OperatorError("integrity_error: staged control identity does not match the anchor")
+            prepare_installation_root(installation_root)
+            os.replace(working, installation_root)
+            _sync_directory(installation_root.parent)
+    except OSError as exc:
+        raise OperatorError("denied: restore media and destination must be private to the storage owner") from exc
+    except sqlite3.DatabaseError as exc:
+        raise OperatorError("integrity_error: staged partition runtime inventory cannot be read") from exc
     del capability
     return identity
 

@@ -8,24 +8,55 @@ are accepted. Machine JSON and readable output carry the same status.
 """
 from __future__ import annotations
 
-import argparse
 import json
-import os
-import stat
-import sys
+import logging
+import sqlite3
+from argparse import Namespace
+from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+from pydantic import TypeAdapter, ValidationError
+
+from memorii.stores.sqlite.private_storage import read_private_file, repair_installation_permissions
+from memorii.tools.cli_diagnostics import SafeArgumentParser, diagnostic_code
+
+if TYPE_CHECKING:
+    from memorii.core.storage_administration.operator import OwnerCapability, StorageAdministrationOperator
+
+_LOGGER = logging.getLogger(__name__)
+
+
+class _CliError(RuntimeError):
+    """Static, operator-facing diagnostic from this adapter."""
+
+    def __init__(self, message: str, *, exit_status: int = 3) -> None:
+        super().__init__(message)
+        self.exit_status = exit_status
+
+
+def _read_secret(path: Path, *, size: int, label: str) -> bytes:
+    try:
+        value = read_private_file(path, limit=size + 1)
+    except OSError as exc:
+        raise _CliError(f"denied: {label} must be a readable, regular owner-only file") from exc
+    if len(value) != size:
+        raise _CliError(f"invalid_request: {label} has an invalid length")
+    return value
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
+    parser = SafeArgumentParser(
         prog="memorii-operator",
         description="Owner-only operator controls over one installation.",
+        allow_abbrev=False,
     )
     parser.add_argument("--installation-root", type=Path, required=True)
     commands = parser.add_subparsers(dest="command", required=True)
 
     commands.add_parser("status", help="Content-free installation status")
     commands.add_parser("doctor", help="Read-only health checks")
+    commands.add_parser("repair-permissions", help="Restrict an offline installation to its filesystem owner")
 
     mode = commands.add_parser("mode", help="Change the installation mode")
     mode.add_argument("--target", choices=("active", "read_only", "bypass"), required=True)
@@ -38,16 +69,16 @@ def main(argv: list[str] | None = None) -> int:
     create.add_argument("--archive-root", type=Path, required=True)
     create.add_argument("--reason", required=True)
     create.add_argument(
-        "--recovery-key-hex",
+        "--recovery-key-file",
+        type=Path,
         required=True,
-        help="64 hex chars; the 32-byte operator recovery key wrapping the archive content key",
+        help="Owner-only file with the 32-byte raw recovery key",
     )
     verify = backup_sub.add_parser("verify", help="Verify an archive")
     verify.add_argument("--archive-root", type=Path, required=True)
     restore = backup_sub.add_parser("restore-plan", help="Plan a restore")
     restore.add_argument("--archive-root", type=Path, required=True)
     restore.add_argument("--data-loss-acknowledged", action="store_true")
-    restore.add_argument("--recovery-key-hex", help=argparse.SUPPRESS)
     stage = backup_sub.add_parser("restore-stage", help="Verify and stage a reviewed restore without activating it")
     stage.add_argument("--plan-file", type=Path, required=True)
     stage.add_argument("--staging-root", type=Path, required=True)
@@ -156,7 +187,7 @@ def main(argv: list[str] | None = None) -> int:
 
     common = parser.add_argument_group("owner capability")
     common.add_argument("--owner-principal", default="")
-    common.add_argument("--capability-digest", default="")
+    common.add_argument("--capability-file", type=Path, help="Owner-only file with the 64-character hex digest")
 
     arguments = parser.parse_args(argv)
 
@@ -167,36 +198,42 @@ def main(argv: list[str] | None = None) -> int:
         StorageAdministrationOperator,
     )
     from memorii.core.storage_administration.service import (
+        InstallationPermissionsError,
+        StorageAdministrationError,
         StorageAdministrationService,
     )
-    from memorii.core.storage_administration.writer_enrollment import (
-        WriterEnrollmentRegistry,
-    )
 
-    administration = StorageAdministrationService(
-        arguments.installation_root,
-        writer_enrollment=WriterEnrollmentRegistry(
-            arguments.installation_root / "control" / "writers"
-        ),
-    )
-    operator = StorageAdministrationOperator(administration)
-    capability = (
-        OwnerCapability(
-            owner_principal=arguments.owner_principal,
-            capability_digest=arguments.capability_digest,
+    if arguments.command == "repair-permissions":
+        try:
+            repair_installation_permissions(arguments.installation_root)
+        except OSError:
+            _LOGGER.error("denied: could not restrict all managed storage; check its ownership and file types")
+            return 3
+        print(json.dumps({"status": "permissions_repaired"}))
+        return 0
+    try:
+        administration = StorageAdministrationService(
+            arguments.installation_root, use_registered_writers=True,
         )
-        if arguments.owner_principal and arguments.capability_digest
-        else None
-    )
+    except InstallationPermissionsError:
+        _LOGGER.error("denied: unsafe installation permissions; run memorii-operator repair-permissions")
+        return 3
+    except (OSError, sqlite3.DatabaseError, StorageAdministrationError):
+        _LOGGER.error("unavailable: installation could not be opened")
+        return 3
+    operator = StorageAdministrationOperator(administration)
 
     def require_capability() -> OwnerCapability:
-        if capability is None:
-            print(
-                "invalid_request: --owner-principal and --capability-digest are required",
-                file=sys.stderr,
+        if not arguments.owner_principal or arguments.capability_file is None:
+            raise _CliError(
+                "invalid_request: --owner-principal and --capability-file are required",
+                exit_status=2,
             )
-            sys.exit(2)
-        return capability
+        digest = _read_secret(arguments.capability_file, size=64, label="owner capability")
+        try:
+            return OwnerCapability(owner_principal=arguments.owner_principal, capability_digest=digest.decode("ascii"))
+        except (UnicodeError, ValidationError) as exc:
+            raise _CliError("invalid_request: owner capability is malformed") from exc
 
     try:
         if arguments.command == "status":
@@ -222,128 +259,8 @@ def main(argv: list[str] | None = None) -> int:
             print(status.model_dump_json())
             return 0
         if arguments.command == "backup":
-            from memorii.core.storage_administration.operator_backup import (
-                BackupRestoreOperator,
-                RestorePlan,
-            )
-
-            backups = BackupRestoreOperator(operator)
-            if arguments.backup_command == "create":
-                manifest = backups.create_backup(
-                    capability=require_capability(),
-                    archive_root=arguments.archive_root,
-                    reason=arguments.reason,
-                    recovery_key=bytes.fromhex(arguments.recovery_key_hex),
-                )
-                print(manifest.model_dump_json())
-                return 0
-            if arguments.backup_command == "verify":
-                manifest = backups.verify_backup(archive_root=arguments.archive_root)
-                print(manifest.model_dump_json())
-                return 0
-            if arguments.backup_command in {
-                "restore-verify-stage", "restore-preview-stage", "restore-activate-current", "restore-activate-older",
-                "upgrade-runtime",
-            }:
-                from pydantic import ValidationError
-
-                owner = require_capability()
-                try:
-                    plan = RestorePlan.model_validate_json(arguments.plan_file.read_bytes())
-                except (ValidationError, OSError) as exc:
-                    raise OperatorError("invalid_request: restore plan could not be read") from exc
-                if arguments.backup_command == "restore-preview-stage":
-                    preview = backups.preview_staged_restore(
-                        capability=owner, plan=plan, staging_root=arguments.staging_root,
-                        raw_payloads=arguments.raw_payloads,
-                    )
-                    print(json.dumps({**preview.model_dump(mode="json"), "preview_digest": preview.digest()}))
-                    return 0
-                if arguments.backup_command in {"restore-activate-older", "upgrade-runtime"}:
-                    from memorii.core.storage_administration.service import StorageAdministrationError
-                    from memorii.stores.sqlite.control import ControlStateError
-                    from memorii.stores.sqlite.partition import RAW_MEMORY_PAYLOAD_SCHEMA_VERSION
-
-                    try:
-                        if arguments.backup_command == "upgrade-runtime":
-                            intent = backups.upgrade_current_runtime(
-                                capability=owner, plan=plan, staging_root=arguments.staging_root,
-                                preview_digest=arguments.preview_digest, raw_payloads=arguments.raw_payloads,
-                            )
-                        else:
-                            intent = backups.activate_older_restore(
-                                capability=owner, plan=plan, staging_root=arguments.staging_root,
-                                preview_digest=arguments.preview_digest,
-                            )
-                    except (StorageAdministrationError, ControlStateError) as exc:
-                        raise OperatorError(f"unavailable: generation change could not be published: {exc}") from exc
-                    result: dict[str, str | int | bool] = {
-                        "status": "selected", "generation_id": intent.candidate_publication.data_generation_id,
-                        "delivery_status": "needs_reconciliation", "reopen_required": True,
-                    }
-                    if arguments.backup_command == "upgrade-runtime" and arguments.raw_payloads:
-                        result["previous_generation_id"] = intent.old_publication.data_generation_id
-                        result["storage_schema_version"] = RAW_MEMORY_PAYLOAD_SCHEMA_VERSION
-                    print(json.dumps(result, sort_keys=True))
-                    return 0
-                if arguments.backup_command == "restore-activate-current":
-                    try:
-                        selector = backups.activate_exact_current_restore(
-                            capability=owner, plan=plan, staging_root=arguments.staging_root,
-                        )
-                    except OSError as exc:
-                        raise OperatorError("unavailable: exact-current restore selection could not be published") from exc
-                    print(json.dumps({
-                        "status": "selected", "generation_id": selector.generation_id, "reopen_required": True,
-                    }, sort_keys=True))
-                    return 0
-                attestation = backups.verify_staged_restore(
-                    capability=owner, plan=plan, staging_root=arguments.staging_root,
-                )
-                print(attestation.model_dump_json())
-                return 0
-            if arguments.backup_command == "restore-stage":
-                from cryptography.exceptions import InvalidTag
-                from pydantic import ValidationError
-
-                owner = require_capability()
-                try:
-                    plan = RestorePlan.model_validate_json(arguments.plan_file.read_bytes())
-                    with os.fdopen(
-                        os.open(arguments.recovery_key_file, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK),
-                        "rb",
-                    ) as key_file:
-                        file_state = os.fstat(key_file.fileno())
-                        if (
-                            not stat.S_ISREG(file_state.st_mode)
-                            or file_state.st_uid != os.geteuid()
-                            or file_state.st_mode & 0o077
-                        ):
-                            raise OperatorError("denied: recovery key must be a regular owner-only file")
-                        recovery_key = key_file.read(33)
-                except (ValidationError, OSError) as exc:
-                    raise OperatorError("invalid_request: restore plan or recovery key could not be read") from exc
-                try:
-                    staged = backups.apply_restore(
-                        capability=owner, plan=plan, staging_root=arguments.staging_root,
-                        recovery_key=recovery_key,
-                    )
-                except InvalidTag as exc:
-                    raise OperatorError("denied: recovery key did not authenticate the archive") from exc
-                except OSError as exc:
-                    raise OperatorError("unavailable: restore staging could not be published") from exc
-                print(json.dumps({"status": "staged", "path": str(staged)}, sort_keys=True))
-                return 0
-            plan = backups.plan_restore(
-                capability=require_capability(),
-                archive_root=arguments.archive_root,
-                data_loss_acknowledged=arguments.data_loss_acknowledged,
-            )
-            print(plan.model_dump_json())
-            return 0
+            return _run_backup(arguments, operator, require_capability)
         if arguments.command == "reconcile-delivery":
-            from pydantic import ValidationError
-
             from memorii.core.persistence.runtime_repository import RuntimeStateError
             from memorii.core.storage_administration.delivery_reconciliation import (
                 DeliveryReconciliationOperator,
@@ -362,14 +279,12 @@ def main(argv: list[str] | None = None) -> int:
                 plan = DeliveryRejectionPlan.model_validate_json(arguments.plan_file.read_bytes())
                 decision = reconciliation.reject(capability=owner, plan=plan, plan_digest=arguments.plan_digest)
             except (RuntimeStateError, StorageAdministrationError, ControlStateError) as exc:
-                raise OperatorError(f"unavailable: held delivery could not be reconciled: {exc}") from exc
+                raise _CliError("unavailable: held delivery could not be reconciled") from exc
             except (OSError, ValidationError) as exc:
-                raise OperatorError("invalid_request: delivery rejection plan could not be read") from exc
+                raise _CliError("invalid_request: delivery rejection plan could not be read") from exc
             print(decision.model_dump_json())
             return 0
         if arguments.command == "runtime-source-grant":
-            from pydantic import ValidationError
-
             from memorii.core.persistence.runtime_api import RuntimeCommandError
             from memorii.core.persistence.runtime_repository import RuntimeStateError
             from memorii.core.provider.runtime_source_authority import RuntimeSourceAuthorityError
@@ -385,20 +300,18 @@ def main(argv: list[str] | None = None) -> int:
                     try:
                         entry = ManagedSpoolEntry.model_validate_json(arguments.entry_file.read_bytes())
                     except (OSError, ValidationError) as exc:
-                        raise OperatorError("invalid_request: committed native observation entry could not be read") from exc
+                        raise _CliError("invalid_request: committed native observation entry could not be read") from exc
                     release = issue_native_source_release(administration, capability=owner, entry=entry)
                 else:
                     release = RuntimeSourceReleaseAuthority(administration).revoke(
                         capability=owner, grant_id=arguments.grant_id,
                     )
             except (RuntimeCommandError, RuntimeSourceAuthorityError, RuntimeStateError, StorageAdministrationError) as exc:
-                raise OperatorError(str(exc)) from exc
+                raise _CliError(f"{diagnostic_code(exc)}: native source grant request failed") from exc
             print(json.dumps({"grant_id": release.grant_id, "status": release.status}, sort_keys=True))
             return 0
         if arguments.command == "runtime-grant":
             from datetime import datetime
-
-            from pydantic import TypeAdapter, ValidationError
 
             from memorii.core.harness_state.write_authority import (
                 HostCommandAuthorityError,
@@ -415,7 +328,7 @@ def main(argv: list[str] | None = None) -> int:
                         arguments.grant_id, capability=require_capability()
                     )
                 except HostCommandAuthorityError as exc:
-                    raise OperatorError(str(exc)) from exc
+                    raise _CliError(f"{diagnostic_code(exc)}: runtime grant revocation failed") from exc
                 print(
                     json.dumps(
                         {"grant_id": arguments.grant_id, "epoch": epoch},
@@ -426,7 +339,7 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 expires_at = datetime.fromisoformat(arguments.expires_at)
             except ValueError as exc:
-                raise OperatorError(
+                raise _CliError(
                     "invalid_request: --expires-at must be ISO-8601"
                 ) from exc
             scope_parser = TypeAdapter[CandidateScope](CandidateScope)
@@ -449,7 +362,7 @@ def main(argv: list[str] | None = None) -> int:
                     expires_at=expires_at,
                 )
             except ValidationError as exc:
-                raise OperatorError("invalid_request: runtime grant scope is invalid") from exc
+                raise _CliError("invalid_request: runtime grant scope is invalid") from exc
             try:
                 if grant_request.native_source is None:
                     issued = authority.issue(grant_request, capability=require_capability())
@@ -457,8 +370,8 @@ def main(argv: list[str] | None = None) -> int:
                     from memorii.core.harness_state.native_sources import enroll_native_source
 
                     issued = enroll_native_source(administration, grant_request, capability=require_capability())
-            except (HostCommandAuthorityError, ValueError) as exc:
-                raise OperatorError(str(exc)) from exc
+            except HostCommandAuthorityError as exc:
+                raise _CliError(f"{diagnostic_code(exc)}: runtime grant issuance failed") from exc
             print(issued.model_dump_json())
             return 0
         if arguments.command == "forget":
@@ -582,11 +495,134 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         parser.error(f"unknown command {arguments.command}")
         return 2
+    except _CliError as error:
+        _LOGGER.error("%s", error)
+        return error.exit_status
     except OperatorError as error:
-        print(str(error), file=sys.stderr)
+        _LOGGER.error("%s: operator request failed", diagnostic_code(error))
+        return 3
+    except ValueError:
+        _LOGGER.error("invalid_request: operator input is invalid")
+        return 2
+    except InstallationPermissionsError:
+        _LOGGER.error("denied: unsafe installation permissions; run memorii-operator repair-permissions")
+        return 3
+    except (OSError, sqlite3.DatabaseError, StorageAdministrationError):
+        _LOGGER.error("unavailable: installation could not complete the operation")
         return 3
     finally:
         administration.close()
+
+
+def _run_backup(
+    arguments: Namespace,
+    operator: StorageAdministrationOperator,
+    require_capability: Callable[[], OwnerCapability],
+) -> int:
+    from memorii.core.storage_administration.operator_backup import (
+        BackupRestoreOperator,
+        RestorePlan,
+    )
+
+    backups = BackupRestoreOperator(operator)
+    if arguments.backup_command == "create":
+        manifest = backups.create_backup(
+            capability=require_capability(),
+            archive_root=arguments.archive_root,
+            reason=arguments.reason,
+            recovery_key=_read_secret(arguments.recovery_key_file, size=32, label="recovery key"),
+        )
+        print(manifest.model_dump_json())
+        return 0
+    if arguments.backup_command == "verify":
+        manifest = backups.verify_backup(archive_root=arguments.archive_root)
+        print(manifest.model_dump_json())
+        return 0
+    if arguments.backup_command in {
+        "restore-verify-stage", "restore-preview-stage", "restore-activate-current", "restore-activate-older",
+        "upgrade-runtime",
+    }:
+        owner = require_capability()
+        try:
+            plan = RestorePlan.model_validate_json(arguments.plan_file.read_bytes())
+        except (ValidationError, OSError) as exc:
+            raise _CliError("invalid_request: restore plan could not be read") from exc
+        if arguments.backup_command == "restore-preview-stage":
+            preview = backups.preview_staged_restore(
+                capability=owner, plan=plan, staging_root=arguments.staging_root,
+                raw_payloads=arguments.raw_payloads,
+            )
+            print(json.dumps({**preview.model_dump(mode="json"), "preview_digest": preview.digest()}))
+            return 0
+        if arguments.backup_command in {"restore-activate-older", "upgrade-runtime"}:
+            from memorii.core.storage_administration.service import StorageAdministrationError
+            from memorii.stores.sqlite.control import ControlStateError
+            from memorii.stores.sqlite.partition import RAW_MEMORY_PAYLOAD_SCHEMA_VERSION
+
+            try:
+                if arguments.backup_command == "upgrade-runtime":
+                    intent = backups.upgrade_current_runtime(
+                        capability=owner, plan=plan, staging_root=arguments.staging_root,
+                        preview_digest=arguments.preview_digest, raw_payloads=arguments.raw_payloads,
+                    )
+                else:
+                    intent = backups.activate_older_restore(
+                        capability=owner, plan=plan, staging_root=arguments.staging_root,
+                        preview_digest=arguments.preview_digest,
+                    )
+            except (StorageAdministrationError, ControlStateError) as exc:
+                raise _CliError("unavailable: generation change could not be published") from exc
+            result: dict[str, str | int | bool] = {
+                "status": "selected", "generation_id": intent.candidate_publication.data_generation_id,
+                "delivery_status": "needs_reconciliation", "reopen_required": True,
+            }
+            if arguments.backup_command == "upgrade-runtime" and arguments.raw_payloads:
+                result["previous_generation_id"] = intent.old_publication.data_generation_id
+                result["storage_schema_version"] = RAW_MEMORY_PAYLOAD_SCHEMA_VERSION
+            print(json.dumps(result, sort_keys=True))
+            return 0
+        if arguments.backup_command == "restore-activate-current":
+            try:
+                selector = backups.activate_exact_current_restore(
+                    capability=owner, plan=plan, staging_root=arguments.staging_root,
+                )
+            except OSError as exc:
+                raise _CliError("unavailable: exact-current restore selection could not be published") from exc
+            print(json.dumps({
+                "status": "selected", "generation_id": selector.generation_id, "reopen_required": True,
+            }, sort_keys=True))
+            return 0
+        attestation = backups.verify_staged_restore(
+            capability=owner, plan=plan, staging_root=arguments.staging_root,
+        )
+        print(attestation.model_dump_json())
+        return 0
+    if arguments.backup_command == "restore-stage":
+        from cryptography.exceptions import InvalidTag
+        owner = require_capability()
+        try:
+            plan = RestorePlan.model_validate_json(arguments.plan_file.read_bytes())
+        except (ValidationError, OSError) as exc:
+            raise _CliError("invalid_request: restore plan could not be read") from exc
+        recovery_key = _read_secret(arguments.recovery_key_file, size=32, label="recovery key")
+        try:
+            staged = backups.apply_restore(
+                capability=owner, plan=plan, staging_root=arguments.staging_root,
+                recovery_key=recovery_key,
+            )
+        except InvalidTag as exc:
+            raise _CliError("denied: recovery key did not authenticate the archive") from exc
+        except OSError as exc:
+            raise _CliError("unavailable: restore staging could not be published") from exc
+        print(json.dumps({"status": "staged", "path": str(staged)}, sort_keys=True))
+        return 0
+    plan = backups.plan_restore(
+        capability=require_capability(),
+        archive_root=arguments.archive_root,
+        data_loss_acknowledged=arguments.data_loss_acknowledged,
+    )
+    print(plan.model_dump_json())
+    return 0
 
 
 if __name__ == "__main__":  # pragma: no cover

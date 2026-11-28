@@ -71,6 +71,45 @@ def _stage_raw(
     return plan, staging, preview.digest()
 
 
+def test_backup_refuses_a_linked_lifetime_lock(
+    installation: Path, tmp_path: Path,
+) -> None:
+    outside = tmp_path / "unrelated"
+    outside.write_bytes(b"unchanged")
+    lifetime_lock = installation / "control" / ".backup-lifetime.lock"
+    lifetime_lock.symlink_to(outside)
+    archive = tmp_path / "archive"
+    with StorageAdministrationService(installation) as service:
+        backups = BackupRestoreOperator(StorageAdministrationOperator(service))
+        with pytest.raises(OSError):
+            backups.create_backup(
+                capability=mint_owner_capability(service, _OWNER), archive_root=archive,
+                reason="linked lifetime lock", recovery_key=_RECOVERY_KEY,
+            )
+    assert not archive.exists()
+    assert outside.read_bytes() == b"unchanged"
+
+
+def test_backup_refuses_permission_drift_before_opening_snapshot(
+    installation: Path, tmp_path: Path,
+) -> None:
+    archive = tmp_path / "archive"
+    with StorageAdministrationService(installation) as service:
+        service.acquire_verified_snapshot()
+        database = service.partition_path()
+        database.chmod(0o644)
+        try:
+            backups = BackupRestoreOperator(StorageAdministrationOperator(service))
+            with pytest.raises(OperatorError, match="could not capture pinned backup snapshots"):
+                backups.create_backup(
+                    capability=mint_owner_capability(service, _OWNER), archive_root=archive,
+                    reason="snapshot permission drift", recovery_key=_RECOVERY_KEY,
+                )
+        finally:
+            database.chmod(0o600)
+    assert not archive.exists()
+
+
 @pytest.mark.parametrize("raw", [False, True])
 def test_backup_copies_the_pinned_pair_while_a_signed_writer_advances(
     installation: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, raw: bool,

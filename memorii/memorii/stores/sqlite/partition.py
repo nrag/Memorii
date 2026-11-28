@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+from memorii.stores.sqlite.private_storage import ensure_private_directory, prepare_private_sqlite
 from memorii.stores.sqlite.raw_memory_payloads import RAW_SCHEMA_VERSION as RAW_MEMORY_PAYLOAD_SCHEMA_VERSION
 
 if TYPE_CHECKING:
@@ -522,9 +523,14 @@ class PartitionDataRepository:
         protected_storage_root: Path | None = None,
     ) -> None:
         self._database_path = Path(database_path)
-        if not require_existing:
+        if protected_storage_root is not None:
+            if not require_existing:
+                ensure_private_directory(self._database_path.parent)
+            prepare_private_sqlite(self._database_path, require_existing=require_existing)
+        elif not require_existing:
             self._database_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock_path = self._database_path.parent / (self._database_path.name + ".lock")
+        self._private_lock = protected_storage_root is not None
         self._protected_storage_root = protected_storage_root or self._database_path.parent
         self._thread_lock = threading.RLock()
         self._transaction_guard: Callable[[sqlite3.Connection], None] | None = None
@@ -577,7 +583,7 @@ class PartitionDataRepository:
         """
         from memorii.core.memory_plane.file_lock import locked_file
 
-        with self._thread_lock, locked_file(self._lock_path, exclusive=write):
+        with self._thread_lock, locked_file(self._lock_path, exclusive=write, private=self._private_lock):
             if self._transaction_guard is not None:
                 self._transaction_guard(self._connection)
             self._connection.execute("BEGIN IMMEDIATE" if write else "BEGIN DEFERRED")
@@ -600,7 +606,7 @@ class PartitionDataRepository:
         """
         from memorii.core.memory_plane.file_lock import locked_file
 
-        with self._thread_lock, locked_file(self._lock_path, exclusive=True):
+        with self._thread_lock, locked_file(self._lock_path, exclusive=True, private=self._private_lock):
             if self._transaction_guard is not None:
                 self._transaction_guard(self._connection)
             self._connection.execute("BEGIN IMMEDIATE")

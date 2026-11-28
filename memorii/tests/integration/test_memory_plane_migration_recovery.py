@@ -247,7 +247,7 @@ def test_crash_after_adoption_resumes_and_completes(tmp_path: Path) -> None:
     from memorii.core.storage_administration import migration as migration_module
 
     root = tmp_path / "installation"
-    root.mkdir(parents=True)
+    root.mkdir(mode=0o700, parents=True)
     plane = _seed_legacy_installation(root)
     plan = build_migration_plan(root, plane_directory=plane)
     selector = migration_module.LegacyStorageSelector(
@@ -286,7 +286,7 @@ def test_crash_mid_import_resumes_without_duplicates(tmp_path: Path) -> None:
     from memorii.core.storage_administration import migration as migration_module
 
     root = tmp_path / "installation"
-    root.mkdir(parents=True)
+    root.mkdir(mode=0o700, parents=True)
     plane = _seed_legacy_installation(root, batches=3)
     plan = build_migration_plan(root, plane_directory=plane)
     selector = migration_module.LegacyStorageSelector(
@@ -381,7 +381,7 @@ def test_read_only_window_denies_data_publication(tmp_path: Path) -> None:
     )
 
     root = tmp_path / "installation"
-    root.mkdir(parents=True)
+    root.mkdir(mode=0o700, parents=True)
     plane = _seed_legacy_installation(root)
     plan = build_migration_plan(root, plane_directory=plane)
     selector = migration_module.LegacyStorageSelector(

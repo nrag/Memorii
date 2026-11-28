@@ -22,6 +22,7 @@ from memorii.core.persistence.runtime_contracts import RuntimeCommandRequest
 from memorii.core.persistence.writeback_decisions import WritebackDecisionRequest, WritebackHostBinding
 from memorii.core.storage_administration.operator import mint_owner_capability
 from memorii.core.storage_administration.service import StorageAdministrationService
+from tests.support.operator_files import write_owner_file
 
 
 def _setup(tmp_path: Path) -> tuple[StorageAdministrationService, ManagedHostCommandAuthority, IssuedCredential]:
@@ -194,8 +195,7 @@ def test_operator_cli_issues_and_revokes_owner_authorized_grant(
         root,
         "--owner-principal",
         capability.owner_principal,
-        "--capability-digest",
-        capability.capability_digest,
+        "--capability-file", write_owner_file(tmp_path / "owner.capability", capability.capability_digest),
     ]
     assert main(
         [
@@ -352,7 +352,7 @@ def test_writeback_authority_is_exact_and_rechecked_for_target(tmp_path: Path) -
 
 
 def test_operator_cli_provisions_exact_writeback_scope(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture,
 ) -> None:
     from memorii.tools.runtime_operator import main
 
@@ -363,7 +363,7 @@ def test_operator_cli_provisions_exact_writeback_scope(
     command = [
         "--installation-root", str(administration.installation_root),
         "--owner-principal", capability.owner_principal,
-        "--capability-digest", capability.capability_digest,
+        "--capability-file", write_owner_file(tmp_path / "owner.capability", capability.capability_digest),
         "runtime-grant", "issue",
         "--grant-id", "grant:writeback",
         "--credential-id", credential.credential_id,
@@ -373,7 +373,7 @@ def test_operator_cli_provisions_exact_writeback_scope(
     ]
     foreign_scope = scope.model_copy(update={"partition_id": "partition:other"})
     assert main([*command, "--writeback-scope", foreign_scope.model_dump_json()]) == 3
-    assert "outside the installation partition" in capsys.readouterr().err
+    assert "denied: runtime grant issuance failed" in caplog.text
     assert main([*command, "--writeback-scope", scope.model_dump_json()]) == 0
     issued = json.loads(capsys.readouterr().out)
     assert issued["allowed_kinds"] == []

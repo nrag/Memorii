@@ -9,6 +9,8 @@ from importlib import import_module
 from pathlib import Path
 from typing import BinaryIO, Protocol, cast
 
+from memorii.stores.sqlite.private_storage import open_private_lock
+
 _WINDOWS = os.name == "nt"
 
 
@@ -21,9 +23,9 @@ class _WindowsLockApi(Protocol):
 
 
 @contextmanager
-def locked_file(path: Path, *, exclusive: bool) -> Iterator[None]:
+def locked_file(path: Path, *, exclusive: bool, private: bool = False) -> Iterator[None]:
     """Hold a process-level advisory lock for the duration of the context."""
-    with path.open("a+b") as handle:
+    with (open_private_lock(path) if private else path.open("a+b")) as handle:
         _acquire(handle, exclusive=exclusive)
         try:
             yield

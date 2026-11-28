@@ -406,7 +406,7 @@ def test_consume_cli_admits_dispatches_and_refuses_untrusted(tmp_path: Path, mon
 
 
 def test_consume_cli_rejects_legacy_intake_and_drain_on_managed_root(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path, caplog: pytest.LogCaptureFixture,
 ) -> None:
     from memorii.core.harness_state.consumer import HostEventDelivery, LocalDurableSpool
     from memorii.tools.runtime_consume import main as consume_main
@@ -426,17 +426,18 @@ def test_consume_cli_rejects_legacy_intake_and_drain_on_managed_root(
     incoming.write_text(delivery.model_dump_json(), encoding="utf-8")
     shared = ["--installation-root", str(root)]
     assert consume_main([*shared, "--producer", "unsigned-producer", "--delivery", str(incoming)]) == 3
-    assert "requires --managed" in capsys.readouterr().err
+    assert "requires --managed" in caplog.text
     assert not (root / "spool").exists()
 
     # An older pending spool also cannot supply authority by CLI allowlist.
     pending = LocalDurableSpool(tmp_path / "legacy-spool")
     before = pending.admit(delivery, allowlisted_producers=("unsigned-producer",))
+    caplog.clear()
     assert consume_main([
         *shared, "--spool-directory", str(tmp_path / "legacy-spool"),
         "--drain", "--allowlisted-producers", "unsigned-producer",
     ]) == 3
-    assert "requires --managed" in capsys.readouterr().err
+    assert "requires --managed" in caplog.text
     assert pending.pending_deliveries(allowlisted_producers=("unsigned-producer",)) == ((before, delivery),)
 
     reopened = StorageAdministrationService(root)

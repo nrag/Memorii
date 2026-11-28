@@ -53,7 +53,9 @@ def _select_generation(service: StorageAdministrationService, *, generation_id: 
     previous = service._control.read_publication_state(service._repository_id())
     assert previous is not None
     destination = service.installation_root / "partition" / "generations" / generation_id / "partition.sqlite3"
-    destination.parent.mkdir(parents=True)
+    destination.parent.parent.mkdir(mode=0o700, exist_ok=True)
+    destination.parent.mkdir(mode=0o700)
+    destination.touch(mode=0o600, exist_ok=False)
     legacy = service.partition_path()
     candidate = service._sign_state(previous.model_copy(update={"data_generation_id": generation_id}))
     # Selection and control publication are the test scope's owner-only
@@ -61,7 +63,10 @@ def _select_generation(service: StorageAdministrationService, *, generation_id: 
     with service._publication_fence(), locked_file(legacy.with_name(f"{legacy.name}.lock"), exclusive=True):
         with closing(sqlite3.connect(legacy)) as source, closing(sqlite3.connect(destination)) as staged:
             source.backup(staged)
-        with PartitionDataRepository(destination, require_existing=True) as stage, stage.transaction(write=True) as connection:
+        with (
+            PartitionDataRepository(destination, require_existing=True, protected_storage_root=destination.parent) as stage,
+            stage.transaction(write=True) as connection,
+        ):
             connection.execute(
                 "UPDATE partition_publication SET generation_id = ?, tuple_digest = ? WHERE id = 1",
                 (candidate.data_generation_id, candidate.payload_digest()),

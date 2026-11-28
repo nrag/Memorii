@@ -28,6 +28,7 @@ from memorii.core.storage_administration.service import InstallationIntegrityErr
 from memorii.domain.enums import CommitStatus, MemoryDomain
 from memorii.stores.sqlite.raw_memory_payloads import payload_digest
 from memorii.tools.runtime_operator import main as operator_main
+from tests.support.operator_files import write_owner_file
 
 _RECOVERY_KEY = b"x" * 32
 
@@ -109,7 +110,7 @@ def test_owner_upgrades_exact_reviewed_v7_and_reopens_raw_partition(
         plan_file.write_text(plan.model_dump_json(), encoding="utf-8")
         operator_args = [
             "--installation-root", str(root), "--owner-principal", owner.owner_principal,
-            "--capability-digest", owner.capability_digest, "backup",
+            "--capability-file", write_owner_file(tmp_path / "owner.capability", owner.capability_digest), "backup",
         ]
         stage_args = ["--plan-file", str(plan_file), "--staging-root", str(staging)]
         assert operator_main([*operator_args, "restore-preview-stage", *stage_args, "--raw-payloads"]) == 0

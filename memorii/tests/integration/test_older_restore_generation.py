@@ -21,9 +21,14 @@ from memorii.core.storage_administration.operator import (
     mint_owner_capability,
 )
 from memorii.core.storage_administration.operator_backup import BackupRestoreOperator
-from memorii.core.storage_administration.service import StorageAdministrationError, StorageAdministrationService
+from memorii.core.storage_administration.service import (
+    InstallationPermissionsError,
+    StorageAdministrationError,
+    StorageAdministrationService,
+)
 from memorii.domain.enums import CommitStatus, MemoryDomain
 from memorii.tools.runtime_operator import main as operator_main
+from tests.support.operator_files import write_owner_file
 
 
 def _task(task_id: str) -> TaskRecord:
@@ -33,7 +38,7 @@ def _task(task_id: str) -> TaskRecord:
     )
 
 
-@pytest.mark.parametrize("cut", ["none", "before_selector", "after_selector", "invalid_selector"])
+@pytest.mark.parametrize("cut", ["none", "before_selector", "after_selector", "invalid_selector", "permissions"])
 def test_older_restore_recovers_exact_bytes_and_keeps_delivery_held(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], cut: str,
 ) -> None:
@@ -92,7 +97,7 @@ def test_older_restore_recovers_exact_bytes_and_keeps_delivery_held(
                 if path.name != PARTITION_GENERATION_SELECTOR:
                     original(path, value)
                     return
-                if cut == "after_selector":
+                if cut in {"after_selector", "permissions"}:
                     original(path, value)
                 elif cut == "invalid_selector":
                     original(path, b"invalid")
@@ -111,6 +116,17 @@ def test_older_restore_recovers_exact_bytes_and_keeps_delivery_held(
                 service.partition().transaction(write=False),
             ):
                 pytest.fail("a prepared generation change released partition data")
+
+    if cut == "permissions":
+        selected = root / "partition" / "generations"
+        selected.chmod(0o755)
+        with StorageAdministrationService(root) as unsafe:
+            with pytest.raises(InstallationPermissionsError, match="repair-permissions"):
+                unsafe.acquire_verified_snapshot()
+            pending = unsafe._control.read_generation_change(repository_id)
+            assert pending is not None and pending.phase == "prepared"
+            assert unsafe._control_state().quarantined_reason is None
+        assert operator_main(["--installation-root", str(root), "repair-permissions"]) == 0
 
     with StorageAdministrationService(root) as reopened:
         operator = StorageAdministrationOperator(reopened)
@@ -159,7 +175,7 @@ def test_older_restore_recovers_exact_bytes_and_keeps_delivery_held(
         if cut == "none":
             cli = [
                 "--installation-root", str(root), "--owner-principal", capability.owner_principal,
-                "--capability-digest", capability.capability_digest, "reconcile-delivery",
+                "--capability-file", write_owner_file(tmp_path / "owner.capability", capability.capability_digest), "reconcile-delivery",
             ]
             assert operator_main([*cli, "plan-reject", "--delivery-id", legacy.delivery_id]) == 0
             review = json.loads(capsys.readouterr().out)
@@ -231,7 +247,7 @@ def test_owner_upgrades_signed_runtime_without_rewriting_old_batches(
         plan_file.write_text(plan.model_dump_json(), encoding="utf-8")
         cli = [
             "--installation-root", str(root), "--owner-principal", owner.owner_principal,
-            "--capability-digest", owner.capability_digest, "backup",
+            "--capability-file", write_owner_file(tmp_path / "owner.capability", owner.capability_digest), "backup",
         ]
         stage_args = ["--plan-file", str(plan_file), "--staging-root", str(staging)]
         preview = backups.preview_staged_restore(capability=owner, plan=plan, staging_root=staging)

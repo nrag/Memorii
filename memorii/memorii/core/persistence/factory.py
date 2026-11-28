@@ -317,11 +317,13 @@ def open_managed_partition(
             "no initialized control authority; run the owner-authorized "
             "installation initializer first",
         )
-    administration = StorageAdministrationService(root)
+    administration = None
     try:
+        administration = StorageAdministrationService(root)
         administration.acquire_verified_snapshot()
     except (StorageAdministrationError, InstallationIntegrityError, InstallationQuarantinedError) as exc:
-        administration.close()
+        if administration is not None:
+            administration.close()
         raise ManagedPartitionError("integrity", str(exc)) from exc
     partition = administration.partition()
     inner = SqliteMemoryPlaneStore(partition)

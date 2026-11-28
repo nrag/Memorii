@@ -142,6 +142,29 @@ print warnings or errors and still exit successfully. Pending outbox entries
 indicate that the runtime has queued work; check for a target receipt before
 treating the work as delivered.
 
+Managed storage is private to the account that runs Memorii. Create new roots
+under an operator-controlled path whose ancestors other accounts cannot
+replace. Keep host credentials separate from the installation. On macOS, use
+a location without inherited extended ACLs on the managed directories or
+files. Memorii refuses those ACLs because they can grant access beyond the
+POSIX mode.
+If an existing installation reports unsafe permissions, stop its sidecar and
+other writers. As the storage owner, run
+`memorii-operator --installation-root /path/to/installation repair-permissions`,
+then run `status` before restarting. Repair checks ownership and file types.
+It does not follow links or repair backups stored outside the installation.
+Use permission repair for a mode error in a root that has stayed under the
+owner's control. Another account can retain an already-open file descriptor
+after a mode change. For a root exposed to other accounts, recover to a fresh
+private root before resuming writes.
+
+Owner-authorized commands take `--owner-principal` and `--capability-file`
+before the subcommand. Store the issued capability as exactly 64 lowercase hex
+characters in a regular file readable only by the operator. Use
+`--recovery-key-file` on both `backup create` and `backup restore-stage`.
+It accepts exactly 32 raw bytes in a regular owner-only file. Keep that key
+independently from the backup archive.
+
 For a restore on the same installation, switch to `read_only` and run
 `backup restore-plan` against the archive. Use `backup restore-stage` with
 that plan and an owner-only recovery key file. Then use

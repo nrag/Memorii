@@ -200,13 +200,18 @@ export default function memoriiExtension(pi: unknown): void {
     // without its provisioned task fails closed instead of fabricating one.
     pendingUsers.clear();
     requireBoundSession(context);
-    const revision = await currentTaskVersion();
-    await submitCommand({
-      kind: "resume_task",
-      operation_id: `pi:resume:${randomUUID()}`,
-      task_id: TASK_ID,
-      expected_revision: revision,
-    });
+    try {
+      const revision = await currentTaskVersion();
+      await submitCommand({
+        kind: "resume_task",
+        operation_id: `pi:resume:${randomUUID()}`,
+        task_id: TASK_ID,
+        expected_revision: revision,
+      });
+    } catch {
+      // Node can include response bytes and credential paths in its errors.
+      throw new Error("Memorii session resume unavailable");
+    }
   });
 
   host.on(

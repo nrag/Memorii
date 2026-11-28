@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sqlite3
 import sys
 from pathlib import Path
+
+from pydantic import ValidationError
 
 from memorii.core.harness_state.consumer import (
     ConsumerDeliveryError,
@@ -17,12 +20,16 @@ from memorii.core.harness_state.consumer import (
 )
 from memorii.core.persistence.runtime_api import RuntimeCommandError, RuntimeCommandService
 from memorii.core.persistence.runtime_contracts import RuntimeCommandRequest
+from memorii.core.persistence.runtime_repository import RuntimeStateError
 from memorii.core.storage_administration.service import StorageAdministrationError, StorageAdministrationService
-from memorii.core.storage_administration.writer_enrollment import WriterEnrollmentRegistry
+from memorii.stores.sqlite.private_storage import read_private_file
+from memorii.tools.cli_diagnostics import SafeArgumentParser, diagnostic_code
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
+    parser = SafeArgumentParser(
         prog="memorii-consume",
         description="Admit one host event delivery and dispatch it durably.",
     )
@@ -81,11 +88,10 @@ def _run_verified_legacy(arguments: argparse.Namespace) -> int:
     root = Path(arguments.installation_root)
     try:
         administration = StorageAdministrationService(
-            root,
-            writer_enrollment=WriterEnrollmentRegistry(root / "control" / "writers") if arguments.drain else None,
+            root, use_registered_writers=arguments.drain,
         )
     except (OSError, sqlite3.DatabaseError, StorageAdministrationError):
-        print("unavailable: installation could not be verified", file=sys.stderr)
+        _LOGGER.error("unavailable: installation could not be verified")
         return 3
     try:
         # Resolve and verify the signed publication before consulting its
@@ -94,14 +100,17 @@ def _run_verified_legacy(arguments: argparse.Namespace) -> int:
             partition = administration.partition()
             with partition.transaction(write=False) as connection:
                 if partition.supports_managed_runtime(connection):
-                    print("denied: this installation requires --managed", file=sys.stderr)
+                    _LOGGER.error("denied: this installation requires --managed")
                     return 3
             if state.mode != "active":
-                print("unavailable: installation is not active", file=sys.stderr)
+                _LOGGER.error("unavailable: installation is not active")
                 return 3
         return _run_legacy(arguments, administration)
     except (OSError, sqlite3.DatabaseError, StorageAdministrationError):
-        print("unavailable: installation could not accept the operation", file=sys.stderr)
+        _LOGGER.error("unavailable: installation could not accept the operation")
+        return 3
+    except ValidationError:
+        _LOGGER.error("integrity_error: legacy spool could not be verified")
         return 3
     finally:
         administration.close()
@@ -119,7 +128,7 @@ def _run_legacy(arguments: argparse.Namespace, administration: StorageAdministra
             if producer.strip()
         )
         if not allowlisted:
-            print("invalid_request: --drain requires --allowlisted-producers", file=sys.stderr)
+            _LOGGER.error("invalid_request: --drain requires --allowlisted-producers")
             return 2
         spool = LocalDurableSpool(spool_directory)
         refused = 0
@@ -132,14 +141,14 @@ def _run_legacy(arguments: argparse.Namespace, administration: StorageAdministra
             )
             try:
                 receipt = service.dispatch(delivery.command)
-            except RuntimeError as exc:
+            except (RuntimeCommandError, RuntimeStateError, StorageAdministrationError) as exc:
                 refused += 1
                 print(
                     json.dumps(
                         {
                             "operation_id": record.operation_id,
                             "status": "refused",
-                            "reason": str(exc).split(":", 1)[-1].strip(),
+                            "reason": diagnostic_code(exc),
                             "intake_state": "pending",
                         },
                         sort_keys=True,
@@ -150,7 +159,7 @@ def _run_legacy(arguments: argparse.Namespace, administration: StorageAdministra
             if committed:
                 try:
                     spool.mark_committed(record.operation_id)
-                except RuntimeError as mark_error:
+                except ConsumerDeliveryError as mark_error:
                     # State transition races (dead-letter, unknown id)
                     # report and continue: the queue keeps draining, the
                     # record stays for operator handling.
@@ -160,7 +169,7 @@ def _run_legacy(arguments: argparse.Namespace, administration: StorageAdministra
                             {
                                 "operation_id": record.operation_id,
                                 "status": "mark_failed",
-                                "reason": str(mark_error).split(":", 1)[-1].strip(),
+                                "reason": diagnostic_code(mark_error),
                                 "intake_state": "pending",
                             },
                             sort_keys=True,
@@ -182,35 +191,39 @@ def _run_legacy(arguments: argparse.Namespace, administration: StorageAdministra
         return 1 if refused else 0
 
     if not arguments.producer:
-        print("invalid_request: --producer is required without --drain", file=sys.stderr)
+        _LOGGER.error("invalid_request: --producer is required without --drain")
         return 2
-    raw = (
-        arguments.delivery.read_text(encoding="utf-8")
-        if arguments.delivery is not None
-        else sys.stdin.read()
-    )
     try:
+        raw = (
+            arguments.delivery.read_text(encoding="utf-8")
+            if arguments.delivery is not None
+            else sys.stdin.read()
+        )
         payload = json.loads(raw)
         command = RuntimeCommandRequest.model_validate(payload.get("command", payload))
-    except (ValueError, AttributeError) as exc:
-        print(f"invalid_request: delivery is not a closed command: {exc}", file=sys.stderr)
+        delivery = HostEventDelivery(
+            transport_message_id=str(payload.get("transport_message_id", "stdin")),
+            producer_binding=arguments.producer,
+            command=command,
+        )
+    except (ValueError, AttributeError):
+        _LOGGER.error("invalid_request: delivery is not a closed command")
         return 2
-    delivery = HostEventDelivery(
-        transport_message_id=str(payload.get("transport_message_id", "stdin")),
-        producer_binding=arguments.producer,
-        command=command,
-    )
     spool = LocalDurableSpool(spool_directory)
     try:
         record = spool.admit(
             delivery, allowlisted_producers=(arguments.producer,)
         )
-    except ConsumerDeliveryError as exc:
-        print(f"denied: {exc}", file=sys.stderr)
+    except ConsumerDeliveryError:
+        _LOGGER.error("denied: delivery was refused by the durable spool")
         return 3
 
     service = RuntimeCommandService(administration, client_namespace=arguments.producer)
-    receipt = service.dispatch(command)
+    try:
+        receipt = service.dispatch(command)
+    except (RuntimeCommandError, RuntimeStateError) as exc:
+        _LOGGER.error("%s: delivery could not be dispatched", diagnostic_code(exc))
+        return 3
     print(
         json.dumps(
             {
@@ -229,12 +242,12 @@ def _run_legacy(arguments: argparse.Namespace, administration: StorageAdministra
 def _run_managed(arguments: argparse.Namespace) -> int:
     from memorii.core.harness_state.credentials import CredentialError, SidecarCredentialStore
     from memorii.core.harness_state.managed_ingress import authenticated_host_commands, spooled_host_commands
-    from memorii.core.persistence.runtime_repository import RuntimeStateError
-
     root = Path(arguments.installation_root)
-    administration = StorageAdministrationService(
-        root, writer_enrollment=WriterEnrollmentRegistry(root / "control" / "writers"),
-    )
+    try:
+        administration = StorageAdministrationService(root, use_registered_writers=True)
+    except (OSError, sqlite3.DatabaseError, StorageAdministrationError):
+        _LOGGER.error("unavailable: managed installation could not be opened")
+        return 3
     try:
         spool = ManagedRuntimeSpool(arguments.spool_directory or root / "spool" / "managed")
         if arguments.drain:
@@ -245,23 +258,28 @@ def _run_managed(arguments: argparse.Namespace) -> int:
                     receipt = service.dispatch(entry.delivery.command, operation_origin=entry.operation_origin)
                 except RuntimeCommandError as exc:
                     refused += 1
-                    print(_managed_error_code(exc), file=sys.stderr)
+                    _LOGGER.error("%s", diagnostic_code(exc))
                     continue
                 spool.mark_committed(entry)
                 print(receipt.model_dump_json())
             return 3 if refused else 0
 
         credential_file: Path = arguments.credential_file
-        if credential_file.stat().st_mode & 0o077:
-            print("denied: credential file permissions must be owner-only", file=sys.stderr)
+        try:
+            credential = read_private_file(credential_file, limit=4097)
+        except OSError:
+            _LOGGER.error("denied: credential must be a readable, regular owner-only file")
             return 3
+        if len(credential) > 4096:
+            _LOGGER.error("invalid_request: credential file exceeds limit")
+            return 2
         credentials = SidecarCredentialStore(root / "control" / "runtime-credentials")
-        service = authenticated_host_commands(administration, credentials, credential_file.read_text().strip())
+        service = authenticated_host_commands(administration, credentials, credential.decode("utf-8").strip())
         incoming = (
             arguments.delivery.read_bytes() if arguments.delivery else sys.stdin.buffer.read((1 << 20) + 1)
         )
         if len(incoming) > (1 << 20):
-            print("invalid_request: managed body exceeds limit", file=sys.stderr)
+            _LOGGER.error("invalid_request: managed body exceeds limit")
             return 2
         if arguments.prepare:
             command = RuntimeCommandRequest.model_validate_json(incoming)
@@ -269,7 +287,7 @@ def _run_managed(arguments: argparse.Namespace) -> int:
             return 0
         envelope = ManagedSpoolEntry.model_validate_json(incoming)
         if envelope.state != "pending":
-            print("invalid_request: intake requires a pending intent", file=sys.stderr)
+            _LOGGER.error("invalid_request: intake requires a pending intent")
             return 2
         entry = spool.admit(
             envelope.delivery,
@@ -281,21 +299,16 @@ def _run_managed(arguments: argparse.Namespace) -> int:
         print(receipt.model_dump_json())
         return 0
     except ValueError:
-        print("invalid_request: managed body does not match the closed schema", file=sys.stderr)
+        _LOGGER.error("invalid_request: managed body does not match the closed schema")
         return 2
     except (RuntimeCommandError, ConsumerDeliveryError) as exc:
-        print(_managed_error_code(exc), file=sys.stderr)
+        _LOGGER.error("%s", diagnostic_code(exc))
         return 3
-    except (OSError, CredentialError, RuntimeStateError, StorageAdministrationError):
-        print("unavailable: managed installation could not accept the operation", file=sys.stderr)
+    except (OSError, sqlite3.DatabaseError, CredentialError, RuntimeStateError, StorageAdministrationError):
+        _LOGGER.error("unavailable: managed installation could not accept the operation")
         return 3
     finally:
         administration.close()
-
-
-def _managed_error_code(error: RuntimeError) -> str:
-    code = str(error).partition(":")[0]
-    return code if code in {"conflict", "denied", "needs_reconciliation", "unsupported_configuration"} else "unavailable"
 
 
 if __name__ == "__main__":  # pragma: no cover

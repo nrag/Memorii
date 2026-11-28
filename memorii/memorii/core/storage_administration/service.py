@@ -61,6 +61,13 @@ from memorii.core.storage_administration.generation_selection import (
 )
 from memorii.stores.sqlite.control import ControlDatabase, ControlJournalChainError
 from memorii.stores.sqlite.partition import PartitionDataRepository, VerificationCookie
+from memorii.stores.sqlite.private_storage import (
+    PrivateStorageError,
+    ensure_private_directory,
+    prepare_installation_root,
+    require_private_directory,
+    require_private_file,
+)
 
 _CONTROL_FORMAT_VERSION = 1
 DEFAULT_SIGNER_KEY_ID = "installation-control"
@@ -80,6 +87,10 @@ class InstallationQuarantinedError(StorageAdministrationError):
 
 class InstallationIntegrityError(StorageAdministrationError):
     """Verification failed; no task-derived output may be released."""
+
+
+class InstallationPermissionsError(InstallationIntegrityError):
+    """Installation storage is not private to its filesystem owner."""
 
 
 class _RecoveryPublicationMismatch(InstallationIntegrityError):
@@ -135,15 +146,32 @@ class StorageAdministrationService:
         *,
         signer_key_id: str = DEFAULT_SIGNER_KEY_ID,
         writer_enrollment=None,
+        use_registered_writers: bool = False,
     ) -> None:
         self._root = Path(installation_root)
         self._signer_key_id = signer_key_id
         self._writer_enrollment = writer_enrollment
-        self._signing = LocalSigningKeyOwner(self._root / "control" / "keys")
-        self._control = ControlDatabase(
-            self._root / "control" / "control.sqlite3",
-            journal_verifier=self._verify_journal_signature,
-        )
+        control_root = self._root / "control"
+        try:
+            prepare_installation_root(self._root)
+            require_private_file(self._root / ".init.lock", allow_missing=True)
+            require_private_file(self._root / ".publication.lock", allow_missing=True)
+            ensure_private_directory(control_root)
+            ensure_private_directory(control_root / "keys")
+            self._signing = LocalSigningKeyOwner(control_root / "keys")
+            self._control = ControlDatabase(
+                control_root / "control.sqlite3",
+                journal_verifier=self._verify_journal_signature,
+            )
+            if use_registered_writers:
+                from memorii.core.storage_administration.writer_enrollment import WriterEnrollmentRegistry
+
+                ensure_private_directory(control_root / "writers")
+                self._writer_enrollment = WriterEnrollmentRegistry(control_root / "writers")
+        except (PrivateStorageError, NotADirectoryError) as exc:
+            raise InstallationPermissionsError(
+                "unsafe installation permissions; run memorii-operator repair-permissions"
+            ) from exc
         try:
             self._control.validate_journal()
         except ControlJournalChainError as exc:
@@ -294,10 +322,15 @@ class StorageAdministrationService:
                         )
                     self._verified_tuples = {active_digest: cookie}
 
-            partition = PartitionDataRepository(
-                path, require_existing=selected is not None, transaction_guard=require_current_generation,
-                protected_storage_root=self._root / "partition",
-            )
+            try:
+                partition = PartitionDataRepository(
+                    path, require_existing=selected is not None, transaction_guard=require_current_generation,
+                    protected_storage_root=self._root / "partition",
+                )
+            except (PrivateStorageError, NotADirectoryError) as exc:
+                raise InstallationPermissionsError(
+                    "unsafe installation permissions; run memorii-operator repair-permissions"
+                ) from exc
             try:
                 if identity is None:
                     identity = self._partition_file_identity(path)
@@ -334,7 +367,13 @@ class StorageAdministrationService:
                 )
             ):
                 raise InstallationIntegrityError("partition selector does not match finalized control authority")
+            require_private_directory(partition_root)
+            require_private_directory(partition_root / "generations")
             return selected_partition_path(partition_root, selector.generation_id), finalized
+        except PermissionError as exc:
+            raise InstallationPermissionsError(
+                "unsafe installation permissions; run memorii-operator repair-permissions"
+            ) from exc
         except (OSError, ValueError) as exc:
             raise InstallationIntegrityError("partition generation selection is unavailable") from exc
 
@@ -421,11 +460,8 @@ class StorageAdministrationService:
 
     def initialize(self) -> InitializationReceipt:
         """Owner-authorized fresh installation on an absent or safe root."""
-        if self._root.exists():
-            self._reject_foreign_root_content()
-        else:
-            self._root.mkdir(parents=True)
-        with locked_file(self._root / ".init.lock", exclusive=True):
+        self._reject_foreign_root_content()
+        with locked_file(self._root / ".init.lock", exclusive=True, private=True):
             existing_state = self._control.read_control_state()
             if existing_state is not None:
                 return self._resume_or_conflict(existing_state)
@@ -994,8 +1030,12 @@ class StorageAdministrationService:
                     publication = old
                 if publication is not None:
                     path = selected_partition_path(partition_root, publication.data_generation_id)
+                    require_private_directory(partition_root / "generations")
             if publication is not None:
-                with PartitionDataRepository(path, require_existing=True) as partition, partition.transaction(
+                require_private_directory(partition_root)
+                with PartitionDataRepository(
+                    path, require_existing=True, protected_storage_root=partition_root,
+                ) as partition, partition.transaction(
                     write=False,
                 ) as connection:
                     row = partition.read_publication_row(connection)
@@ -1005,6 +1045,10 @@ class StorageAdministrationService:
                         and self._matches_materialization(connection, publication, partition=partition)
                     ):
                         phase = "aborted" if publication == old else "finalized"
+        except PermissionError as exc:
+            raise InstallationPermissionsError(
+                "unsafe installation permissions; run memorii-operator repair-permissions"
+            ) from exc
         except (OSError, ValueError, sqlite3.DatabaseError):
             # The selector or its chosen bytes did not authenticate either state.
             publication = None
@@ -1198,7 +1242,7 @@ class StorageAdministrationService:
 
     @contextmanager
     def _publication_fence(self):
-        with locked_file(self._root / ".publication.lock", exclusive=True):
+        with locked_file(self._root / ".publication.lock", exclusive=True, private=True):
             yield
 
     def _ensure_signing_key(self) -> str:

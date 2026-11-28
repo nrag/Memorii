@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
+import stat
+import subprocess
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -19,6 +23,7 @@ from memorii.core.storage_administration.operator import (
     StorageAdministrationOperator,
 )
 from memorii.core.storage_administration.service import StorageAdministrationError, StorageAdministrationService
+from tests.support.operator_files import write_owner_file
 
 _NOW = datetime(2026, 1, 1, tzinfo=UTC)
 
@@ -36,7 +41,7 @@ def _capability(service: StorageAdministrationService) -> OwnerCapability:
 
 
 def test_cli_stages_a_reviewed_restore_with_an_owner_only_key(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
 ) -> None:
     from memorii.core.harness_state.grant_registry import GrantEpochRegistry
     from memorii.core.harness_state.service import RuntimeReadGrant
@@ -79,7 +84,7 @@ def test_cli_stages_a_reviewed_restore_with_an_owner_only_key(
         )
         cli = [
             "--installation-root", str(service.installation_root),
-            "--owner-principal", capability.owner_principal, "--capability-digest", capability.capability_digest,
+            "--owner-principal", capability.owner_principal, "--capability-file", write_owner_file(tmp_path / "owner.capability", capability.capability_digest),
             "backup",
         ]
         assert main([*cli, "restore-plan", "--archive-root", str(archive)]) == 0
@@ -94,7 +99,7 @@ def test_cli_stages_a_reviewed_restore_with_an_owner_only_key(
             "--recovery-key-file", str(key),
         ]
         assert main(stage) == 3
-        assert "owner-only" in capsys.readouterr().err
+        assert "owner-only" in caplog.text
         assert not staging.exists()
         key.chmod(0o600)
         before = service.acquire_verified_snapshot()
@@ -111,9 +116,9 @@ def test_cli_stages_a_reviewed_restore_with_an_owner_only_key(
         assert preview["plan_digest"] == attestation["plan_digest"]
         assert preview["target_receipts"] == {"identical": 0, "live_only": 0, "staged_only": 0, "changed": 0}
         denied = [*preview_cli]
-        denied[denied.index("--capability-digest") + 1] = "0" * 64
+        denied[denied.index("--capability-file") + 1] = write_owner_file(tmp_path / "invalid.capability", "0" * 64)
         assert main(denied) == 3
-        assert "denied" in capsys.readouterr().err
+        assert "denied" in caplog.text
         assert service.acquire_verified_snapshot() == before
         retained = service.partition()
         activate = [*cli, "restore-activate-current", "--plan-file", str(plan), "--staging-root", str(staging)]
@@ -127,7 +132,7 @@ def test_cli_stages_a_reviewed_restore_with_an_owner_only_key(
         with monkeypatch.context() as cut:
             cut.setattr(operator_backup, "_atomic_write", fail_before_selector)
             assert main(activate) == 3
-        assert "selection could not be published" in capsys.readouterr().err
+        assert "selection could not be published" in caplog.text
         assert service.acquire_verified_snapshot() == before
         assert main(activate) == 0
         activation = json.loads(capsys.readouterr().out)
@@ -522,7 +527,7 @@ def test_restore_planning_detects_data_only_watermark_change(tmp_path: Path) -> 
 
 
 def test_older_restore_preview_compares_exact_signed_receipt_and_outbox_rows(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture,
 ) -> None:
     from memorii.core.persistence.runtime_api import RuntimeOutboxDelivery
     from memorii.core.persistence.runtime_contracts import RuntimeCommandReceipt
@@ -581,12 +586,12 @@ def test_older_restore_preview_compares_exact_signed_receipt_and_outbox_rows(
         plan_file.write_text(plan.model_dump_json())
         assert main([
             "--installation-root", str(service.installation_root),
-            "--owner-principal", capability.owner_principal, "--capability-digest", capability.capability_digest,
+            "--owner-principal", capability.owner_principal, "--capability-file", write_owner_file(tmp_path / "owner.capability", capability.capability_digest),
             "backup", "restore-preview-stage", "--plan-file", str(plan_file), "--staging-root", str(stage),
         ]) == 3
         captured = capsys.readouterr()
         assert captured.out == ""
-        assert "live restore watermark could not be verified" in captured.err
+        assert "unavailable: operator request failed" in caplog.text
     finally:
         service.close()
 
@@ -1089,7 +1094,10 @@ def test_writer_enrollment_gates_publication(tmp_path: Path) -> None:
         WriterEnrollmentRegistry,
     )
 
-    registry = WriterEnrollmentRegistry(tmp_path / "installation" / "control" / "writers")
+    root = tmp_path / "installation"
+    root.mkdir(mode=0o700)
+    (root / "control").mkdir(mode=0o700)
+    registry = WriterEnrollmentRegistry(root / "control" / "writers")
     service = StorageAdministrationService(
         tmp_path / "installation", writer_enrollment=registry
     )
@@ -1204,6 +1212,111 @@ def test_doctor_flags_permission_drift(tmp_path: Path) -> None:
         service.close()
 
 
+def test_existing_storage_is_refused_until_owner_repairs_permissions(tmp_path: Path) -> None:
+    from memorii.core.storage_administration.service import InstallationPermissionsError
+    from memorii.tools.runtime_operator import main
+
+    _, service = _operator(tmp_path)
+    root = service.installation_root
+    partition = service.partition_path()
+    with service:
+        snapshot = service.acquire_verified_snapshot()
+        for directory in (root, root / "control", partition.parent):
+            assert stat.S_IMODE(directory.stat().st_mode) == 0o700
+        for database in (service.control_path(), partition):
+            for suffix in ("", "-wal", "-shm"):
+                assert stat.S_IMODE(database.with_name(database.name + suffix).stat().st_mode) == 0o600
+        for name in (".init.lock", ".publication.lock"):
+            assert stat.S_IMODE((root / name).stat().st_mode) == 0o600
+
+    root.chmod(0o755)
+    partition.parent.chmod(0o755)
+    partition.chmod(0o644)
+    with pytest.raises(InstallationPermissionsError):
+        StorageAdministrationService(root)
+    assert main(["--installation-root", str(root), "repair-permissions"]) == 0
+    with StorageAdministrationService(root) as reopened:
+        assert reopened.acquire_verified_snapshot() == snapshot
+    assert stat.S_IMODE(partition.stat().st_mode) == 0o600
+    assert stat.S_IMODE(partition.parent.stat().st_mode) == 0o700
+
+
+def test_permission_repair_leaves_unrelated_directories_and_link_targets_alone(tmp_path: Path) -> None:
+    from memorii.tools.runtime_operator import main
+
+    unrelated = tmp_path / "unrelated"
+    unrelated.mkdir(mode=0o755)
+    unrelated.chmod(0o755)
+    assert main(["--installation-root", str(unrelated), "repair-permissions"]) == 3
+    assert stat.S_IMODE(unrelated.stat().st_mode) == 0o755
+    (unrelated / "control" / "keys").mkdir(parents=True)
+    (unrelated / "control" / "control.sqlite3").write_bytes(b"not a control database")
+    assert main(["--installation-root", str(unrelated), "repair-permissions"]) == 3
+    assert stat.S_IMODE(unrelated.stat().st_mode) == 0o755
+
+    _, service = _operator(tmp_path)
+    root = service.installation_root
+    with service:
+        partition = service.partition_path()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("unchanged")
+    outside.chmod(0o644)
+    for make_link in (os.link, os.symlink):
+        linked = partition.parent / "linked"
+        make_link(outside, linked)
+        assert main(["--installation-root", str(root), "repair-permissions"]) == 3
+        assert outside.read_text() == "unchanged"
+        assert stat.S_IMODE(outside.stat().st_mode) == 0o644
+        linked.unlink()
+    lock = root / ".publication.lock"
+    lock.unlink(missing_ok=True)
+    lock.symlink_to(outside)
+    with pytest.raises(StorageAdministrationError, match="repair-permissions"):
+        StorageAdministrationService(root)
+    assert main(["--installation-root", str(root), "repair-permissions"]) == 3
+    assert stat.S_IMODE(outside.stat().st_mode) == 0o644
+    lock.unlink()
+    assert main(["--installation-root", str(root), "repair-permissions"]) == 0
+
+
+def test_operator_reports_closed_diagnostics_for_rejected_secrets_and_payloads(tmp_path: Path) -> None:
+    from memorii.core.harness_state.grant_registry import GrantEpochRegistry
+
+    _, service = _operator(tmp_path)
+    marker = "synthetic-private-marker"
+    private_bad = write_owner_file(tmp_path / "malformed", marker.ljust(64, "!"))
+    valid_owner = write_owner_file(tmp_path / "owner", _capability(service).capability_digest)
+    with service:
+        grants = service.installation_root / "control" / "grants"
+        GrantEpochRegistry(grants)
+        (grants / "grant-revocations.jsonl").write_text(
+            json.dumps({"grant_id": "test", "epoch": marker}) + "\n"
+        )
+    cli = [
+        sys.executable, "-m", "memorii.tools.runtime_operator",
+        "--installation-root", str(service.installation_root), "--owner-principal", "owner:one",
+    ]
+    for arguments, status, diagnostic in (
+        (["--capability-digest", marker, "status"], 2, "invalid arguments"),
+        (["--capability-file", private_bad, "forget", "plan", "--scope-note", "review"], 3, "malformed"),
+        (
+            ["--capability-file", valid_owner, "forget", "plan", "--scope-note", "review", "--record", f"{marker}="],
+            2, "invalid_request",
+        ),
+        (["backup", "restore-plan", "--archive-root", str(tmp_path), f"--recovery-key-hex={marker}"], 2, "invalid arguments"),
+    ):
+        result = subprocess.run([*cli, *arguments], capture_output=True, text=True, timeout=30)
+        assert result.returncode == status
+        assert result.stdout == ""
+        assert diagnostic in result.stderr and marker not in result.stderr
+        assert "Traceback" not in result.stderr
+
+    report = subprocess.run([*cli, "doctor"], capture_output=True, text=True, timeout=30, check=True)
+    assert marker not in report.stdout and marker not in report.stderr
+    findings = {entry["check"]: entry for entry in json.loads(report.stdout)}
+    assert findings["grant_registry"]["detail"] == "grant registry could not be verified"
+
+
 def test_cli_status_doctor_and_capability_refusal(tmp_path: Path) -> None:
     import json as _json
     import subprocess as _subprocess
@@ -1282,6 +1395,32 @@ def test_fresh_host_boot_from_verified_legacy_restore(
         assert identity == anchor["installation_id"]
         assert (fresh_root / "control" / "control.sqlite3").is_file()
         assert (fresh_root / "partition" / "partition.sqlite3").is_file()
+        assert stat.S_IMODE(fresh_root.stat().st_mode) == 0o700
+        assert stat.S_IMODE((fresh_root / "partition" / "partition.sqlite3").stat().st_mode) == 0o600
+        rejected_root = tmp_path / "rejected-boot"
+        keys = tmp_path / "installation" / "control" / "keys"
+        staged_partition = staging / "partition.sqlite3"
+        retained_key = next(keys.glob("*.key"))
+        for source in (staged_partition, retained_key):
+            source.chmod(0o644)
+            with pytest.raises(OperatorError, match="restore media and destination must be private"):
+                boot_restored_installation(
+                    capability=capability, staging_root=staging, anchor=anchor,
+                    installation_root=rejected_root, signing_keys_directory=keys,
+                )
+            assert not rejected_root.exists()
+            source.chmod(0o600)
+            original = source.with_suffix(".original")
+            source.rename(original)
+            source.symlink_to(original)
+            with pytest.raises(OperatorError, match="restore media and destination must be private"):
+                boot_restored_installation(
+                    capability=capability, staging_root=staging, anchor=anchor,
+                    installation_root=rejected_root, signing_keys_directory=keys,
+                )
+            assert not rejected_root.exists()
+            source.unlink()
+            original.rename(source)
         # A non-empty root refuses; a mismatched anchor refuses.
         with pytest.raises(OperatorError, match="empty installation root"):
             boot_restored_installation(

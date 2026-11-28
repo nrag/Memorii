@@ -35,9 +35,12 @@ from memorii.tools.runtime_consume import main as drain
 @pytest.mark.parametrize("interruption", ["sidecar_loss", "grant_revoked", "task_paused"])
 def test_native_capture_respects_interrupted_delivery(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], interruption: str,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     scope = NativeSourceScope(kind="pi", session_id="local-session")
     root = tmp_path / "installation"
+    root.mkdir(mode=0o700)
+    (root / "control").mkdir(mode=0o700)
     credentials = SidecarCredentialStore(root / "control" / "runtime-credentials")
     credential, secret = credentials.issue("principal:a")
     now = datetime.now(UTC)
@@ -130,7 +133,7 @@ def test_native_capture_respects_interrupted_delivery(
     with StorageAdministrationService(root) as reopened:
         service = NativeSourceService(reopened, credentials, spool, read_grant)
         if interruption == "grant_revoked":
-            assert status == 3 and "denied" in output.err and output.out == ""
+            assert status == 3 and "denied" in caplog.text and output.out == ""
             with pytest.raises(RuntimeCommandError, match="denied"):
                 service.recall(secret, recall)
             with pytest.raises(RuntimeCommandError, match="denied"):

@@ -111,7 +111,7 @@ async function resumeTask() {
   if (!preparedResume) {
     const revision = await readState();
     if (revision === null) {
-      throw new Error(`no provisioned task ${TASK_ID} for this host session`);
+      throw new Error("no provisioned task for this host session");
     }
     preparedResume = await prepareCommand({
       kind: "resume_task",
@@ -126,9 +126,10 @@ async function resumeTask() {
 
 async function resumeBoundSession(_event, context) {
   if (context?.sessionKey !== SESSION_KEY) return;
-  pendingResume ??= resumeTask().catch((error) => {
+  pendingResume ??= resumeTask().catch(() => {
     pendingResume = undefined;
-    throw error;
+    // Node can include response bytes and credential paths in its errors.
+    throw new Error("Memorii session resume unavailable");
   });
   await pendingResume;
 }

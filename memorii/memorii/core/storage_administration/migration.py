@@ -29,6 +29,7 @@ from memorii.core.storage_administration.service import (
     DEFAULT_SIGNER_KEY_ID,
     StorageAdministrationService,
 )
+from memorii.stores.sqlite.private_storage import prepare_installation_root
 
 LEGACY_PLANE_MARKER = "memory_records.jsonl"
 _ADOPTED_PARTICIPANTS = (
@@ -174,6 +175,8 @@ def migrate_legacy_installation(
         data_revision=current_plan.data_revision,
         plan_digest=current_plan.plan_digest,
     )
+    # The reviewed migration authorizes making the legacy root private.
+    prepare_installation_root(root, adopting_legacy=True)
     service = StorageAdministrationService(root, signer_key_id=signer_key_id)
     try:
         with _plane_locked(plane):

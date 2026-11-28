@@ -72,6 +72,7 @@ from memorii.core.storage_administration.suppression_journal import (
 )
 from memorii.core.storage_administration.writer_enrollment import WriterEnrollmentRegistry
 from memorii.domain.enums import SourceModality
+from tests.support.operator_files import write_owner_file
 
 _NOW = datetime(2026, 11, 23, tzinfo=UTC)
 
@@ -319,7 +320,7 @@ def _exercise_revocation_across_restore(
         result = subprocess.run([
             sys.executable, "-m", "memorii.tools.runtime_operator",
             "--installation-root", str(root), "--owner-principal", owner.owner_principal,
-            "--capability-digest", owner.capability_digest, "runtime-source-grant", "revoke", "--grant-id", grant_id,
+            "--capability-file", write_owner_file(workspace / "owner.capability", owner.capability_digest), "runtime-source-grant", "revoke", "--grant-id", grant_id,
         ], capture_output=True, text=True, check=True, timeout=30)
         receipt = json.loads(result.stdout)
         assert receipt["grant_id"] == grant_id and receipt["status"] == "revoked"
@@ -435,7 +436,7 @@ def _exercise_durable_offer(
 
             assert operator_main([
                 "--installation-root", str(administration.installation_root),
-                "--owner-principal", owner.owner_principal, "--capability-digest", owner.capability_digest,
+                "--owner-principal", owner.owner_principal, "--capability-file", write_owner_file(administration.installation_root / "control" / "owner.capability", owner.capability_digest),
                 "runtime-source-grant", "revoke", "--grant-id", grant_id,
             ]) == 0
             from memorii.core.persistence.managed_delivery import DeliveryTransitionError

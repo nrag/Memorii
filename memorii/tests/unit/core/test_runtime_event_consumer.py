@@ -9,9 +9,11 @@ from memorii.core.harness_state.consumer import (
     ConsumerDeliveryError,
     HostEventDelivery,
     LocalDurableSpool,
+    ManagedRuntimeSpool,
     command_digest,
 )
 from memorii.core.persistence.runtime_contracts import RuntimeCommandRequest
+from memorii.stores.sqlite.private_storage import PrivateStorageError
 
 
 def _delivery(
@@ -36,6 +38,23 @@ def test_intake_is_durable_and_idempotent(tmp_path: Path) -> None:
     repeat = spool.admit(_delivery(), allowlisted_producers=("producer:trusted",))
     assert repeat == first
     assert len(spool.records()) == 1
+
+
+@pytest.mark.parametrize("spool_type", [LocalDurableSpool, ManagedRuntimeSpool])
+def test_spool_refuses_public_and_linked_directories(
+    tmp_path: Path, spool_type: type[LocalDurableSpool] | type[ManagedRuntimeSpool],
+) -> None:
+    public = tmp_path / "public"
+    public.mkdir()
+    public.chmod(0o755)
+    with pytest.raises(PrivateStorageError, match="owner-only"):
+        spool_type(public)
+    public.chmod(0o700)
+    linked = tmp_path / "linked"
+    linked.symlink_to(public, target_is_directory=True)
+    with pytest.raises(PrivateStorageError, match="owner-only"):
+        spool_type(linked)
+    assert not list(public.iterdir())
 
 
 def test_untrusted_producer_denies_without_intake(tmp_path: Path) -> None:

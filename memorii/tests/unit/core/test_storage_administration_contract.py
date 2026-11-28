@@ -199,7 +199,7 @@ def test_initialize_publishes_genesis_and_returns_stable_receipt(tmp_path: Path)
 
 def test_initialize_rejects_foreign_root_content(tmp_path: Path) -> None:
     root = tmp_path / "installation"
-    root.mkdir()
+    root.mkdir(mode=0o700)
     (root / "stranger-file").write_text("foreign", encoding="utf-8")
     with StorageAdministrationService(root) as service, pytest.raises(
         InitializationNotPossibleError
