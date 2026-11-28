@@ -19,6 +19,7 @@ from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.sqlite_store import SqliteMemoryPlaneStore
 from memorii.core.memory_plane.store import (
+    CatalogMetadataSnapshot,
     CheckpointSignatureAuthority,
     GovernedWritePolicy,
     JsonlMemoryPlaneStore,
@@ -71,9 +72,12 @@ class PublishedMemoryPlaneStore:
         self,
         administration: StorageAdministrationService,
         inner: SqliteMemoryPlaneStore,
+        *,
+        validate_authority: Callable[[], None] | None = None,
     ) -> None:
         self._administration = administration
         self._inner = inner
+        self._validate_authority = validate_authority
 
     @property
     def durable(self) -> bool:
@@ -117,6 +121,7 @@ class PublishedMemoryPlaneStore:
             store=self._inner,
             expected_revision=None,
             authorization=authorization,
+            validate_authority=self._validate_authority,
         ).data_revision
 
     def apply_batch(
@@ -137,6 +142,7 @@ class PublishedMemoryPlaneStore:
             preconditions=preconditions,
             authorization=authorization,
             transaction_precondition=transaction_precondition,
+            validate_authority=self._validate_authority,
         ).data_revision
 
     def revision(self) -> int:
@@ -150,6 +156,12 @@ class PublishedMemoryPlaneStore:
         callback: Callable[[int, tuple[CanonicalMemoryRecord, ...]], object],
     ) -> object:
         return self._inner.read_snapshot_linearized(callback)
+
+    def read_catalog_metadata_linearized(
+        self, callback: Callable[[int, CatalogMetadataSnapshot], object],
+    ) -> object:
+        with self._administration.verified_operation_context() as (_, finalized):
+            return self._inner.read_verified_catalog_metadata(callback, signed_manifest_digest=finalized.manifest_digest)
 
     def read_write_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
         return self._inner.read_write_snapshot()
@@ -312,11 +324,13 @@ def open_managed_partition(
             "no initialized control authority; run the owner-authorized "
             "installation initializer first",
         )
-    administration = StorageAdministrationService(root)
+    administration = None
     try:
+        administration = StorageAdministrationService(root)
         administration.acquire_verified_snapshot()
     except (StorageAdministrationError, InstallationIntegrityError, InstallationQuarantinedError) as exc:
-        administration.close()
+        if administration is not None:
+            administration.close()
         raise ManagedPartitionError("integrity", str(exc)) from exc
     partition = administration.partition()
     inner = SqliteMemoryPlaneStore(partition)

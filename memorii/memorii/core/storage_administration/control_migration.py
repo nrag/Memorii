@@ -13,10 +13,17 @@ import json
 import os
 import shutil
 import sqlite3
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 from memorii.stores.sqlite.control import ControlStateError
+from memorii.stores.sqlite.private_storage import (
+    ensure_private_directory,
+    prepare_private_sqlite,
+    require_private_directory,
+    require_private_sqlite,
+)
 
 _SUPPORTED_VERSIONS = (1, 2)
 _GENERATION_POINTER = "control-generation.json"
@@ -96,11 +103,15 @@ def migrate_control_format(
     """
     import time
 
-    plan = plan_control_format_migration(source_database, target_version=target_version)
-    if not keys_directory.is_dir():
+    try:
+        require_private_directory(source_database.parent)
+        require_private_sqlite(source_database)
+        require_private_directory(keys_directory)
+    except OSError as exc:
         raise ControlMigrationError(
-            "invalid_request: the owner key directory must be present"
-        )
+            "denied: control database and key directory must be owner-only"
+        ) from exc
+    plan = plan_control_format_migration(source_database, target_version=target_version)
 
     # No unresolved intent: a pending publication must be resolved by its
     # own owner before any control-format work.
@@ -128,35 +139,44 @@ def migrate_control_format(
         )
 
     generation_root = source_database.parent / "control-generations"
-    generation_root.mkdir(mode=0o700, parents=True, exist_ok=True)
     staged = generation_root / f"control.v{target_version}.sqlite3"
-    shutil.copyfile(source_database, staged)
-    os.chmod(staged, 0o600)
-    connection = sqlite3.connect(str(staged))
     try:
-        connection.execute("BEGIN IMMEDIATE")
-        connection.execute(
-            "UPDATE control_schema SET value = ? WHERE key = 'schema_version'",
-            (str(target_version),),
-        )
-        connection.commit()
-    finally:
-        connection.close()
+        ensure_private_directory(generation_root)
+        require_private_sqlite(staged, allow_missing=True)
+    except OSError as exc:
+        raise ControlMigrationError("denied: control generation must be owner-only") from exc
 
     import hashlib
 
     pointer = generation_root / _GENERATION_POINTER
-    record = {
-        "source_version": plan.source_version,
-        "target_version": plan.target_version,
-        "source_digest": plan.control_database_digest,
-        "target_digest": hashlib.sha256(staged.read_bytes()).hexdigest(),
-        "migrated_at_unix": int(time.time()),
-    }
-    temporary = generation_root / f".{_GENERATION_POINTER}.tmp"
-    temporary.write_text(json.dumps(record, sort_keys=True))
-    os.chmod(temporary, 0o600)
-    os.replace(temporary, pointer)
+    with tempfile.TemporaryDirectory(prefix=".control-generation-", dir=generation_root) as scratch:
+        copy = Path(scratch) / staged.name
+        prepare_private_sqlite(copy)
+        shutil.copyfile(source_database, copy)
+        connection = sqlite3.connect(str(copy))
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                "UPDATE control_schema SET value = ? WHERE key = 'schema_version'",
+                (str(target_version),),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        record = {
+            "source_version": plan.source_version,
+            "target_version": plan.target_version,
+            "source_digest": plan.control_database_digest,
+            "target_digest": hashlib.sha256(copy.read_bytes()).hexdigest(),
+            "migrated_at_unix": int(time.time()),
+        }
+        descriptor, temporary = tempfile.mkstemp(prefix=".control-pointer-", dir=scratch)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(record, handle, sort_keys=True)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(copy, staged)
+        os.replace(temporary, pointer)
     return ControlMigrationReceipt(
         plan=plan,
         migrated_at_unix=record["migrated_at_unix"],

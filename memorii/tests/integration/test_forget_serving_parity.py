@@ -33,7 +33,7 @@ from memorii.core.persistence.runtime_contracts import (
     SolverRunRecord,
     TaskRecord,
 )
-from memorii.core.scoped_context.service import _current_eligible
+from memorii.core.scoped_context.service import record_is_current
 from memorii.core.storage_administration.operator import ModeChangeRequest
 from memorii.core.storage_administration.operator_governance import (
     ForgetTargetSelector,
@@ -252,8 +252,8 @@ def test_every_serving_path_agrees_the_revoked_identity_is_gone(tmp_path: Path) 
         # Scoped-context current eligibility: tombstones never serve.
         claim_now = plane.get_record(CLAIM_MEMORY_ID)
         link_now = plane.get_record(LINK_MEMORY_ID)
-        assert _current_eligible(claim_now, NOW) is False
-        assert _current_eligible(link_now, NOW) is False
+        assert record_is_current(claim_now, NOW) is False
+        assert record_is_current(link_now, NOW) is False
 
         # Export: count arithmetic — exactly the revoked task removed.
         export_after = operator.read_export(capability=capability)

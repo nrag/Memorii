@@ -154,7 +154,7 @@ class ScopedContextAssembler:
         # its second (fact/catalog) authority gate.  Do not downgrade that to
         # an optional omission: omission counts or snippets would disclose the
         # existence of the protected fact.
-        if any(_authorized(record, grant) for record in records if record.memory_id in set(catalog_visibility_missing)):
+        if any(record_is_in_scoped_read_grant(record, grant) for record in records if record.memory_id in set(catalog_visibility_missing)):
             return _empty(ScopedContextStatus.DENIED)
         authorized, source_provenance_missing = _provenance_closed_records(catalog_authorized, grant)
         for record in authorized:
@@ -419,7 +419,7 @@ class ScopedContextAssembler:
         # carries a reduced citation view.
         for record in claim_records:
             if record is not None:
-                evidence_ids.extend(_source_closure_ids(record, by_id))
+                evidence_ids.extend(source_closure_ids(record, by_id))
         selected_record_ids = {record.memory_id for record in claim_records if record is not None}
         evidence_records = [by_id.get(record_id) for record_id in sorted(set(evidence_ids) - selected_record_ids)]
         if any(item is None for item in claim_records + evidence_records):
@@ -514,7 +514,7 @@ def _released_catalog_protected_ids(
         for record in records
         if (
             record.memory_id in released_ids
-            and _is_new_structured_claim_projection(record)
+            and is_structured_claim_projection(record)
             and _projection_has_catalog_binding_record(record, records)
         )
     }
@@ -558,7 +558,7 @@ def _claim_id(record: CanonicalMemoryRecord) -> str | None:
     return state.get("claim_id") if isinstance(state, dict) and isinstance(state.get("claim_id"), str) else None
 
 
-def _authorized(record: CanonicalMemoryRecord, grant: ResolvedScopedReadGrant) -> bool:
+def record_is_in_scoped_read_grant(record: CanonicalMemoryRecord, grant: ResolvedScopedReadGrant) -> bool:
     return (
         _matches_grant(record, grant)
         and record.status == CommitStatus.COMMITTED
@@ -642,13 +642,13 @@ def _catalog_protected_records(
     excluded: list[str] = []
     legacy_authority_unavailable = False
     for record in records:
-        if not _is_new_structured_claim_projection(record):
+        if not is_structured_claim_projection(record):
             allowed.append(record)
             continue
         # Do not inspect a legacy closure until the ordinary caller scope has
         # admitted the projection.  An inaccessible corrupt record must not
         # turn another caller's scoped result into UNAVAILABLE.
-        if not _authorized(record, grant):
+        if not record_is_in_scoped_read_grant(record, grant):
             allowed.append(record)
             continue
         if _current_catalog_read_authority(
@@ -689,7 +689,7 @@ def _catalog_protected_records(
     )
 
 
-def _is_new_structured_claim_projection(record: CanonicalMemoryRecord) -> bool:
+def is_structured_claim_projection(record: CanonicalMemoryRecord) -> bool:
     return (
         record.memory_id.startswith("mem:bootstrap-v3:runtime-claim:")
         or record.content.get("runtime_context_projection_kind") == "bootstrap_v3_claim_assertion"
@@ -715,6 +715,7 @@ def _current_catalog_read_authority(
     records: tuple[CanonicalMemoryRecord, ...],
     authorities: tuple[object, ...],
     catalog_bundle_locator: CatalogBundleLocator,
+    required_predicate_id: str | None = None,
 ) -> bool:
     from memorii.core.semantic_ingestion.catalog_authority import (
         AuthenticatedPrincipalAgent,
@@ -749,6 +750,11 @@ def _current_catalog_read_authority(
             return False
         if selected_catalog.catalog_scope != binding.catalog_scope:
             return False
+        if required_predicate_id is not None:
+            from memorii.core.semantic_ingestion.catalog_capture_pin import SeedCatalogBundleLocator
+
+            if required_predicate_id not in SeedCatalogBundleLocator().locate().version.predicate_ids:
+                return False
     elif binding.schema_version == 2:
         if (
             binding.pin_memory_id is None
@@ -836,6 +842,10 @@ def _current_catalog_read_authority(
 
             if not DefaultCatalogProtectedReader.authorizes_version(selected_version_id=bundle.version.version_id):
                 return False
+        if required_predicate_id is not None and required_predicate_id not in getattr(
+            bundle.version, "predicate_ids", (),
+        ):
+            return False
     else:
         return False
     for authority in authorities:
@@ -870,6 +880,7 @@ def verify_structured_catalog_projection_for_read(
     records: tuple[CanonicalMemoryRecord, ...],
     authority: object,
     catalog_bundle_locator: CatalogBundleLocator,
+    required_predicate_id: str | None = None,
 ) -> bool:
     """Use the scoped-context catalog join for a direct structured read.
 
@@ -886,6 +897,7 @@ def verify_structured_catalog_projection_for_read(
         records,
         (authority,),
         catalog_bundle_locator,
+        required_predicate_id=required_predicate_id,
     )
 
 
@@ -893,8 +905,8 @@ def _provenance_closed_records(
     records: tuple[CanonicalMemoryRecord, ...], grant: ResolvedScopedReadGrant
 ) -> tuple[tuple[CanonicalMemoryRecord, ...], tuple[str, ...]]:
     """Retain only records whose complete declared source closure is readable."""
-    candidates = {record.memory_id: record for record in records if _authorized(record, grant)}
-    if len(candidates) != len([record for record in records if _authorized(record, grant)]):
+    candidates = {record.memory_id: record for record in records if record_is_in_scoped_read_grant(record, grant)}
+    if len(candidates) != len([record for record in records if record_is_in_scoped_read_grant(record, grant)]):
         raise ScopedSnapshotDecodeError("duplicate canonical record ID")
     allowed = set(candidates)
     changed = True
@@ -902,7 +914,7 @@ def _provenance_closed_records(
         changed = False
         for record_id in tuple(allowed):
             record = candidates[record_id]
-            if not _inner_scope_agrees(record) or not _source_ids(record).issubset(allowed):
+            if not claim_state_scope_agrees(record) or not _source_ids(record).issubset(allowed):
                 allowed.remove(record_id)
                 changed = True
     return (
@@ -911,7 +923,7 @@ def _provenance_closed_records(
     )
 
 
-def _source_closure_ids(record: CanonicalMemoryRecord, by_id: dict[str, CanonicalMemoryRecord]) -> set[str]:
+def source_closure_ids(record: CanonicalMemoryRecord, by_id: dict[str, CanonicalMemoryRecord]) -> set[str]:
     """Return every authorized transitive source required to reconstruct a record."""
     closed: set[str] = set()
     pending = list(_source_ids(record))
@@ -931,7 +943,7 @@ def _current_provenance_closed_records(
 ) -> tuple[tuple[CanonicalMemoryRecord, ...], tuple[str, ...]]:
     """Apply lifecycle eligibility to every mandatory or lexical source closure."""
     by_id = {record.memory_id: record for record in records}
-    allowed = {record.memory_id for record in records if _current_eligible(record, reference_time)}
+    allowed = {record.memory_id for record in records if record_is_current(record, reference_time)}
     changed = True
     while changed:
         changed = False
@@ -992,7 +1004,7 @@ def _source_ids(record: CanonicalMemoryRecord) -> set[str]:
     return ids
 
 
-def _inner_scope_agrees(record: CanonicalMemoryRecord) -> bool:
+def claim_state_scope_agrees(record: CanonicalMemoryRecord) -> bool:
     kind = record.content.get("memory_evolution_kind")
     key = kind if kind in {"claim_state", "entity_link", "temporal_anchor"} else ""
     payload = record.content.get(key)
@@ -1009,7 +1021,7 @@ def _inner_scope_agrees(record: CanonicalMemoryRecord) -> bool:
     return all(scope.get(field) == getattr(record, field) for field in ("task_id", "session_id", "user_id"))
 
 
-def _current_eligible(record: CanonicalMemoryRecord, reference_time: datetime) -> bool:
+def record_is_current(record: CanonicalMemoryRecord, reference_time: datetime) -> bool:
     if record.validity_status in {TemporalValidityStatus.EXPIRED, TemporalValidityStatus.INVALIDATED}:
         return False
     if (

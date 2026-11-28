@@ -10,7 +10,6 @@ This database is never part of a replaceable application-data generation.
 from __future__ import annotations
 
 import contextlib
-import os
 import sqlite3
 import threading
 from collections.abc import Callable, Iterator, Sequence
@@ -25,14 +24,32 @@ from memorii.core.persistence.contracts import (
     RUNTIME_CONTROL_JOURNAL_SIGNATURE_PURPOSE,
     InstallationControlJournalEntry,
     InstallationControlState,
+    InstallationGenerationChangeIntent,
+    InstalledManagedSpoolBinding,
     RuntimePublicationIntent,
     RuntimePublicationState,
     TrustRegistryEntry,
     canonical_json_digest,
     empty_chain_commitment,
 )
+from memorii.stores.sqlite.private_storage import prepare_private_sqlite
 
 CONTROL_SCHEMA_VERSION = 1
+_GENERATION_CHANGE_SCHEMA_VERSION = 2
+_GENERATION_CHANGE_CATALOG = """
+    CREATE TABLE generation_change_intents (
+        repository_id TEXT PRIMARY KEY,
+        journal_revision INTEGER NOT NULL REFERENCES control_journal(revision),
+        intent_json TEXT NOT NULL
+    )
+"""
+_MANAGED_SPOOL_BINDING_CATALOG = """
+    CREATE TABLE IF NOT EXISTS managed_spool_binding (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        journal_revision INTEGER NOT NULL REFERENCES control_journal(revision),
+        binding_json TEXT NOT NULL
+    )
+"""
 JournalVerifier = Callable[[str, str, str, str], bool]
 
 _ControlModel = TypeVar("_ControlModel", bound=BaseModel)
@@ -96,7 +113,7 @@ class ControlDatabase:
     ) -> None:
         path = Path(database_path)
         path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        os.chmod(path.parent, 0o700)
+        prepare_private_sqlite(path)
         self._lock_path = path.parent / (path.name + ".lock")
         self._thread_lock = threading.RLock()
         self._journal_verifier = journal_verifier
@@ -106,17 +123,12 @@ class ControlDatabase:
             isolation_level=None,
             check_same_thread=False,
         )
-        os.chmod(path, 0o600)
         self._connection.row_factory = sqlite3.Row
         self._connection.execute("PRAGMA journal_mode = WAL")
         self._connection.execute("PRAGMA synchronous = FULL")
         self._connection.execute("PRAGMA foreign_keys = ON")
         self._connection.execute("PRAGMA busy_timeout = 5000")
         self._initialize_schema()
-        for suffix in ("-wal", "-shm"):
-            sidecar = path.with_name(path.name + suffix)
-            if sidecar.exists():
-                os.chmod(sidecar, 0o600)
 
     def close(self) -> None:
         with self._thread_lock, contextlib.suppress(sqlite3.ProgrammingError):
@@ -134,7 +146,7 @@ class ControlDatabase:
 
     @contextmanager
     def transaction(self, *, write: bool) -> Iterator[sqlite3.Connection]:
-        with self._thread_lock, locked_file(self._lock_path, exclusive=write):
+        with self._thread_lock, locked_file(self._lock_path, exclusive=write, private=True):
             self._connection.execute("BEGIN IMMEDIATE" if write else "BEGIN DEFERRED")
             try:
                 yield self._connection
@@ -180,12 +192,80 @@ class ControlDatabase:
         intent = _decode(RuntimePublicationIntent, row["intent_json"])
         return intent if intent.phase == "prepared" else None
 
+    def read_generation_change(self, repository_id: str) -> InstallationGenerationChangeIntent | None:
+        with self.transaction(write=False) as connection:
+            return self._read_generation_change(connection, repository_id)
+
+    def _read_generation_change(
+        self, connection: sqlite3.Connection, repository_id: str,
+    ) -> InstallationGenerationChangeIntent | None:
+        if _control_schema_version(connection) == CONTROL_SCHEMA_VERSION:
+            return None
+        row = connection.execute(
+            "SELECT change.intent_json, journal.entry_json FROM generation_change_intents change"
+            " LEFT JOIN control_journal journal ON journal.revision = change.journal_revision"
+            " WHERE change.repository_id = ?",
+            (repository_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        intent = _decode(InstallationGenerationChangeIntent, row["intent_json"])
+        entry = _decode(InstallationControlJournalEntry, row["entry_json"])
+        if (
+            intent.old_publication.repository_id != repository_id
+            or entry.operation != f"generation_change_{intent.phase}"
+            or entry.after_digest != intent.binding_digest()
+            or entry.entry_digest != _entry_digest(entry)
+            or self._journal_verifier is None
+            or not self._journal_verifier(
+                entry.signer_key_id, RUNTIME_CONTROL_JOURNAL_SIGNATURE_PURPOSE, entry.entry_digest, entry.signature,
+            )
+        ):
+            raise ControlJournalChainError("generation change does not match its signed control journal entry")
+        return intent
+
     def read_journal(self) -> Sequence[InstallationControlJournalEntry]:
         with self.transaction(write=False) as connection:
             rows = connection.execute(
                 "SELECT entry_json FROM control_journal ORDER BY revision"
             ).fetchall()
         return [_decode(InstallationControlJournalEntry, row["entry_json"]) for row in rows]
+
+    def read_managed_spool_binding(self) -> InstalledManagedSpoolBinding | None:
+        with self.transaction(write=False) as connection:
+            catalog = connection.execute(
+                "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'managed_spool_binding'",
+            ).fetchone()
+            row = None
+            if catalog is not None:
+                row = connection.execute(
+                    "SELECT binding.binding_json, journal.entry_json FROM managed_spool_binding binding"
+                    " LEFT JOIN control_journal journal ON journal.revision = binding.journal_revision"
+                    " WHERE binding.id = 1",
+                ).fetchone()
+            if row is None:
+                recorded = connection.execute(
+                    "SELECT 1 FROM control_journal WHERE json_extract(entry_json, '$.operation') "
+                    "= 'managed_spool_registered' LIMIT 1",
+                ).fetchone()
+                if recorded is not None:
+                    raise ControlJournalChainError("registered managed spool binding is missing")
+                return None
+        binding = _decode(InstalledManagedSpoolBinding, row["binding_json"])
+        if row["entry_json"] is None:
+            raise ControlJournalChainError("registered managed spool journal entry is missing")
+        entry = _decode(InstallationControlJournalEntry, row["entry_json"])
+        if (
+            entry.operation != "managed_spool_registered"
+            or entry.after_digest != binding.digest()
+            or entry.entry_digest != _entry_digest(entry)
+            or self._journal_verifier is None
+            or not self._journal_verifier(
+                entry.signer_key_id, RUNTIME_CONTROL_JOURNAL_SIGNATURE_PURPOSE, entry.entry_digest, entry.signature,
+            )
+        ):
+            raise ControlJournalChainError("managed spool binding does not match signed control authority")
+        return binding
 
     def validate_journal(self) -> None:
         """Fail closed on a broken chain, unknown records or bad signatures."""
@@ -283,6 +363,38 @@ class ControlDatabase:
                 (next_state.model_dump_json(),),
             )
 
+    def register_managed_spool(
+        self, binding: InstalledManagedSpoolBinding, journal_entry: InstallationControlJournalEntry,
+        *, initializing: bool = False,
+    ) -> None:
+        """Commit the spool identity atomically with its signed journal anchor."""
+        if journal_entry.operation != "managed_spool_registered" or journal_entry.after_digest != binding.digest():
+            raise ControlStateError("journal entry does not bind the managed spool")
+        with self.transaction(write=True) as connection:
+            state = _read_control_state_unlocked(connection)
+            if state is None or state.installation_id != binding.installation_id:
+                raise ControlStateError("managed spool registration requires the exact installation")
+            if state.mode != "read_only":
+                row = connection.execute(
+                    "SELECT state_json FROM publication_states WHERE repository_id = ?", (binding.repository_id,),
+                ).fetchone()
+                if (
+                    state.mode != "active" or not initializing or row is None
+                    or RuntimePublicationState.model_validate_json(row[0]).vector.partition_ordinal != 0
+                ):
+                    raise ControlStateError("managed spool registration requires read-only mode or an unpublished root")
+            connection.execute(_MANAGED_SPOOL_BINDING_CATALOG)
+            _append_journal_unlocked(connection, journal_entry)
+            connection.execute(
+                "INSERT INTO managed_spool_binding VALUES (1, ?, ?)",
+                (journal_entry.revision, binding.model_dump_json()),
+            )
+            next_state = state.model_copy(update={"control_revision": state.control_revision + 1})
+            connection.execute(
+                "UPDATE installation_control SET state_json = ? WHERE id = 1",
+                (next_state.model_dump_json(),),
+            )
+
     def write_publication_state(
         self,
         repository_id: str,
@@ -367,6 +479,9 @@ class ControlDatabase:
                     raise ControlStateError(
                         "a prepared publication intent already exists for this repository"
                     )
+            generation_change = self._read_generation_change(connection, intent.repository_id)
+            if generation_change is not None and generation_change.phase == "prepared":
+                raise ControlStateError("generation change must be resolved before ordinary publication")
             _append_journal_unlocked(connection, journal_entry)
             connection.execute(
                 "INSERT INTO publication_intents (repository_id, intent_json) VALUES (?, ?)"
@@ -374,19 +489,78 @@ class ControlDatabase:
                 (intent.repository_id, intent.model_dump_json()),
             )
 
+    def write_generation_change(
+        self,
+        intent: InstallationGenerationChangeIntent,
+        journal_entry: InstallationControlJournalEntry,
+    ) -> None:
+        """Update the intent, signed control journal and selected tuple atomically."""
+        repository_id = intent.old_publication.repository_id
+        with self.transaction(write=True) as connection:
+            current = _read_control_state_unlocked(connection)
+            row = connection.execute(
+                "SELECT state_json FROM publication_states WHERE repository_id = ?", (repository_id,),
+            ).fetchone()
+            ordinary = connection.execute(
+                "SELECT intent_json FROM publication_intents WHERE repository_id = ?", (repository_id,),
+            ).fetchone()
+            if (
+                current is None or current.mode != "read_only" or current.quarantined_reason is not None
+                or current.installation_id != intent.old_publication.installation_id
+                or current.eligibility_epoch != intent.old_publication.eligibility_epoch
+                or row is None or _decode(RuntimePublicationState, row["state_json"]) != intent.old_publication
+                or (ordinary is not None and _decode(RuntimePublicationIntent, ordinary["intent_json"]).phase == "prepared")
+                or journal_entry.operation != f"generation_change_{intent.phase}"
+                or journal_entry.after_digest != intent.binding_digest()
+            ):
+                raise ControlStateError("generation change no longer matches current publication authority")
+            previous = self._read_generation_change(connection, repository_id)
+            prepared = intent.model_copy(update={"phase": "prepared"})
+            if intent.phase == "prepared":
+                if (
+                    current.control_revision != intent.expected_control_revision
+                    or (previous is not None and previous.phase == "prepared")
+                    or journal_entry.before_digest != intent.old_publication.payload_digest()
+                ):
+                    raise ControlStateError("generation change preparation does not match the reviewed control revision")
+            elif (
+                current.control_revision != intent.expected_control_revision + 1 or previous != prepared
+                or journal_entry.before_digest != prepared.binding_digest()
+            ):
+                raise ControlStateError("generation change terminal record does not match the prepared intent")
+            if _control_schema_version(connection) == CONTROL_SCHEMA_VERSION:
+                connection.execute(_GENERATION_CHANGE_CATALOG)
+                connection.execute(
+                    "UPDATE control_schema SET value = ? WHERE key = 'schema_version'",
+                    (str(_GENERATION_CHANGE_SCHEMA_VERSION),),
+                )
+            _append_journal_unlocked(connection, journal_entry)
+            connection.execute(
+                "INSERT INTO generation_change_intents (repository_id, journal_revision, intent_json) VALUES (?, ?, ?)"
+                " ON CONFLICT(repository_id) DO UPDATE SET journal_revision = excluded.journal_revision,"
+                " intent_json = excluded.intent_json",
+                (repository_id, journal_entry.revision, intent.model_dump_json()),
+            )
+            if intent.phase == "finalized":
+                connection.execute(
+                    "UPDATE publication_states SET state_json = ? WHERE repository_id = ?",
+                    (intent.candidate_publication.model_dump_json(), repository_id),
+                )
+            next_state = current.model_copy(update={
+                "control_revision": current.control_revision + 1,
+                "quarantined_reason": (
+                    "generation change does not match either verified selector" if intent.phase == "quarantined" else None
+                ),
+            })
+            connection.execute("UPDATE installation_control SET state_json = ? WHERE id = 1", (next_state.model_dump_json(),))
+
     def _initialize_schema(self) -> None:
         with self.transaction(write=True) as connection:
             catalog_row = connection.execute(
                 "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'control_schema'"
             ).fetchone()
             if catalog_row is not None:
-                row = connection.execute(
-                    "SELECT value FROM control_schema WHERE key = 'schema_version'"
-                ).fetchone()
-                if row is not None and int(row["value"]) != CONTROL_SCHEMA_VERSION:
-                    raise ControlStateError(
-                        f"unsupported control schema version: {row['value']}"
-                    )
+                _control_schema_version(connection)
                 return
             for statement in _SCHEMA_STATEMENTS:
                 connection.execute(statement)
@@ -394,6 +568,19 @@ class ControlDatabase:
                 "INSERT INTO control_schema (key, value) VALUES ('schema_version', ?)",
                 (str(CONTROL_SCHEMA_VERSION),),
             )
+
+
+def _control_schema_version(connection: sqlite3.Connection) -> int:
+    row = connection.execute("SELECT value FROM control_schema WHERE key = 'schema_version'").fetchone()
+    if row is None or str(row["value"]) not in (str(CONTROL_SCHEMA_VERSION), str(_GENERATION_CHANGE_SCHEMA_VERSION)):
+        raise ControlStateError("unsupported or missing control schema version")
+    version = int(row["value"])
+    has_generation_catalog = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'generation_change_intents'",
+    ).fetchone() is not None
+    if has_generation_catalog != (version == _GENERATION_CHANGE_SCHEMA_VERSION):
+        raise ControlStateError("generation change catalog does not match the declared control schema")
+    return version
 
 
 def _read_control_state_unlocked(

@@ -12,7 +12,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from memorii.core.persistence.managed_delivery import RuntimeTargetReceipt
     from memorii.core.persistence.runtime_api import RuntimeOutboxDelivery
+    from memorii.core.work_state.runtime_projection import ManagedWorkProjectionDelivery
 
 import json as re
 import sqlite3
@@ -21,6 +23,8 @@ from typing import TypeVar
 
 from pydantic import BaseModel, TypeAdapter
 
+from memorii.core.consolidation.runtime_outputs import MAX_CONSOLIDATION_SOURCE_REFERENCES, ConsolidationResult
+from memorii.core.persistence.contracts import InstallationControlState, RuntimePublicationState
 from memorii.core.persistence.runtime_contracts import (
     ActionAttemptRecord,
     RuntimeCommandReceipt,
@@ -30,9 +34,11 @@ from memorii.core.persistence.runtime_contracts import (
     SolverRunRecord,
     TaskRecord,
 )
+from memorii.core.persistence.runtime_journal import append_runtime_changes, persist_runtime_replay_checkpoint
 from memorii.core.storage_administration.service import (
     StorageAdministrationService,
 )
+from memorii.domain.solver_graph.edges import SolverEdge
 from memorii.stores.sqlite.partition import PartitionDataRepository
 
 _T = TypeVar("_T", bound=BaseModel)
@@ -206,6 +212,17 @@ class RuntimeStateRepository:
         )
         return None if row is None else TaskRecord.model_validate_json(row["record_json"])
 
+    def task_observation_source_keys_in(
+        self, connection: sqlite3.Connection, task_id: str,
+    ) -> frozenset[tuple[str, str]]:
+        """Bound the unique admitted source/digest pairs needed by task archival."""
+        from memorii.stores.sqlite.native_receipts import task_observation_source_keys
+
+        rows = task_observation_source_keys(
+            connection, task_id=task_id, limit=MAX_CONSOLIDATION_SOURCE_REFERENCES + 1,
+        )
+        return frozenset((str(row["source_id"]), str(row["source_digest"])) for row in rows)
+
     def get_command_receipt_in(
         self,
         connection: sqlite3.Connection,
@@ -340,6 +357,25 @@ class RuntimeStateRepository:
             record_json=node_json,
         )
 
+    def apply_solver_edge(
+        self, connection: sqlite3.Connection, *, solver_id: str, edge: SolverEdge,
+    ) -> None:
+        """Persist an edge only inside its existing solver run."""
+        edge = SolverEdge.model_validate_json(edge.model_dump_json())
+        if self._partition.read_runtime_row(
+            connection, table="runtime_solver_runs", match=(("solver_id", solver_id),),
+        ) is None or any(
+            self._partition.read_runtime_row(
+                connection, table="runtime_solver_nodes",
+                match=(("solver_id", solver_id), ("node_id", endpoint)),
+            ) is None for endpoint in (edge.src, edge.dst)
+        ):
+            raise RuntimeStateError("invalid_request: solver edge endpoints must belong to its solver run")
+        self._partition.upsert_runtime_row(
+            connection, table="runtime_solver_edges", keys=("solver_id", "edge_id"),
+            values=(solver_id, edge.id), record_json=edge.model_dump_json(),
+        )
+
     def apply_execution_edge(
         self,
         connection: sqlite3.Connection,
@@ -437,6 +473,46 @@ class RuntimeStateRepository:
             record_json=delivery.model_dump_json(),
         )
 
+    def apply_consolidation_result(
+        self, connection: sqlite3.Connection, result: ConsolidationResult,
+    ) -> None:
+        """Insert a sealed result in its origin publication transaction."""
+        result = ConsolidationResult.model_validate(result)
+        prior = self.get_consolidation_result_in(connection, result.result_id)
+        if prior is not None:
+            if prior.canonical_bytes() != result.canonical_bytes():
+                raise RuntimeStateError("conflict: divergent consolidation result for origin")
+            return
+        self._partition.insert_consolidation_row(
+            connection, result_id=result.result_id, record_json=result.model_dump_json(),
+        )
+
+    @staticmethod
+    def _decode_consolidation_result(row: sqlite3.Row) -> ConsolidationResult:
+        result = ConsolidationResult.model_validate_json(row["record_json"])
+        if result.result_id != row["result_id"]:
+            raise RuntimeStateError("integrity_error: consolidation catalog key mismatch")
+        return result
+
+    def get_consolidation_result_in(
+        self, connection: sqlite3.Connection, result_id: str,
+    ) -> ConsolidationResult | None:
+        rows = self._partition.read_consolidation_rows(connection, result_id=result_id)
+        return self._decode_consolidation_result(rows[0]) if rows else None
+
+    def list_consolidation_results_in(
+        self, connection: sqlite3.Connection,
+    ) -> tuple[ConsolidationResult, ...]:
+        return tuple(
+            self._decode_consolidation_result(row)
+            for row in self._partition.read_consolidation_rows(connection)
+        )
+
+    def get_consolidation_result(self, result_id: str) -> ConsolidationResult | None:
+        """Internal owner read. The public API must grant-check and verify its snapshot."""
+        with self._partition.transaction(write=False) as connection:
+            return self.get_consolidation_result_in(connection, result_id)
+
     def get_outbox_delivery(
         self, connection: sqlite3.Connection, delivery_id: str
     ) -> RuntimeOutboxDelivery | None:
@@ -447,6 +523,8 @@ class RuntimeStateRepository:
             match=(("delivery_id", delivery_id),),
         )
         if not rows:
+            return None
+        if _managed_outbox_type(str(rows[0]["record_json"])) is not None:
             return None
         return RuntimeOutboxDelivery.model_validate_json(str(rows[0]["record_json"]))
 
@@ -461,18 +539,100 @@ class RuntimeStateRepository:
         entries = tuple(
             RuntimeOutboxDelivery.model_validate_json(str(row["record_json"]))
             for row in rows
+            if _managed_outbox_type(str(row["record_json"])) is None
         )
         # Drainable surface: only pending rows, in primary-key order.
         return tuple(entry for entry in entries if entry.status == "pending")
 
+    def get_managed_work_projection_delivery(
+        self, connection: sqlite3.Connection, delivery_id: str,
+    ) -> ManagedWorkProjectionDelivery | None:
+        from memorii.core.work_state.runtime_projection import ManagedWorkProjectionDelivery
+
+        self._partition.require_delivery_catalogs(connection)
+        row = self._partition.read_runtime_row(
+            connection, table="runtime_outbox_deliveries", match=(("delivery_id", delivery_id),),
+        )
+        if row is None:
+            return None
+        record = str(row["record_json"])
+        if _managed_outbox_type(record) != "managed_work_projection":
+            raise RuntimeStateError("needs_reconciliation: outbox row has no managed projection payload")
+        entry = ManagedWorkProjectionDelivery.model_validate_json(record)
+        if entry.delivery.request.delivery_id != delivery_id:
+            raise RuntimeStateError("integrity_error: projection delivery key mismatch")
+        return entry
+
+    def apply_managed_work_projection_delivery(
+        self, connection: sqlite3.Connection, entry: ManagedWorkProjectionDelivery,
+    ) -> None:
+        delivery_id = entry.delivery.request.delivery_id
+        existing = self.get_managed_work_projection_delivery(connection, delivery_id)
+        if existing == entry:
+            return
+        if existing is None and (entry.delivery.version != 1 or entry.delivery.progress.status != "pending"):
+            raise RuntimeStateError("conflict: new projection delivery must be pending at version one")
+        if existing is not None and (
+            existing.delivery.request != entry.delivery.request
+            or existing.origin != entry.origin
+            or existing.command != entry.command
+            or existing.projection != entry.projection
+            or existing.delivery.generation_id != entry.delivery.generation_id
+            or existing.delivery.version + 1 != entry.delivery.version
+        ):
+            raise RuntimeStateError("conflict: divergent projection payload or version")
+        self._partition.upsert_runtime_row(
+            connection, table="runtime_outbox_deliveries",
+            keys=("delivery_id",), values=(delivery_id,), record_json=entry.model_dump_json(),
+        )
+
+    def insert_work_projection_effect(
+        self, connection: sqlite3.Connection, entry: ManagedWorkProjectionDelivery,
+        receipt: RuntimeTargetReceipt,
+    ) -> None:
+        """Type-owned target effect and receipt inside the same signed transaction."""
+        delivery_id = entry.delivery.request.delivery_id
+        self._partition.insert_delivery_record(
+            connection, catalog="runtime_work_projections",
+            record_id=delivery_id, record_json=entry.projection.model_dump_json(),
+        )
+        self._partition.insert_delivery_record(
+            connection, catalog="runtime_target_receipts",
+            record_id=delivery_id, record_json=receipt.model_dump_json(),
+        )
+
+    def verify_work_projection_effect(
+        self, connection: sqlite3.Connection, entry: ManagedWorkProjectionDelivery,
+        receipt: RuntimeTargetReceipt,
+    ) -> None:
+        from memorii.core.persistence.managed_delivery import RuntimeTargetReceipt
+        from memorii.core.work_state.runtime_projection import ManagedWorkProjection
+
+        delivery_id = entry.delivery.request.delivery_id
+        projection = self._partition.read_delivery_record(
+            connection, catalog="runtime_work_projections", record_id=delivery_id,
+        )
+        target = self._partition.read_delivery_record(
+            connection, catalog="runtime_target_receipts", record_id=delivery_id,
+        )
+        if (
+            projection is None or target is None
+            or ManagedWorkProjection.model_validate_json(projection) != entry.projection
+            or RuntimeTargetReceipt.model_validate_json(target) != receipt
+            or receipt.effect.record_id != delivery_id
+            or receipt.effect.record_digest != entry.projection.digest()
+        ):
+            raise RuntimeStateError("integrity_error: projection target effect or receipt is incomplete")
+
     def apply_command_receipt(
-        self, connection: sqlite3.Connection, receipt: RuntimeCommandReceipt
+        self, connection: sqlite3.Connection, receipt: RuntimeCommandReceipt,
+        *, lookup_namespace: str | None = None,
     ) -> None:
         self._partition.upsert_runtime_row(
             connection,
             table="runtime_command_receipts",
             keys=("client_namespace", "operation_id"),
-            values=(receipt.client_namespace, receipt.operation_id),
+            values=(lookup_namespace or receipt.client_namespace, receipt.operation_id),
             record_json=receipt.model_dump_json(),
         )
 
@@ -489,11 +649,19 @@ class RuntimeStateRepository:
         return tuple(model.model_validate_json(row["record_json"]) for row in rows)
 
 
+def _managed_outbox_type(record_json: str) -> str | None:
+    raw = re.loads(record_json)
+    kind = raw.get("record_type") if isinstance(raw, dict) else None
+    return kind if kind in ("managed_work_projection", "managed_writeback_candidate", "legacy_unresolved_delivery") else None
+
+
 def publish_runtime_change(
     administration: StorageAdministrationService,
     apply: Callable[[sqlite3.Connection, RuntimeStateRepository], None],
     *,
     operation_binding: str = "runtime_change",
+    validate_authority: Callable[[InstallationControlState, RuntimePublicationState], None] | None = None,
+    checkpoint_requested: bool = False,
 ) -> int:
     """Apply one runtime change and publish it atomically.
 
@@ -506,15 +674,12 @@ def publish_runtime_change(
 
     from memorii.core.persistence.contracts import (
         BatchPosition,
-        GenesisPosition,
         PartitionRevisionVector,
         RuntimeMaterializationManifest,
         RuntimePublicationIntent,
         RuntimePublicationState,
-        empty_pointer_set_digest,
     )
     from memorii.core.storage_administration.service import (
-        InstallationIntegrityError,
         InstallationQuarantinedError,
         StorageAdministrationError,
     )
@@ -547,32 +712,68 @@ def publish_runtime_change(
         )
         if finalized is None:
             raise RuntimeStateError("installation is not initialized")
-        administration._verified_snapshot_locked(state)
+        state = administration._require_operational()
+        administration._verified_snapshot_locked()
+        if validate_authority is not None:
+            validate_authority(state, finalized)
         partition = administration.partition()
         with partition.manual_write_transaction() as handle:
             connection = handle.connection
-            pre_state = partition.read_publication_row(connection)
-            if pre_state is None or str(pre_state["tuple_digest"]) != (
-                finalized.payload_digest()
-            ):
-                raise InstallationIntegrityError(
-                    "partition pre-state does not match the finalized control tuple"
+            administration._require_materialization_base(connection, finalized)
+            with partition.capture_materialization(connection, finalized.manifest_digest) as capture:
+                runtime_revision = partition.bump_runtime_revision(connection)
+                with partition.capture_runtime_rows(connection) as changes:
+                    apply(connection, repository)
+                if partition.supports_runtime_history(connection) and not changes:
+                    return runtime_revision - 1
+                runtime_position = (
+                    append_runtime_changes(
+                        connection,
+                        changes=changes,
+                        previous=finalized,
+                        runtime_revision=runtime_revision,
+                        sign=lambda purpose, digest: administration._signing.sign(
+                            administration._signer_key_id, purpose, digest,
+                        ),
+                    )
+                    if partition.supports_runtime_history(connection)
+                    else None
                 )
-            runtime_revision = partition.bump_runtime_revision(connection)
-            apply(connection, repository)
-            manifest_entries = partition.compute_materialization_manifest(connection)
-            manifest = RuntimeMaterializationManifest(catalogs=manifest_entries)
+            forest = None if capture is None else capture.result
+            manifest = (
+                forest.manifest if forest is not None else RuntimeMaterializationManifest(
+                    catalogs=partition.compute_materialization_manifest(connection),
+                )
+            )
             memory_write, memory_data = partition.read_revision_state(connection)
-            prior_ordinal = int(pre_state["ordinal"])
+            prior_ordinal = finalized.vector.partition_ordinal
+            epoch = state.eligibility_epoch + state.pending_epoch_increments
+            checkpoint_digest = finalized.checkpoint_digest
+            if (
+                checkpoint_requested
+                and isinstance(runtime_position, BatchPosition)
+                and partition.supports_runtime_replay_checkpoints(connection)
+            ):
+                signer_key_id = administration._signer_key_id
+                checkpoint_digest = persist_runtime_replay_checkpoint(
+                    connection,
+                    previous=finalized,
+                    through_position=runtime_position,
+                    runtime_revision=runtime_revision,
+                    eligibility_epoch=epoch,
+                    signer_key_id=signer_key_id,
+                    signer_key_fingerprint=administration._signing.public_key_fingerprint(signer_key_id),
+                    sign=lambda purpose, digest: administration._signing.sign(signer_key_id, purpose, digest),
+                )
             vector = PartitionRevisionVector(
                 partition_ordinal=prior_ordinal + 1,
-                runtime_position=BatchPosition(
+                runtime_position=runtime_position if runtime_position is not None else BatchPosition(
                     sequence=runtime_revision, digest=manifest.digest()
                 ),
                 memory_write_revision=memory_write,
                 memory_data_revision=memory_data,
-                semantic_position=GenesisPosition(),
-                ontology_pointer_digest=empty_pointer_set_digest(),
+                semantic_position=finalized.vector.semantic_position,
+                ontology_pointer_digest=finalized.vector.ontology_pointer_digest,
             )
             unsigned = RuntimePublicationState(
                 installation_id=state.installation_id,
@@ -582,11 +783,11 @@ def publish_runtime_change(
                     sequence=prior_ordinal + 1, digest=manifest.digest()
                 ),
                 manifest_digest=manifest.digest(),
+                checkpoint_digest=checkpoint_digest,
                 trust_registry_digest=finalized.trust_registry_digest,
-                eligibility_epoch=(
-                    state.eligibility_epoch + state.pending_epoch_increments
-                ),
+                eligibility_epoch=epoch,
                 vector=vector,
+                runtime_history_ancestry=finalized.runtime_history_ancestry,
                 signature="0" * 64,
             )
             candidate = administration._sign_state(unsigned)
@@ -607,9 +808,7 @@ def publish_runtime_change(
                 expected_old_discriminator=finalized.payload_digest(),
                 candidate_state=candidate,
                 operation_binding=operation_binding,
-                authority_epoch=(
-                    state.eligibility_epoch + state.pending_epoch_increments
-                ),
+                authority_epoch=epoch,
                 fence_token=prior_ordinal + 1,
             )
             administration._control.write_intent(
@@ -620,15 +819,19 @@ def publish_runtime_change(
                     after_digest=candidate.payload_digest(),
                 ),
             )
+            cookie = partition.verification_cookie(connection)
             handle.commit()
-        administration._finalize_publication(candidate)
-        administration._control.write_intent(
-            intent.model_copy(update={"phase": "finalized"}),
-            administration._journal_entry(
-                operation="publication_finalized",
-                before_digest=finalized.payload_digest(),
-                after_digest=candidate.payload_digest(),
-            ),
-        )
-        administration._verified_tuples[candidate.payload_digest()] = True
+            # Keep the partition lock through control publication, after the SQLite commit.
+            administration._finalize_publication(candidate)
+            administration._control.write_intent(
+                intent.model_copy(update={"phase": "finalized"}),
+                administration._journal_entry(
+                    operation="publication_finalized",
+                    before_digest=finalized.payload_digest(),
+                    after_digest=candidate.payload_digest(),
+                ),
+            )
+            if forest is not None:
+                partition.cache_manifest_accumulator(cookie, forest)
+            administration._verified_tuples = {candidate.payload_digest(): cookie}
         return runtime_revision

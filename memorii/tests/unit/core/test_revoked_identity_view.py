@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 
+import pytest
 from memorii.core.harness_state.service import HarnessStateService
 from memorii.core.memory_evolution.models import (
     ClaimKey,
@@ -22,6 +23,7 @@ from memorii.core.persistence.runtime_contracts import (
     TaskRecord,
 )
 from memorii.core.storage_administration.revoked_identity_view import (
+    RefreshingRevokedIdentityView,
     RevokedIdentities,
     RevokedIdentityView,
 )
@@ -124,6 +126,27 @@ def test_view_derives_from_journal_and_filters_records(tmp_path) -> None:
         "mem:evolution:claim:claim:kept",
         "mem:evolution:link:link:kept",
     )
+
+
+def test_catalog_release_samples_directives_and_rejects_broken_journal(tmp_path) -> None:
+    control = tmp_path / "control"
+    view = RefreshingRevokedIdentityView(control)
+    assert not view.sample_snapshot(()).identities
+    directive = CanonicalMemoryRecord(
+        memory_id="semantic_ingestion:revocation:" + "a" * 64,
+        domain=MemoryDomain.SEMANTIC,
+        text="",
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_revocation_directive",
+        content={
+            "revoked_targets": [{"coordinate_kind": "source", "coordinate_id": "source:archive"}],
+        },
+    )
+    assert view.sample_snapshot((directive,)).is_revoked_source("source:archive")
+    control.mkdir()
+    (control / "suppressions").write_text("not a journal directory")
+    with pytest.raises((OSError, ValueError)):
+        view.sample_snapshot((directive,))
 
 
 def test_retrieval_view_excludes_revoked_identities_before_lifecycle() -> None:

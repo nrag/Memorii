@@ -1,79 +1,31 @@
 /**
  * Memorii memory plugin for OpenClaw (native plugin shape).
  *
- * Host contract: openclaw-memory-plugin/v1 (major pinned; the plugin fails
- * closed when the host surface does not match). Only user messages become
- * source evidence — forwarded and system inputs are classified out. Channel
- * account/sender identity travels in the event flow, never as authority:
- * the bearer credential decides the producer binding server-side. Hosts
- * never mint tasks: the session hook resumes the operator-provisioned task
- * or fails closed. The credential is read from an owner-only file and never
- * appears in argv or logs.
+ * Host contract: openclaw-memory-plugin/v1 (host pinned; the plugin fails
+ * closed when the host surface does not match). Only user messages are
+ * candidates for source evidence. The managed source routes authorize
+ * capture and recall for the dedicated local gateway session. Hosts
+ * never mint tasks: the explicitly bound MEMORII_OPENCLAW_SESSION_KEY
+ * resumes an operator-provisioned task. The credential lives in an
+ * owner-only file.
  */
 
-import { readFileSync } from "node:fs";
+import { buildMemorySystemPromptAddition, delegateCompactionToRuntime } from "openclaw/plugin-sdk/core";
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
+import {
+  capturedObservation,
+  createSidecarTransport,
+  recalledUserData,
+  resumeTask,
+} from "./internal/sidecar-transport.js";
 
 export const HOST_CONTRACT = "openclaw-memory-plugin/v1";
 const SIDECAR_URL = process.env.MEMORII_SIDECAR_URL ?? "http://127.0.0.1:8762";
 const CREDENTIAL_PATH =
   process.env.MEMORII_CREDENTIAL_PATH ?? "/run/memorii/openclaw-plugin.credential";
 const TASK_ID = process.env.MEMORII_TASK_ID ?? "task:openclaw-session";
-let operationCounter = 0;
-
-function bearerToken() {
-  const raw = readFileSync(CREDENTIAL_PATH, "utf8").trim();
-  if (!raw) {
-    throw new Error("memorii sidecar credential is empty");
-  }
-  return raw;
-}
-
-async function readState() {
-  const response = await fetch(`${SIDECAR_URL}/v1/runtime/state`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${bearerToken()}`,
-    },
-    body: JSON.stringify({ protocol_version: 1, task_id: TASK_ID, view: "summary" }),
-  });
-  if (response.status === 404) {
-    return null;
-  }
-  if (!response.ok) {
-    throw new Error(`memorii state read failed: ${response.status}`);
-  }
-  const envelope = await response.json();
-  return typeof envelope.revision === "number" ? envelope.revision : 0;
-}
-
-async function sha256Hex(text) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-async function submitCommand(command) {
-  const response = await fetch(`${SIDECAR_URL}/v1/runtime/intake`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${bearerToken()}`,
-    },
-    body: JSON.stringify({ protocol_version: 1, command }),
-  });
-  if (!response.ok) {
-    throw new Error(`memorii intake rejected ${command.kind}: ${response.status}`);
-  }
-  await response.json();
-}
-
-function nextOperationId(prefix) {
-  operationCounter += 1;
-  return `openclaw:${prefix}:${process.pid}:${operationCounter}`;
-}
+const SESSION_KEY = process.env.MEMORII_OPENCLAW_SESSION_KEY;
+const MAX_PENDING_MESSAGES = 16;
 
 /** Classify one host input per the pinned contract; forwarded and system
  * inputs are never eligible as source evidence. */
@@ -86,87 +38,164 @@ export function classifyInput(input) {
   return { eligible: kind === "user_message", kind, sender };
 }
 
-let resumedThisProcess = false;
-
-async function onSessionStart() {
-  if (resumedThisProcess) {
-    return undefined;
-  }
-  resumedThisProcess = true;
-  const revision = await readState();
-  if (revision === null) {
-    throw new Error(`no provisioned task ${TASK_ID} for this host session`);
-  }
-  await submitCommand({
-    kind: "resume_task",
-    operation_id: nextOperationId("resume"),
-    task_id: TASK_ID,
-    expected_revision: revision,
-  });
-  return undefined;
-}
-
-async function onTranscriptWrite(context) {
-  // before_message_write is the single authoritative transcript seam: it
-  // fires once per message persisted to the session with
-  // {message: {role, content}}. Only user messages are authentic source
-  // evidence; assistant writes are derived, never source. The first user
-  // write of a process resumes the provisioned task — gateway turns do not
-  // dispatch session_start to plugins, so session adoption lands here.
-  if (context?.message?.role !== "user") {
-    return undefined;
-  }
-  if (!resumedThisProcess) {
-    await onSessionStart();
-  }
-  const text = typeof context?.message?.content === "string" ? context.message.content : "";
-  const revision = (await readState()) ?? 0;
-  await submitCommand({
-    kind: "record_observation",
-    operation_id: nextOperationId("observe"),
-    task_id: TASK_ID,
-    expected_revision: revision,
-    source_digest: await sha256Hex(text),
-  });
-  return undefined;
-}
-
-async function onBeforeToolCall() {
-  const revision = (await readState()) ?? 0;
-  await submitCommand({
-    kind: "record_action_dispatch",
-    operation_id: nextOperationId("dispatch"),
-    task_id: TASK_ID,
-    expected_revision: revision,
-  });
-  return undefined;
-}
-
-async function onAfterToolCall() {
-  const revision = (await readState()) ?? 0;
-  await submitCommand({
-    kind: "record_action_result",
-    operation_id: nextOperationId("result"),
-    task_id: TASK_ID,
-    expected_revision: revision,
-  });
-  return undefined;
-}
-
 export default definePluginEntry({
   id: "memorii",
   name: "Memorii",
   description: "Memorii durable runtime state for OpenClaw sessions.",
   version: "1.0.0",
   register(api) {
-    if (typeof api?.on !== "function") {
+    if (typeof api?.on !== "function" || typeof api?.registerContextEngine !== "function") {
       throw new Error(`unsupported OpenClaw host surface for ${HOST_CONTRACT}`);
     }
-    // The typed hook runner dispatches these events; api.on is the
-    // supported registration surface for them.
-    api.on("session_start", onSessionStart);
-    api.on("before_message_write", onTranscriptWrite);
-    api.on("before_tool_call", onBeforeToolCall);
-    api.on("after_tool_call", onAfterToolCall);
+    if (!SESSION_KEY) {
+      throw new Error("memorii requires an operator-selected MEMORII_OPENCLAW_SESSION_KEY");
+    }
+    const withSidecar = createSidecarTransport(SIDECAR_URL, CREDENTIAL_PATH);
+    const pendingMessages = new Map();
+    const source = { kind: "openclaw", session_id: SESSION_KEY };
+    let resumedBinding;
+    let recallTurn;
+
+    async function ensureResumed(request, binding) {
+      if (binding === resumedBinding) return;
+      await resumeTask(request, binding, { kind: "openclaw", taskId: TASK_ID, sessionId: SESSION_KEY });
+      resumedBinding = binding;
+    }
+
+    function localDeliveryId(context) {
+      if (context?.sessionKey !== SESSION_KEY || context.trigger !== "user"
+          || context.channel || context.messageProvider || context.inputProvenance) return undefined;
+      if (typeof context.runId !== "string" || !context.runId) return undefined;
+      return `${context.runId}:user`;
+    }
+
+    // The embedded host serializes each session's turns. Only assemble() uses
+    // the reserved admission, and it consumes it before requesting recall.
+    api.on("before_model_resolve", (event, context) => {
+      if (context?.sessionKey !== SESSION_KEY) return;
+      recallTurn = undefined;
+      const deliveryId = localDeliveryId(context);
+      if (!deliveryId || typeof context.sessionId !== "string" || !context.sessionId) return;
+      const admission = pendingMessages.get(deliveryId);
+      if (admission && event?.prompt === admission.text) {
+        recallTurn = { deliveryId, sessionId: context.sessionId, admission };
+      }
+    });
+
+    api.registerContextEngine("memorii", () => ({
+      info: {
+        id: "memorii",
+        name: "Memorii",
+        ownsCompaction: false,
+        transcriptSemantics: {
+          currentTurnFence: "before-current-turn-entry-v1",
+          turnAdvancementIdempotency: "atomic-idempotent-v1",
+        },
+      },
+      // The host owns the transcript. There is no context-engine store to advance.
+      async commitTurn() { return { status: "committed" }; },
+      async ingest() { return { ingested: false }; },
+      async compact(params) { return await delegateCompactionToRuntime(params); },
+      async assemble({ messages, prompt, sessionId, sessionKey, availableTools, citationsMode }) {
+        const result = {
+          messages,
+          estimatedTokens: 0,
+          systemPromptAddition: buildMemorySystemPromptAddition({
+            availableTools: availableTools ?? new Set(),
+            citationsMode,
+            agentSessionKey: sessionKey,
+          }),
+        };
+        if (sessionKey !== SESSION_KEY) return result;
+        const turn = recallTurn;
+        recallTurn = undefined;
+        if (!turn || turn.sessionId !== sessionId
+            || turn.admission.text !== prompt
+            || pendingMessages.get(turn.deliveryId) !== turn.admission) return result;
+        try {
+          const quoted = await withSidecar(async (request, binding) => {
+            await ensureResumed(request, binding);
+            return recalledUserData(await request("/v1/runtime/source/recall", {
+              task_id: TASK_ID, source, exclude_delivery_id: turn.deliveryId,
+            }));
+          });
+          if (quoted !== undefined && pendingMessages.get(turn.deliveryId) === turn.admission) {
+            // Prompt hooks persist their text in native replay. Assembly's
+            // isolated message view keeps the quote at user data privilege.
+            result.messages = [...messages, {
+              role: "user", content: [{ type: "text", text: quoted }], timestamp: Date.now(),
+            }];
+          }
+        } catch {
+          api.logger.warn("Memorii source recall unavailable");
+        }
+        return result;
+      },
+    }));
+
+    api.on("session_start", async (_event, context) => {
+      if (context?.sessionKey !== SESSION_KEY) return;
+      try {
+        await withSidecar(ensureResumed);
+      } catch {
+        throw new Error("Memorii session resume unavailable");
+      }
+    });
+
+    api.on("before_message_write", (event, context) => {
+      if (context?.sessionKey !== SESSION_KEY) return;
+      const message = event?.message;
+      const idempotencyKey = message?.idempotencyKey;
+      if (typeof idempotencyKey !== "string" || !idempotencyKey) return;
+      recallTurn = undefined;
+      const { role, content, provenance, display, excludeFromContext } = message;
+      if (role !== "user" || provenance || display === false || excludeFromContext
+          || typeof content !== "string" || !content.trim()) {
+        pendingMessages.delete(idempotencyKey);
+        return;
+      }
+      // The pinned gateway correlates this native identity with the prompt run.
+      const previous = pendingMessages.get(idempotencyKey);
+      if (previous) {
+        if (previous.text !== content) {
+          pendingMessages.delete(idempotencyKey);
+          api.logger.warn("Memorii capture outcome unknown (native identity conflict)");
+        }
+        return;
+      }
+      if (pendingMessages.size >= MAX_PENDING_MESSAGES) {
+        api.logger.warn("Memorii capture outcome unknown (local pending limit)");
+        return;
+      }
+      pendingMessages.set(idempotencyKey, { text: content });
+    });
+
+    api.on("agent_end", (_event, context) => {
+      if (context?.sessionKey !== SESSION_KEY || typeof context.runId !== "string" || !context.runId) return;
+      const deliveryId = `${context.runId}:user`;
+      if (recallTurn?.deliveryId === deliveryId) recallTurn = undefined;
+      // After the native run ends, only a durably admitted delivery can be
+      // recovered by the sidecar. A later run has its own native identity.
+      pendingMessages.delete(deliveryId);
+    });
+
+    api.on("before_prompt_build", async (_event, context) => {
+      const deliveryId = localDeliveryId(context);
+      const admission = pendingMessages.get(deliveryId);
+      if (!admission) return;
+      try {
+        await withSidecar(async (request, binding) => {
+          await ensureResumed(request, binding);
+          if (pendingMessages.get(deliveryId) !== admission) return;
+          const receipt = await request("/v1/runtime/source/capture", {
+            task_id: TASK_ID, source, delivery_id: deliveryId, text: admission.text,
+          });
+          if (!capturedObservation(receipt, TASK_ID)) throw new Error("Memorii capture receipt unavailable");
+          if (pendingMessages.get(deliveryId) === admission) pendingMessages.delete(deliveryId);
+        });
+      } catch {
+        api.logger.warn("Memorii source capture outcome unknown");
+      }
+    });
   },
 });

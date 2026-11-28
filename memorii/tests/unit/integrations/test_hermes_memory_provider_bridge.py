@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import importlib
+import json
 import socket
 import sys
 import tomllib
 from abc import ABC, abstractmethod
+from dataclasses import replace
 from datetime import UTC, datetime
 from importlib.metadata import EntryPoint
 from pathlib import Path
@@ -18,15 +20,69 @@ from memorii.core.memory_evolution.atomic_store import StructuredSubmissionGrant
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.provider.models import ProviderOperation
+from memorii.core.scoped_context.authority import ScopedNamespaceGrantRow
+from memorii.core.semantic_ingestion.catalog_authority import (
+    CatalogOwnerVisibilityGrant,
+    FactScopeGrant,
+    StructuredGrantState,
+)
 from memorii.core.semantic_ingestion.default_catalog_corpus import (
     EXPECTED_DEFAULT_RELATION_IDS,
     DefaultCatalogCorpusRow,
     load_default_catalog_acceptance_corpus,
 )
+from memorii.core.semantic_ingestion.default_catalog_package import load_packaged_default_catalog_release
+from memorii.domain.enums import MemoryDomain
+from memorii.integrations.catalog_read_binding import CatalogReadGrantReference, CatalogReadOptIn
+from memorii.integrations.hermes_local_authority import (
+    load_local_level2_authority,
+    local_catalog_management,
+)
 from tests.fixtures.semantic_ingestion.default_catalog_proposals import (
     DefaultCatalogProposalFixture,
     build_default_catalog_proposal,
 )
+
+
+def _catalog_read_opt_in(
+    home: Path, *, user_id: str, projection: CanonicalMemoryRecord, records: tuple[CanonicalMemoryRecord, ...],
+) -> CatalogReadOptIn:
+    installation_id = load_local_level2_authority(hermes_home=home)["installation_id"]
+    assert isinstance(installation_id, str)
+    grants = [
+        StructuredGrantState.model_validate(record.content["state"])
+        for record in records if record.source_kind == "semantic_ingestion_structured_grant_state"
+    ]
+    (fact_grant,) = [state.grant for state in grants if state.active and isinstance(state.grant, FactScopeGrant)]
+    catalog_grants = [
+        state.grant for state in grants if state.active and isinstance(state.grant, CatalogOwnerVisibilityGrant)
+    ]
+    return CatalogReadOptIn(
+        installation_id=installation_id,
+        storage_root=home / "memorii",
+        user_id=user_id,
+        agent_id=fact_grant.authenticated.agent_id,
+        fact_scope=fact_grant.fact_scope,
+        rows=(ScopedNamespaceGrantRow(
+            domain=MemoryDomain.SEMANTIC,
+            task_id=projection.task_id,
+            session_id=projection.session_id,
+            user_id=projection.user_id,
+            agent_id=projection.agent_id,
+            execution_node_id=projection.execution_node_id,
+            solver_run_id=projection.solver_run_id,
+        ),),
+        grant_references=tuple(
+            CatalogReadGrantReference(
+                catalog_scope=catalog_grant.catalog_scope,
+                fact_grant_id=fact_grant.grant_id,
+                fact_grant_version=fact_grant.grant_version,
+                catalog_grant_id=catalog_grant.grant_id,
+                catalog_grant_version=catalog_grant.grant_version,
+            )
+            for catalog_grant in catalog_grants
+        ),
+    )
 
 
 @pytest.fixture
@@ -104,6 +160,49 @@ def test_bridge_rejects_calls_before_successful_initialization(bridge_module) ->
         provider.prefetch("what changed")
     with pytest.raises(ValueError, match="does not provide Hermes tool"):
         provider.handle_tool_call("memorii.search", {})
+
+
+@pytest.mark.parametrize(
+    ("environment", "identity"),
+    (("0", {}), ("1", {"user_id": " "}), ("1", {"user_id_alt": False})),
+)
+def test_stock_catalog_route_preserves_json_denial_after_registration(
+    bridge_module, monkeypatch, tmp_path, environment, identity,
+) -> None:
+    from memorii.core.provider.service import ProviderMemoryService
+    from memorii.core.semantic_ingestion.catalog_inspection import CatalogBrowseResponse
+    from memorii.integrations.catalog_read_binding import CatalogReadBinding
+    from memorii.integrations.hermes_runtime_binding import HermesProviderRuntimeBinding
+
+    def forbidden(*_args):
+        pytest.fail("denied discovery must not dispatch another operation")
+
+    def factory(context):
+        assert not context.stock_catalog_read
+        return HermesProviderRuntimeBinding(
+            service=ProviderMemoryService(),
+            issue_ingress=forbidden,
+            catalog_read=CatalogReadBinding(
+                configured=False,
+                browse_catalog=lambda _: CatalogBrowseResponse.model_validate({"status": "denied"}),
+                inspect_catalog_relation=forbidden,
+                diagnose_structured_recall=forbidden,
+            ),
+        )
+
+    monkeypatch.setattr(bridge_module, "_service_factory_status", lambda: (factory, None))
+    monkeypatch.setattr(bridge_module, "build_started_hermes_memory_provider", lambda **_: object())
+    monkeypatch.setenv("MEMORII_HERMES_CATALOG_READ", "1")
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    registered = {schema["function"]["name"] for schema in provider.get_tool_schemas()}
+    assert "memorii_browse_catalog" in registered
+
+    monkeypatch.setenv("MEMORII_HERMES_CATALOG_READ", environment)
+    provider.initialize("session:read", hermes_home=tmp_path, **identity)
+    try:
+        assert json.loads(provider.handle_tool_call("memorii_browse_catalog", {})) == {"status": "denied"}
+    finally:
+        provider.shutdown()
 
 
 def test_operation_identity_reuses_completed_transcript_and_separates_positions(bridge_module) -> None:
@@ -516,8 +615,9 @@ def test_installed_no_observer_persists_one_pending_coverage_observation_after_r
         records[0].memory_id
     )
     assert observation is not None
-    assert observation.processing_state == DiscoveryProcessingState.CLASSIFIED
-    assert observation.semantic_outcome == CoverageSemanticOutcome.UNCERTAIN
+    assert observation.processing_state == DiscoveryProcessingState.PENDING_NO_CAPABILITY
+    assert observation.semantic_outcome == CoverageSemanticOutcome.NOT_EVALUATED
+    assert observation.observer_binding is None
     binding.completed_turn_runtime.close()
 
     reopened_plane = MemoryPlaneService(
@@ -1045,6 +1145,7 @@ def test_installed_no_key_bridge_reaches_learned_mentors_submission_without_mode
     )
     from memorii.core.semantic_ingestion.learned_relation import (
         AgentLocalCatalogScope,
+        CatalogManagementUnavailable,
         OntologyChangeProposal,
         OntologyEvidenceReference,
         PairedEvaluation,
@@ -1059,14 +1160,19 @@ def test_installed_no_key_bridge_reaches_learned_mentors_submission_without_mode
         principal_id=provider._absent_author_id,
         agent_id=active_runtime._authenticated_agent_id,
     )
-    candidate = learned.prepare_candidate(OntologyChangeProposal.create(
-        catalog_scope=scope, parent_catalog_digest="a" * 64,
+    draft = OntologyChangeProposal.create(
+        catalog_scope=scope,
+        parent_catalog_digest=load_packaged_default_catalog_release().child_version.version_digest,
         relation=RelationDeclaration(description="A person mentors another person."),
         evidence=(OntologyEvidenceReference(
             source_id="activation:evidence", source_digest="1" * 64,
             origin_lineage_digest="2" * 64, source_scope_digest="3" * 64,
         ),),
-    ))
+    )
+    with pytest.raises(CatalogManagementUnavailable):
+        learned.prepare_candidate(draft)
+    local_catalog_management(hermes_home=tmp_path, state="enabled")
+    candidate = learned.prepare_candidate(draft)
     candidate = learned.record_evaluation(
         proposal_id=candidate.proposal_id,
         evaluation=PairedEvaluation.create(
@@ -1330,7 +1436,7 @@ def test_installed_no_key_paired_evaluator_executes_all_cases_without_control_mu
             principal_id=binding.absent_author_id,
             agent_id=runtime._authenticated_agent_id,
         ),
-        parent_catalog_digest="a" * 64,
+        parent_catalog_digest=load_packaged_default_catalog_release().child_version.version_digest,
         relation=RelationDeclaration(description="A person mentors another person."),
         evidence=(OntologyEvidenceReference(
             source_id="evaluator:evidence", source_digest="1" * 64,
@@ -1377,6 +1483,7 @@ def test_installed_no_key_paired_evaluator_executes_all_cases_without_control_mu
             "activation_sequence": None, "candidate_count": 0,
             "candidate_ids": (),
             "replay_outcomes": {}, "last_error": None,
+            "catalog_management": {"state": "disabled", "generation": 0, "origin": None},
         }
     finally:
         runtime.close()
@@ -1386,21 +1493,36 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
     bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The replay control must retain the binding selected for the replay."""
+    from memorii.core.semantic_ingestion.coverage_observation import CoverageObservationRepository
     from memorii.core.semantic_ingestion.learned_relation import (
         AgentLocalCatalogScope,
+        LearnedRelationError,
         OntologyChangeProposal,
         OntologyEvidenceReference,
         PairedEvaluation,
         RelationDeclaration,
+        learned_catalog_version_memory_id,
     )
     from memorii.core.semantic_ingestion.structured_fact_read import StructuredFactReadRequest
-    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_factory import (
+        build_local_level2_authenticated_source_runtime,
+        build_local_level2_runtime_binding,
+    )
     from memorii.integrations.hermes_local_authority import (
+        LocalLevel2AuthorityError,
         authorize_local_level2,
         authorize_local_structured_tool,
     )
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    def forbid_network(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("learned catalog replay and recall must not use the network")
+
+    monkeypatch.setattr(socket, "getaddrinfo", forbid_network)
+    monkeypatch.setattr(socket, "create_connection", forbid_network)
+    monkeypatch.setattr(socket.socket, "connect", forbid_network)
+    monkeypatch.setattr(socket.socket, "connect_ex", forbid_network)
     authorize_local_level2(hermes_home=tmp_path)
     authorize_local_structured_tool(hermes_home=tmp_path)
     monkeypatch.setattr(
@@ -1414,22 +1536,29 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
         agent_identity="profile:primary", platform="cli", agent_context="primary",
         agent_workspace="hermes",
     )
+    local_catalog_management(hermes_home=tmp_path, state="enabled")
     provider.on_turn_start(1, "Atlas mentors Ada.")
     runtime = provider._completed_turn_runtime
     learned = provider._learned_ontology_runtime
     assert runtime is not None and learned is not None
     active = runtime._active_turn
     assert active is not None
+    observation = next(
+        item for item in CoverageObservationRepository(provider._provider._service._memory_plane).all()
+        if item.source_id == active.ledger.source_id
+    )
     scope = AgentLocalCatalogScope(
         principal_id=provider._absent_author_id,
         agent_id=runtime._authenticated_agent_id,
     )
     candidate = learned.prepare_candidate(OntologyChangeProposal.create(
-        catalog_scope=scope, parent_catalog_digest="a" * 64,
-        relation=RelationDeclaration(description="A person mentors another person."),
+        catalog_scope=scope,
+        parent_catalog_digest=load_packaged_default_catalog_release().child_version.version_digest,
+        relation=RelationDeclaration(description="Private evidence prose must stay out of inspection."),
         evidence=(OntologyEvidenceReference(
             source_id=active.ledger.source_id, source_digest=active.ledger.source_digest,
-            origin_lineage_digest="2" * 64, source_scope_digest="3" * 64,
+            origin_lineage_digest=observation.origin_lineage_digest,
+            source_scope_digest=observation.source_scope_digest,
         ),),
     ))
     candidate = learned.record_evaluation(
@@ -1445,7 +1574,11 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
         proposal_id=candidate.proposal_id,
         principal_id=scope.principal_id, agent_id=scope.agent_id,
     )
-    first_activation = provider.activate_learned_candidate(candidate.proposal_id)
+    # Recreate a prior writer that recorded an exact parent on the
+    # proposal but left the immutable selected version parentless.
+    with monkeypatch.context() as earlier_release:
+        earlier_release.setattr(learned, "_base_parent_locator", None)
+        legacy_activation = provider.activate_learned_candidate(candidate.proposal_id)
     status = provider.lookup_learned_ontology_status()
     assert status["replay_outcomes"] == {"committed": 1}
     records = tuple(provider._provider._service._memory_plane.list_records())
@@ -1473,6 +1606,25 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
     )
     assert first_read.status == "ok"
     assert len(first_read.items) == 1
+    legacy_version_id = learned_catalog_version_memory_id(legacy_activation.target_version_digest)
+    legacy_record = next(record for record in records if record.memory_id == legacy_version_id)
+    assert legacy_record.content["version"]["parent_version_digest"] is None
+    rebased = provider.prepare_learned_rebase()
+    assert rebased.proposal_id != candidate.proposal_id
+    assert rebased.lifecycle == "awaiting_decision"
+    assert set(rebased.model_dump()) == {"proposal_id", "lifecycle"}
+    rebase_review = provider.review_learned_candidate(rebased.proposal_id)
+    assert rebase_review.evaluation is not None and rebase_review.evaluation.passes
+    assert len(rebase_review.evaluation.case_outcomes) == 8
+    assert provider.prepare_learned_rebase() == rebased
+    assert provider.lookup_learned_ontology_status()["active_version_digest"] == legacy_activation.target_version_digest
+    provider.approve_learned_candidate(rebased.proposal_id)
+    first_activation = provider.activate_learned_candidate(rebased.proposal_id)
+    assert first_activation.target_version_digest != legacy_activation.target_version_digest
+    assert provider.lookup_learned_ontology_status()["replay_outcomes"] == {"committed": 1}
+    assert provider._provider._service._memory_plane.get_record(legacy_version_id) == legacy_record
+    plane = provider._provider._service._memory_plane
+    assert tuple(plane.get_record(claim.memory_id) for claim in claims) == claims
     # Select a later generation through the same public candidate lifecycle,
     # then roll back through the installed owner root. Rollback moves only the
     # pointer; the first fact keeps its original pinned catalog authority.
@@ -1504,7 +1656,7 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
     assert successor_activation.status == "selected"
     before_rollback = provider.lookup_learned_ontology_status()
     assert before_rollback["active_version_digest"] == successor_activation.target_version_digest
-    assert before_rollback["candidate_count"] == 2
+    assert before_rollback["candidate_count"] == 3
     rollback = provider.select_prior_learned_version(first_activation.target_version_digest)
     assert rollback.status == "selected"
     after_rollback = provider.lookup_learned_ontology_status()
@@ -1520,11 +1672,84 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
     ) == first_read
     provider.shutdown()
 
+    read_opt_in = _catalog_read_opt_in(
+        tmp_path, user_id="raw:user:one", projection=claims[0], records=records,
+    )
+    selected_grants = read_opt_in.grant_references
+    assert any(ref.catalog_scope == scope for ref in selected_grants)
+    active_opt_in = read_opt_in
+
+    def current_opt_in() -> CatalogReadOptIn:
+        return active_opt_in
+
+    def verify_scope_denials(host) -> None:
+        nonlocal active_opt_in
+        for invalid_opt_in in (
+            replace(read_opt_in, grant_references=tuple(ref for ref in selected_grants if ref.catalog_scope != scope)),
+            replace(read_opt_in, user_id="raw:user:another-account"),
+            replace(read_opt_in, agent_id="profile:peer"),
+        ):
+            active_opt_in = invalid_opt_in
+            assert host.handle_read_tool_call(
+                "memorii_inspect_catalog_relation", {"kind": "name", "name": "mentors"},
+            ) == {"status": "denied"}
+            assert host.handle_read_tool_call("memorii_diagnose_structured_recall", {
+                "kind": "exact", "predicate_id": "mentors", "subject_entity_id": subject_entity_id,
+            }) == {"status": "denied"}
+        active_opt_in = read_opt_in
+
+    def verify_catalog_and_recall(host) -> None:
+        assert host.handle_read_tool_call("memorii_browse_catalog", {})["status"] == "listed"
+        relations = []
+        browse = host.browse_catalog({})
+        while browse.status == "listed":
+            page = browse.root
+            assert page.catalog_version_digest == first_activation.target_version_digest
+            relations.extend(item.predicate_id for item in page.relations)
+            if page.next_after_predicate_id is None:
+                break
+            browse = host.browse_catalog({
+                "after_predicate_id": page.next_after_predicate_id,
+                "expected_catalog_version_digest": first_activation.target_version_digest,
+            })
+        assert browse.status == "listed"
+        assert tuple(relations) == tuple(sorted({
+            "project_deadline", "project_owner", "project_status", "mentors", *EXPECTED_DEFAULT_RELATION_IDS,
+        }))
+        inspection = host.inspect_catalog_relation({"kind": "predicate_id", "predicate_id": "mentors"})
+        assert inspection.status == "matched"
+        assert inspection.catalog_version_digest == first_activation.target_version_digest
+        relation, = inspection.relations
+        assert (relation.predicate_id, relation.read_direction, relation.read_form) == ("mentors", "forward_only", "set")
+        assert relation.definition == "A person mentors another person."
+        assert host.handle_read_tool_call(
+            "memorii_inspect_catalog_relation", {"kind": "predicate_id", "predicate_id": "mentors"},
+        ) == inspection.model_dump(mode="json")
+        inherited = host.inspect_catalog_relation({"kind": "name", "name": "bill due date"})
+        assert inherited.status == "matched" and inherited.relations[0].predicate_id == "obligation_due_on"
+        assert host.inspect_catalog_relation({"kind": "name", "name": "project owner"}).status == "ambiguous"
+        exact = {
+            "kind": "exact", "predicate_id": "mentors", "subject_entity_id": subject_entity_id,
+            "expected_catalog_version_digest": first_activation.target_version_digest,
+        }
+        diagnosis = host.diagnose_structured_recall(exact)
+        assert diagnosis.status == "found"
+        assert diagnosis.items == first_read.items
+        assert host.handle_read_tool_call(
+            "memorii_diagnose_structured_recall", exact,
+        ) == diagnosis.model_dump(mode="json")
+        assert host.diagnose_structured_recall(
+            exact | {"expected_catalog_version_digest": successor_activation.target_version_digest},
+        ).status == "catalog_changed"
+        assert host.read_structured_facts(StructuredFactReadRequest(
+            predicate_id="mentors", subject_entity_id=subject_entity_id,
+        )).items == first_read.items
+
     reopened = bridge_module.MemoriiHermesMemoryProvider()
     reopened.initialize(
         "session:replay", hermes_home=tmp_path, user_id="raw:user:one",
         agent_identity="profile:primary", platform="cli", agent_context="primary",
-        agent_workspace="hermes",
+        agent_workspace="hermes", catalog_read_opt_in=current_opt_in,
     )
     assert (
         reopened.lookup_learned_ontology_status()["replay_outcomes"]
@@ -1557,7 +1782,59 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
         now=datetime.now(UTC),
     )
     assert reopened_read == first_read
+    verify_catalog_and_recall(reopened)
+    verify_scope_denials(reopened)
     reopened.shutdown()
+
+    active_opt_in = read_opt_in
+    generic = build_local_level2_authenticated_source_runtime(SimpleNamespace(
+        hermes_home=tmp_path, storage_root=tmp_path / "memorii",
+        session_id="session:replay", user_id="raw:user:one", agent_identity="profile:primary",
+        platform="cli", agent_context="primary", agent_workspace="hermes", parent_session_id=None,
+        catalog_read_opt_in=current_opt_in,
+    ))
+    try:
+        verify_catalog_and_recall(generic)
+        verify_scope_denials(generic)
+    finally:
+        generic.close()
+
+    # Scope isolation uses the independent catalog read binding. The peer
+    # opens without the installation's optional structured writer sidecar.
+    (tmp_path / "memorii" / "local-structured-tool.json").unlink()
+    peer_context = {
+        "hermes_home": tmp_path, "user_id": "raw:user:one",
+        "agent_identity": "profile:peer", "platform": "cli", "agent_context": "primary",
+        "agent_workspace": "hermes", "catalog_read_opt_in": current_opt_in,
+    }
+    peer_hermes = bridge_module.MemoriiHermesMemoryProvider()
+    peer_hermes.initialize("session:replay", **peer_context)
+    try:
+        verify_scope_denials(peer_hermes)
+        assert peer_hermes.inspect_catalog_relation({"kind": "name", "name": "mentors"}).status == "denied"
+        with pytest.raises(LearnedRelationError, match="outside the installed binding"):
+            peer_hermes.review_learned_candidate(rebased.proposal_id)
+    finally:
+        peer_hermes.shutdown()
+    peer_generic = build_local_level2_authenticated_source_runtime(SimpleNamespace(
+        storage_root=tmp_path / "memorii", session_id="session:replay", parent_session_id=None,
+        **peer_context,
+    ))
+    try:
+        verify_scope_denials(peer_generic)
+        assert peer_generic.inspect_catalog_relation({"kind": "name", "name": "mentors"}).status == "denied"
+        with pytest.raises(LearnedRelationError, match="outside the installed binding"):
+            peer_generic.approve_learned_candidate(rebased.proposal_id)
+    finally:
+        peer_generic.close()
+    foreign = peer_context | {"user_id": "raw:user:another-account", "agent_identity": "profile:primary"}
+    with pytest.raises(LocalLevel2AuthorityError, match="already bound"):
+        bridge_module.MemoriiHermesMemoryProvider().initialize("session:replay", **foreign)
+    with pytest.raises(LocalLevel2AuthorityError, match="already bound"):
+        build_local_level2_authenticated_source_runtime(SimpleNamespace(
+            storage_root=tmp_path / "memorii", session_id="session:replay", parent_session_id=None,
+            **foreign,
+        ))
 
 
 @pytest.mark.parametrize("outcome", ["deleted", "revoked"])
@@ -1596,6 +1873,7 @@ def test_installed_learned_replay_skip_receipt_is_durable_and_idempotent(
         runtime = provider._completed_turn_runtime
         learned = provider._learned_ontology_runtime
         assert runtime is not None and learned is not None
+        local_catalog_management(hermes_home=tmp_path, state="enabled")
         scope = AgentLocalCatalogScope(
             principal_id=provider._absent_author_id,
             agent_id=runtime._authenticated_agent_id,
@@ -1612,7 +1890,8 @@ def test_installed_learned_replay_skip_receipt_is_durable_and_idempotent(
             # or semantic submission and must leave no fact behind.
             runtime._structured_tool_is_current = lambda: False
         candidate = learned.prepare_candidate(OntologyChangeProposal.create(
-            catalog_scope=scope, parent_catalog_digest="a" * 64,
+            catalog_scope=scope,
+            parent_catalog_digest=load_packaged_default_catalog_release().child_version.version_digest,
             relation=RelationDeclaration(description="A person mentors another person."),
             evidence=(OntologyEvidenceReference(
                 source_id=source_id, source_digest=source_digest,
@@ -1674,7 +1953,7 @@ def test_installed_learned_replay_skip_receipt_is_durable_and_idempotent(
 def test_installed_learned_overlay_preserves_default_entity_relation_lifecycle(
     bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An additive learned overlay preserves default correction/read behavior."""
+    """An early overlay preserves fact lifecycle without exposing unverified metadata."""
     from memorii.core.semantic_ingestion.openai_responses_project_assertions import OpenAIResponsesApiClient
     from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
     from memorii.integrations.hermes_local_authority import (
@@ -1703,6 +1982,7 @@ def test_installed_learned_overlay_preserves_default_entity_relation_lifecycle(
     )
     from memorii.core.semantic_ingestion.learned_relation import (
         AgentLocalCatalogScope,
+        LearnedRelationError,
         OntologyChangeProposal,
         OntologyEvidenceReference,
         PairedEvaluation,
@@ -1712,13 +1992,14 @@ def test_installed_learned_overlay_preserves_default_entity_relation_lifecycle(
     learned = provider._learned_ontology_runtime
     active_runtime = provider._completed_turn_runtime
     assert learned is not None and active_runtime is not None
+    local_catalog_management(hermes_home=tmp_path, state="enabled")
     scope = AgentLocalCatalogScope(
         principal_id=provider._absent_author_id,
         agent_id=active_runtime._authenticated_agent_id,
     )
     candidate = learned.prepare_candidate(OntologyChangeProposal.create(
         catalog_scope=scope,
-        parent_catalog_digest="a" * 64,
+        parent_catalog_digest=load_packaged_default_catalog_release().catalog_digest,
         relation=RelationDeclaration(
             description="A person mentors another person."
         ),
@@ -1746,7 +2027,19 @@ def test_installed_learned_overlay_preserves_default_entity_relation_lifecycle(
         principal_id=scope.principal_id,
         agent_id=scope.agent_id,
     )
-    activation = provider.activate_learned_candidate(candidate.proposal_id)
+    with pytest.raises(LearnedRelationError, match="exact packaged parent"):
+        provider.activate_learned_candidate(candidate.proposal_id)
+    assert provider.lookup_learned_ontology_status()["active_version_digest"] is None
+    # Reproduce the earlier writer that stored content identity without the
+    # exact packaged parent version. Reopen with the current installed root.
+    with monkeypatch.context() as earlier_release:
+        earlier_release.setattr(learned, "_base_parent_locator", None)
+        activation = provider.activate_learned_candidate(candidate.proposal_id)
+    plane = provider._provider._service._memory_plane
+    before_failed_rebase = plane.read_snapshot()
+    with pytest.raises(LearnedRelationError, match="exact packaged parent"):
+        provider.prepare_learned_rebase()
+    assert plane.read_snapshot() == before_failed_rebase
     row = next(
         row for row in load_default_catalog_acceptance_corpus().rows
         if row.relation_id == "project_owned_by"
@@ -1881,12 +2174,20 @@ def test_installed_learned_overlay_preserves_default_entity_relation_lifecycle(
     provider.shutdown()
     assert replacement_object_quote in recalled
 
+    read_opt_in = _catalog_read_opt_in(
+        tmp_path, user_id="raw:user:one", projection=projection, records=records,
+    )
+    assert any(reference.catalog_scope == scope for reference in read_opt_in.grant_references)
     reopened = bridge_module.MemoriiHermesMemoryProvider()
     reopened.initialize(
         "session:default", hermes_home=tmp_path, user_id="raw:user:one",
         agent_identity="profile:primary", platform="cli", agent_context="primary",
-        agent_workspace="hermes",
+        agent_workspace="hermes", catalog_read_opt_in=read_opt_in,
     )
+    assert reopened.inspect_catalog_relation({"kind": "name", "name": "project owner"}).status == "unavailable"
+    assert reopened.diagnose_structured_recall({
+        "kind": "exact", "predicate_id": "project_owned_by", "subject_entity_id": subject_entity_id,
+    }).status == "unavailable"
     reopened.on_turn_start(3, f"Recall who owns {subject_quote}.")
     assert reopened.get_tool_schemas()[1]["function"]["name"] == "memorii_read_fact"
     reopened_current = reopened.handle_tool_call(
@@ -1999,7 +2300,7 @@ def test_installed_default_catalog_money_relation_commits_reads_and_revokes(
 def test_installed_default_catalog_literal_retraction_and_symmetric_reads_survive_reopen(
     bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Prove the remaining shared M3 lifecycle and symmetric read mechanics."""
+    """Exercise correction, retraction, and symmetric recall across reopen."""
     from memorii.core.semantic_ingestion.openai_responses_project_assertions import (
         OpenAIResponsesApiClient,
     )
@@ -2028,11 +2329,12 @@ def test_installed_default_catalog_literal_retraction_and_symmetric_reads_surviv
         "entry_points",
         lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
     )
+    read_opt_in = None
     provider = bridge_module.MemoriiHermesMemoryProvider()
     provider.initialize(
         "session:lifecycle-shared", hermes_home=tmp_path, user_id="raw:user:one",
         agent_identity="profile:primary", platform="cli", agent_context="primary",
-        agent_workspace="hermes",
+        agent_workspace="hermes", catalog_read_opt_in=lambda: read_opt_in,
     )
     transcript: list[dict[str, object]] = []
 
@@ -2062,6 +2364,21 @@ def test_installed_default_catalog_literal_retraction_and_symmetric_reads_surviv
     due_subject_id = initial_projection.content["claim_identity"]["subject_assertion_ref"][
         "logical_entity_id_at_assertion"
     ]
+    read_opt_in = _catalog_read_opt_in(
+        tmp_path, user_id="raw:user:one", projection=initial_projection, records=initial_records,
+    )
+    selected = provider.inspect_catalog_relation({"kind": "name", "name": "work item due date"})
+    assert selected.status == "matched"
+    assert provider.handle_tool_call(
+        "memorii_inspect_catalog_relation", {"kind": "name", "name": "work item due date"},
+    )["status"] == "matched"
+    diagnosis_request = {
+        "kind": "exact", "predicate_id": "work_item_due_on", "subject_entity_id": due_subject_id,
+        "expected_catalog_version_digest": selected.catalog_version_digest,
+    }
+    initial_diagnosis = provider.diagnose_structured_recall(diagnosis_request)
+    assert initial_diagnosis.status == "found"
+    assert [json.loads(item.object_value)["value"] for item in initial_diagnosis.items] == ["2026-10-03"]
     initial_due = provider.handle_tool_call(
         "memorii_read_fact",
         {"predicate_id": "work_item_due_on", "subject_entity_id": due_subject_id, "view": "current"},
@@ -2127,6 +2444,10 @@ def test_installed_default_catalog_literal_retraction_and_symmetric_reads_surviv
         {"predicate_id": "work_item_due_on", "subject_entity_id": due_subject_id, "view": "current"},
     )
     assert [item["object_value"] for item in corrected_due["items"]] == [replacement_value]
+    corrected_diagnosis = provider.diagnose_structured_recall(diagnosis_request)
+    assert corrected_diagnosis.status == "found"
+    assert [item.object_value for item in corrected_diagnosis.items] == [replacement_value]
+    assert corrected_diagnosis.items[0].catalog_version_digest == selected.catalog_version_digest
     before_retraction = datetime.now(UTC).isoformat()
     complete_turn(correction_source)
 
@@ -2161,6 +2482,9 @@ def test_installed_default_catalog_literal_retraction_and_symmetric_reads_surviv
         {"predicate_id": "work_item_due_on", "subject_entity_id": due_subject_id, "view": "current"},
     )
     assert retracted_current == {"status": "ok", "items": []}
+    assert provider.diagnose_structured_recall(diagnosis_request).model_dump(mode="json") == {
+        "status": "no_readable_fact",
+    }
     due_history = provider.handle_tool_call(
         "memorii_read_fact",
         {"predicate_id": "work_item_due_on", "subject_entity_id": due_subject_id, "view": "history"},
@@ -3209,15 +3533,19 @@ def test_generic_authenticated_source_reaches_the_local_candidate_and_owner_path
     bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A non-Hermes envelope reaches the same core recurrence/candidate owner."""
-    from memorii.core.semantic_ingestion.learned_relation import LearnedRelationError
+    from memorii.core.semantic_ingestion.catalog_management import CatalogManagementRepository
+    from memorii.core.semantic_ingestion.learned_relation import AgentLocalCatalogScope, LearnedRelationError
     from memorii.core.semantic_ingestion.structured_fact_read import StructuredFactReadRequest
+    from memorii.integrations import hermes_factory
     from memorii.integrations.authenticated_source import AuthenticatedSourceSubmission
     from memorii.integrations.hermes_factory import (
+        _canonical_agent_id,
         build_local_level2_authenticated_source_runtime,
     )
     from memorii.integrations.hermes_local_authority import (
         authorize_local_level2,
         authorize_local_structured_tool,
+        local_operator_id,
     )
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -3229,6 +3557,16 @@ def test_generic_authenticated_source_reaches_the_local_candidate_and_owner_path
     monkeypatch.setattr(socket.socket, "connect_ex", forbid_network)
     authorize_local_level2(hermes_home=tmp_path)
     authorize_local_structured_tool(hermes_home=tmp_path)
+    exact_executor = hermes_factory._isolated_mentors_evaluation_cases
+    execution_ids = []
+
+    def transient_executor(proposal, *args):
+        execution_ids.append(proposal.proposal_id)
+        if len(execution_ids) == 1:
+            raise OSError("isolated evaluation temporarily unavailable")
+        return exact_executor(proposal, *args)
+
+    monkeypatch.setattr(hermes_factory, "_isolated_mentors_evaluation_cases", transient_executor)
     context = SimpleNamespace(
         storage_root=tmp_path / "generic", hermes_home=tmp_path,
         session_id="generic:one", user_id="raw:user:one",
@@ -3236,6 +3574,17 @@ def test_generic_authenticated_source_reaches_the_local_candidate_and_owner_path
         agent_workspace="hermes", parent_session_id=None,
     )
     runtime = build_local_level2_authenticated_source_runtime(context)
+    installation_id = load_local_level2_authority(hermes_home=tmp_path)["installation_id"]
+    assert isinstance(installation_id, str)
+    # The generic fixture uses a separate test partition to compare both adapters.
+    CatalogManagementRepository(
+        runtime._adapter._service._memory_plane,
+        partition_id=f"local:{installation_id}",
+        scope=AgentLocalCatalogScope(
+            principal_id=local_operator_id(installation_id),
+            agent_id=_canonical_agent_id(context.agent_identity),
+        ),
+    ).set_state("enabled")
     results = []
     for ordinal, (session_id, sentence) in enumerate((
         ("generic:one", "Ada mentors Bea."),
@@ -3250,6 +3599,24 @@ def test_generic_authenticated_source_reaches_the_local_candidate_and_owner_path
             timestamp=datetime(2026, 9, 27, ordinal, tzinfo=UTC),
         )
         results.append(runtime.submit(submission))
+        if ordinal == 3:
+            service = runtime._adapter._service
+            first, = service._memory_plane.list_records(source_kind="learned_ontology_evaluation_result_v1")
+            assert first.content["attempt"]["generation"] == 1
+            assert first.content["evaluation"]["available"] is False
+            first_proposal, = service._memory_plane.list_records(source_kind="learned_ontology_change_proposal_v1")
+            assert first_proposal.content["proposal"]["lifecycle"] == "evaluation_unavailable"
+            runtime.close()
+            runtime = build_local_level2_authenticated_source_runtime(context)
+            service = runtime._adapter._service
+            assert service._memory_plane.get_record(first.memory_id) == first
+            receipts = service._memory_plane.list_records(source_kind="learned_ontology_evaluation_result_v1")
+            assert sorted((r.content["attempt"]["generation"], r.content["evaluation"]["available"]) for r in receipts) == [
+                (1, False), (2, True),
+            ]
+            assert execution_ids == [first_proposal.memory_id] * 2
+            assert runtime.lookup_learned_ontology_status()["active_version_digest"] is None
+            assert not service._memory_plane.list_records(source_kind="learned_ontology_replay_operation_v1")
         if ordinal == 4:
             results.append(runtime.submit(submission))
     status = runtime.lookup_learned_ontology_status()
@@ -3260,7 +3627,13 @@ def test_generic_authenticated_source_reaches_the_local_candidate_and_owner_path
     )
     assert len(proposal_records) == 1
     assert proposal_records[0].content["proposal"]["lifecycle"] == "awaiting_decision"
+    assert proposal_records[0].content["proposal"]["evidence"] == first_proposal.content["proposal"]["evidence"]
+    assert execution_ids == [first_proposal.memory_id] * 2
     proposal_id = status["candidate_ids"][0]
+    review = runtime.review_learned_candidate(proposal_id)
+    assert [reference.model_dump(mode="json") for reference in review.evidence] == (
+        first_proposal.content["proposal"]["evidence"]
+    )
     runtime.approve_learned_candidate(proposal_id)
     activation = runtime.activate_learned_candidate(proposal_id)
     assert activation.status == "selected"
@@ -3319,6 +3692,8 @@ def test_generic_authenticated_source_reaches_the_local_candidate_and_owner_path
             agent_identity="profile:primary", platform="cli", agent_context="primary",
             agent_workspace="hermes",
         )
+        if ordinal == 1:
+            local_catalog_management(hermes_home=tmp_path, state="enabled")
         # Coverage observation happens at the public authenticated capture
         # boundary. A fresh host instance per retained turn also proves restart
         # recovery without creating overlapping live tool handles.

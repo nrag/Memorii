@@ -10,11 +10,23 @@ filesystem authority as the installation itself.
 
 from __future__ import annotations
 
-import os
+import hashlib
+import hmac
 import secrets
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from memorii.core.memory_plane.file_lock import locked_file
+from memorii.stores.sqlite.private_storage import (
+    ensure_private_directory,
+    open_private_file,
+    require_private_directory,
+    require_private_file,
+    write_private_file,
+)
 
 
 class CredentialError(RuntimeError):
@@ -30,90 +42,105 @@ class IssuedCredential(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class _CredentialEntry(IssuedCredential):
+    secret_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class _CredentialIndex(BaseModel):
+    entries: tuple[_CredentialEntry, ...] = ()
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
 class SidecarCredentialStore:
     """File-backed credential store beside the installation control owner."""
 
     def __init__(self, credentials_directory: str | Path) -> None:
         self._directory = Path(credentials_directory)
-        self._directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-        os.chmod(self._directory, 0o700)
+        ensure_private_directory(self._directory)
         self._index_path = self._directory / "credentials.json"
+        self._lock_path = self._directory / "credentials.lock"
 
-    def issue(self, principal: str) -> tuple[IssuedCredential, str]:
+    def issue(self, principal: str, *, credential_id: str | None = None) -> tuple[IssuedCredential, str]:
         """Mint one credential for a principal; returns record and secret.
 
         The secret is returned exactly once; only its SHA-256 digest is
         stored. Looking up a credential compares digests in constant time.
         """
-        import hashlib
-        import json
-
         if not principal:
             raise CredentialError("principal must be nonempty")
         secret = "mri_" + secrets.token_urlsafe(32)
         record = IssuedCredential(
             principal=principal,
-            credential_id="cred-" + secrets.token_hex(8),
+            credential_id=credential_id or "cred-" + secrets.token_hex(8),
         )
-        entries = self._read_entries()
-        entries.append(
-            {
-                "principal": principal,
-                "credential_id": record.credential_id,
-                "secret_digest": hashlib.sha256(secret.encode()).hexdigest(),
-            }
+        entry = _CredentialEntry(
+            principal=principal,
+            credential_id=record.credential_id,
+            secret_digest=hashlib.sha256(secret.encode()).hexdigest(),
         )
-        import tempfile
-
-        descriptor, temporary = tempfile.mkstemp(
-            dir=self._directory, prefix=".credentials.", suffix=".tmp"
-        )
-        try:
-            payload = json.dumps({"entries": entries}, indent=2, sort_keys=True)
-            os.write(descriptor, payload.encode("utf-8"))
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
-        os.chmod(temporary, 0o600)
-        os.replace(temporary, self._index_path)
+        with locked_file(self._lock_path, exclusive=True, private=True):
+            entries = self._read_entries()
+            if any(existing.credential_id == record.credential_id for existing in entries):
+                raise CredentialError("conflict: credential is already issued")
+            self._publish((*entries, entry))
         return record, secret
+
+    def retire(self, credential_id: str) -> None:
+        """Withdraw the bearer digest without reusing or importing its secret."""
+        with locked_file(self._lock_path, exclusive=True, private=True):
+            entries = self._read_entries()
+            remaining = tuple(entry for entry in entries if entry.credential_id != credential_id)
+            if remaining != entries:
+                self._publish(remaining)
 
     def principal_for(self, secret: str) -> str | None:
         """Map a presented bearer secret to its principal, or None."""
-        import hashlib
-        import hmac as _hmac
+        record = self.credential_for(secret)
+        return None if record is None else record.principal
 
+    def credential_for(self, secret: str) -> IssuedCredential | None:
+        """Resolve a bearer to its opaque credential and principal.
+
+        Write grants bind to ``credential_id`` rather than principal so two
+        credentials for one user cannot silently share command authority.
+        """
         digest = hashlib.sha256(secret.encode()).hexdigest()
         for entry in self._read_entries():
-            if _hmac.compare_digest(entry["secret_digest"], digest):
-                return entry["principal"]
+            if hmac.compare_digest(entry.secret_digest, digest):
+                return IssuedCredential(
+                    principal=entry.principal, credential_id=entry.credential_id,
+                )
         return None
+
+    @contextmanager
+    def current_credential(self, secret: str) -> Iterator[IssuedCredential]:
+        """Hold the credential read lease across a nonblocking protected write."""
+        with locked_file(self._lock_path, exclusive=False, private=True, blocking=False):
+            credential = self.credential_for(secret)
+            if credential is None:
+                raise CredentialError("host credential is unavailable")
+            yield credential
 
     def verify_permissions(self) -> None:
         """Fail closed when the store is not owner-only."""
-        mode = self._directory.stat().st_mode & 0o777
-        if mode & 0o077:
-            raise CredentialError(
-                f"credential directory permissions are not owner-only: {oct(mode)}"
-            )
-        if self._index_path.exists():
-            file_mode = self._index_path.stat().st_mode & 0o777
-            if file_mode & 0o077:
-                raise CredentialError(
-                    "credential file permissions are not owner-only:"
-                    f" {oct(file_mode)}"
-                )
-
-    def _read_entries(self) -> list[dict[str, str]]:
-        import json
-
-        if not self._index_path.exists():
-            return []
         try:
-            payload = json.loads(self._index_path.read_text(encoding="utf-8"))
+            require_private_directory(self._directory)
+            require_private_file(self._index_path, allow_missing=True)
+        except OSError as exc:
+            raise CredentialError("credential storage must be owner-only") from exc
+
+    def _read_entries(self) -> tuple[_CredentialEntry, ...]:
+        try:
+            with open_private_file(self._index_path) as source:
+                entries = _CredentialIndex.model_validate_json(source.read()).entries
+        except FileNotFoundError:
+            return ()
         except (OSError, ValueError) as exc:
             raise CredentialError("credential store is unreadable") from exc
-        entries = payload.get("entries") if isinstance(payload, dict) else None
-        if not isinstance(entries, list):
+        if len({entry.credential_id for entry in entries}) != len(entries):
             raise CredentialError("credential store is malformed")
         return entries
+
+    def _publish(self, entries: tuple[_CredentialEntry, ...]) -> None:
+        write_private_file(self._index_path, _CredentialIndex(entries=entries).model_dump_json().encode())

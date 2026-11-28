@@ -1,0 +1,123 @@
+# Delivery Validation, Identity And Change Ledger
+
+## Changes And Authority Inventory
+
+The approved design identity ledger and the parent [identity and change ledger](../durable-memory-implementation/identity-and-changes.md) are the baseline. Before writing, enumerate exact artifacts and registered fields from the live code below. The list defines affected families. It does not certify current generated parity.
+
+| Family | Existing owners and affected descendants | Identity/classification and proof |
+| --- | --- | --- |
+| Origin, host result and decision | runtime_contracts, runtime_api, sidecar, core/harness_state/client.py, spool and runtime_consume | Behavioral OperationOrigin, Memorii-Operation-Origin, prepare/read/decision routes and closed result/digest fields. Keep historical v1 bodies. Add explicit managed proof requirement with fail-closed legacy behavior. |
+| Canonical result, scope and payload | Consolidator, runtime event schemas and replay | Behavioral ConsolidationOutput, ArchivePackageRef, ProtectedSkillCandidate, output discriminators, exact selector fields, canonical digest domains and closed target variants from design. Verify exact roundtrip and reject unknown fields/discriminators. |
+| Signed partition and backup | runtime_repository, partition catalog definitions, StorageAdministrationService, SQLite memory batch and control/restore | Behavioral consolidation_results, writeback_decisions, runtime_work_projections, runtime_target_receipts, runtime_skill_candidates and delivery_restore_holds. Inventory every catalog in manifest, signing, checkpoint, replay and backup. Preserve legacy queue bytes via reviewed format-version path. |
+| Real owner composition and installed surface | work-state, provider candidate owner, managed sidecar/embedded/spool, host factories, runtime_schema_export, sdk/typescript, package metadata | Regenerate OpenAPI/client/tool metadata. Pin exact digests, union cardinalities and installation inventories. Plan/requirement IDs are traceability only. |
+| Reference fixture and evidence | current smaller capacity test and Linux/macOS gates | Behavioral reference_capacity, balanced and concentrated, generator and manifest hashes, fixture coordinate/digests and output metrics. Preserve existing smaller regression. |
+
+Existing canonical semantic schemas, provider native capture, promotion policy and benchmark policy remain controlling. Parser coverage includes wrong discriminator, unknown or duplicate keys, missing fields/credentials, wrong digest, wrong domain/scope, altered wire context, numeric limits and canonical form parity. Field-aware hygiene mutation families include planning coordinates in every affected schema/SQL/route/client/test/gate field and valid v1/behavioral controls. No new exceptions. Establish exact output file names and registry cardinalities before coding using actual generated ownership, rather than assigning them from milestone numbering.
+
+## Test Families And Failure Signals
+
+| Proof | Layer | Observed failure if implementation violates design |
+| --- | --- | --- |
+| Origin authenticity, stable digest and non-rebinding | Unit plus installed HTTP/embedded/spool parity | A malformed, missing, mismatched or old proof dispatches or a valid identical receipt is rewritten |
+| Full-state output, producer evidence and same-kind identity | Contract and restart integration | Unverified producer inputs emit output, archive has missing closure, persisted bytes drift or replay differs |
+| Host selectors, current eligibility and explicit accept/decline | Public integration and SDK contract | Unauthorized offer, ID or count leaks, conflict overwrites decision, decline enqueues or accepted effect appears before publication |
+| Projection and candidate targets, claim lease and scope | Public integration and independent-process concurrency | Wrong target writes, skill leaks into ordinary retrieval, obsolete projection wins, stale lease commits or mode/revoke loses the ordering guarantee |
+| Commit, lost acknowledgement, exact receipt and tamper | Subprocess and signed publication/reopen | Partial effect/receipt/queue state is served, retry duplicates effect, damaged closure is accepted |
+| Older/current/fresh restore and digest-only upgrade | Installed release/operator journey | Generation rewrites an old intent, queue drains under hold, original bytes are lost or stale state overrides grant/forget authority |
+| Capacity at approved workload, both distributions and OSes | Installed engineering qualification | Counts/digests diverge, timed scope changes, failed operations disappear or unsupported threshold claimed |
+
+Before substantial additions use a linked design-tests WorkPlan for placement, failure cut harness, shard timings, runtime budget and required gates. Keep contract unit cases fast. Use real owner boundaries and process isolation for atomic publication, restore and evidence. For independently reproduced replay, a separate implementation must not import or copy the production reducer or projector. Shared frozen canonical input bytes are allowed where approved.
+
+## Verification Commands And Evidence
+
+Each milestone lists existing exact Python regression commands. From memorii/ use the workflow-matched interpreter and dependency extras. For static and identity checks use:
+
+```bash
+python -m ruff check memorii tests
+pyright --pythonpath "$(python -c 'import sys; print(sys.executable)')"
+python -m memorii.tools.identity_hygiene --root .. --allowlist ../.agents/identity_hygiene_allowlist.json
+```
+
+From sdk/typescript on the pinned workflow matrix:
+
+```bash
+npm ci
+npm run check:generated
+npm run typecheck
+npm test
+npm run build
+npm pack --dry-run
+npm run test:installed
+```
+
+The current .github/workflows/pr-gates.yml contains package-smoke, durable-storage-integration, durable-runtime-integration, sdk-typescript, host-container-certification and macos-platform-conformance. Match current job definitions and aggregate dependencies. Durable integration uses Python 3.11, and schema regeneration and host/OS jobs use Python 3.12 where declared. SDK CI currently tests Node 24 and 26. Establish the exact candidate script/environment/working directory and capture all applicable job families and artifacts. Existing gate inventory is a baseline and does not include the new suites. Run exact candidate suites once after readiness. Document known unavailable dependencies and CI access separately from failures. No clean-base failure exemption is asserted. Existing CI results and old probes do not certify the new product.
+
+Before release run the installed reference capacity generator and runner approved in the linked testing WorkPlan, then record exact command, fixture/input hashes, both distributions on both platforms, independent sample evidence and status. Neither runner nor command exists today. The parent owns the exact-release candidate. Any generated or code change after final review invalidates affected proof.
+
+## Planning Fingerprints And Review
+
+Read-only current artifact fingerprints at 4c390de1:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| .github/workflows/pr-gates.yml | e0bc6d3f356a6be4232ad3f5f92baadf963eb718f0aec54a6ce0cec96ecbc328 |
+| memorii/pyproject.toml | 584b0c4a0ff8a64387b73ccbc73cd77de1df3eec032f79749bf1be26f3539b5d |
+| sdk/typescript/package-lock.json | 4ca656fca847db175406497ddcd5a64332f34b733b833704b18c6481f48c43a9 |
+| sdk/typescript/generated/openapi.json | aac8fbfdfca395d25630787d844144c72d0de9582b9ddeadddd751b8db6a4c46 |
+
+These are source identities, not a parity result. The coordinator verified the design SHA, five milestone packets, document links and every named existing regression path. The independent test reviewer identified a verification wording error about distinct same-kind outputs. The coordinator corrected the packet to accept distinct ordinals and reject duplicate identities or divergent replays. The rollout gate now explicitly follows delivery and restore proof. Future exact new test and gate identities stay with the linked test-architecture work.
+
+The test reviewer approved the corrected planning delta. This closes the plan-only consultation. High-risk product work still requires review of the actual proposed test inventory and current bindings before coding, then the candidate review required by the implementation skill. This operation did not run product or release tests.
+
+## Local Implementation Evidence
+
+- The intermediate 494508d3-based worktree ran 139 Python tests. This covered the durable-runtime integration selection, the existing measured capacity regression, and focused managed, storage and schema suites.
+- After review fixes, the local macOS Python 3.12 check ran 85 focused tests from `memorii/` with warnings as errors and the pytest cache provider disabled. The selection covered `test_consolidation_read_sidecar`, `test_runtime_sidecar`, `test_managed_work_projection`, `test_managed_delivery`, `test_storage_administration_operator`, `test_managed_operation_origin`, `test_managed_task_lifecycle`, `test_runtime_candidate_stage`, `test_runtime_consolidation_outputs`, `test_consolidation_catalog`, `test_reference_capacity`, and `test_runtime_schema_export`.
+- The Node 26 clean temporary SDK install passed typecheck, nine tests and package dry run. The checked-in OpenAPI document passed byte parity with the live Python generator. The identity audit passed on the preceding worktree.
+- The bounded correctness and specification reviews reproduced the older-backup replay, pre-pause claim reuse and unsigned CLI path. Follow-up patches cover these cases and add task suppression, exact terminal claim matching and closed read errors. They are interim product proof. The final three-role phase reviews, applicable CI and Linux/macOS installed capacity qualification are still open.
+- At committed 91fd5720, 144 Python tests passed on macOS, covering the complete durable-runtime job's test selection, the existing smaller capacity integration regression, the operator suite and focused managed unit tests. This local run used Python 3.12. The CI durable-runtime job uses Python 3.11 on Linux.
+- On the subsequent codec and historical-reservation patch, all 13 focused replay tests passed on macOS, including tampered solver scope, a divergent version behind the current head and mixed repository batches.
+- At a1493f12, the same combined Python selection passed 147 tests. The OpenAPI byte comparison and identity audit passed on that revision. This is local regression evidence. Host container certification and release qualification remain open.
+
+## SQLite Journal And Delivery Continuation
+
+| Increment | Revision | Local evidence and limits |
+| --- | --- | --- |
+| Signed SQLite journal and replay indexes | 52eeaa56, cc000844, c90b9210 | Actual root/solver projection replay after reopen, memory interleave, conflict rollback and pending-intent verification before finalization. Reproduced cache and signed-revision discrepancies and added regressions. V1-v3 catalog bytes remain readable without synthetic history. Full business-event coverage and signed migration ancestry remain open. |
+| Bounded managed resume | c004994f, 98099c48, ee3d92ee | Source-free root resume verifies an exact pause archive and receipt. General checkpoint counters and current member bytes are authenticated. General checkpoint-plus-tail serving remains open. |
+| Host accept and decline | 890fd5c0 | Signed loopback requests, exact retry, opposing requests, rollback and suppression. Tool-facing decision path remains separate from model tools. SDK typecheck, ten tests, package dry run and installed tarball passed. Generated OpenAPI byte parity passed. Fixture result used for the source-bearing test. |
+| Local target effects | 65d6a139 | Four candidate kinds through the explicit enrolled target worker. Independent tests covered atomic rollback, exact receipt retry, forbidden generic writes and promotion, suppression and stale claim refusal. Signed digest-only legacy rows cannot call the old callback. |
+| Restore staging | c9499043, e97e5d60 | Verified signed watermark, signed capture and staging refusal for stale, swapped or corrupted input, and owner CLI staging. Managed backup activation and delivery hold reconciliation remain open. |
+| Capacity diagnostics | be72d24f | Installed wheel match and small signed fixture smoke. Exact reference qualification unavailable until native source receipts and signed checkpoint-tail replay exist. No platform timing evidence. |
+
+The continuation runs used macOS arm64 and Python 3.12, with warning promotion and the pytest cache provider disabled. The workflow selections remain responsible for Linux Python 3.11 CI evidence. The existing durable-runtime integration job now names both new journal and candidate suites. Scoped reads, CLI staging, signed delivery and diagnostic fixture runs do not satisfy host container, release-branch or capacity certification on their own.
+
+At clean product revision ee3d92ee, the final focused Python selection passed 211 tests in 15.21 seconds. It included the durable-runtime integration selection, runtime and partition recovery, migration recovery, operator and writeback suites, and the smaller capacity regression plus reference fixture tests. The repository identity audit and pinned artifact byte check also passed.
+
+## Durable Release And Exact-Current Selection
+
+- The owner selected a durable grant scoped to the exact task/source pair after provider disconnect. Tests exercise real admitted Hermes evidence through a scoped grant, source-backed pause, archived output and episodic offer, host acceptance, and the enrolled delivery worker. Revocation was exercised before pause publication, after preparing a decision, after acquiring a delivery claim, and before rereleasing a completed receipt. The source-bound resume after delivery also passes.
+- The signed v5 catalog required by 484446c5 was landed in the follow-up 319fb657 after the partial Git stage missed its partition hunks. Verify this increment at the latter revision or a descendant. V4 and earlier signed catalogs reopen without the new table. Current owner grant revocation publishes in writable mode.
+- Exact-current restore selection at 7f57c20d verifies signed staging and the current tuple, then changes the physical selector under the old partition lock. Independent review reproduced stale same-generation fallback and verified the exact tuple guard. Operator tests exercise interrupted selector publication, successful retry, stale handles and older-backup refusal. API checks at 8f34b08f preserve stable authorization after reopen.
+- Ordered manifest streaming at 8859b47d preserves the catalog digest. The 18-case storage and capacity selection passed locally. Reference-scale qualification remains open.
+- The embedded Hermes projection read checks the finite read grant, signed origin command and target receipt, plus current origin authority. Local regressions cover out-of-order publication, reopen and revocation. The combined warning-as-error regression passed 237 tests. The final focused selection passed 26 tests, with scoped Ruff and Pyright clean. The generated OpenAPI byte comparison and local identity audit passed. The storage and runtime workflows now include the two new integration suites.
+- The restore preview regression lives in `test_storage_administration_operator.py` under the unit test gate. It compares attested staging to the fenced live tuple and checks exact-current parity, live-only accepted receipts, changed queued rows, stale plans, and owner authorization. The independent specification audit found no policy dependency for that inventory. The independent correctness review confirmed the exact-row comparison and found an uncaught failure for an unavailable live tuple. The CLI now reports a controlled error with blank output when the live installation is quarantined. The final storage selection passed 58 tests. Scoped Ruff and Pyright passed. This is read-only inventory evidence for an owner review.
+- The older restore continuation uses `test_older_restore_generation.py` in the durable-storage gate. Verify authenticated old/new pointer recovery, retained-reader fencing, legacy raw-byte preservation, replay into the replacement generation, and durable holds. Scope checkpoint replay, issued-source authority, and capacity evidence independently.
+- The older restore and checkpoint increment passed 141 focused warning-as-error cases, including selector interruption and restored history. The verified runtime cursor also binds the selected generation and effective eligibility epoch. Backup participants now stream through AES-GCM using the existing archive format. The subsequent scoped status and held-delivery rejection increment passed 93 cases, including owner CLI idempotency.
+- Independent review then reproduced a preselected-solver mismatch and identified an unusable resume continuation, terminal records entering rejection plans, and status proposals lacking a typed state field. The fixes use persisted solver and overlay selections, use the same summary cursor scope for read and resume, leave terminal delivery records out of rejection plans, and persist a typed candidate status with its justification. The final combined focused selection passed 38 cases.
+- The reference driver and fixture selection passed 19 focused cases. The isolated Linux-built candidate is owned by the dedicated qualification workflow. The local diagnostic installed wheel built from `b5086c1a` had SHA-256 `27318511307a91809b1ca2eab6203b58c3f39eb32b7bc2c8f9ae4b59299752f4` and ran on macOS arm64 with Python 3.12.16. It verified 2 native sources, 524,288 body bytes, 29 signed events and a two-event checkpoint tail, and exercised all six timing routes at diagnostic scale. This is not candidate qualification. The GitHub repository runner inventory returned zero and the interactive Mac failed the dedicated-idle preflight.
+- The v7 accumulator tests alternate signed memory and runtime publications with full rebuild disabled, then compare against independent rebuild and reopen. The storage gate covers a foreign SQLite commit between acquisition and write lock, savepoint rollback, replacement via a secondary unique key, v4/v5/v6 upgrade, and tampered legacy selectors. Independent review reproduced the legacy selector bridge and confirmed it now rejects before selection. The final focused local selection passed 29 cases.
+- The installed Linux arm64 wheel from `667fa8e6` passed 206 warning-as-error release-focused cases. Wheel SHA-256 `f2e63db446cdc2e3bc052eb4b50e80b2208fe95578a7b468d4a0885dcf4a406a`. A separate diagnostic profile on macOS captured 48 native 256 KiB sources and verified all 48 signed observation receipts. Median capture time across groups of 12 was 103, 103, 109, and 117 ms under profiling. The source publication path made 48 calls to the whole-current-record validator, so that full scan remains even after removing manifest recomputation. Neither run supplies reference-scale qualification.
+- The indexed admission increment is covered by `test_indexed_governed_source_admission.py` in the storage gate and the managed initial-capture case in the Hermes captured-turn suite. Tests fail on whole-current-record reads, reproduce stale writer digests and write revisions, check exact retry and restart, and exercise full-context fallback for mixed batches and custom policies. Independent review identified malformed Hermes coordination and a legacy extra-member shape. Both fall back to the ordinary validator, preserving CAS precedence and semantics. A macOS diagnostic of 48 native 256 KiB captures observed zero full current-table reads and 1,200 point reads.
+- On Linux arm64, 270 warning-as-error cases passed against the isolated installed wheel from `97493402` (SHA-256 `bf201518dff8c6742ad66d4508a0162dd58bbda15d44072a32a326078ef86bc6`). The first image lacked the repository-only Hermes grammar and generator fixtures. The rerun supplied those fixtures without changing the installed wheel. Indexed seal evidence still undergoes semantic replay verification.
+
+### Larger Linux Capacity Diagnostic
+
+The installed wheel from `97493402` ran on a Colima Linux arm64 guest with six logical cores, 17.5 GiB of visible RAM, Python 3.12.16, and SQLite 3.40.1. The host was shared and the guest's virtual disk could not satisfy SSD attestation. These are reduced diagnostics, with three fresh-process samples per operation on copies of the verified fixture. All 18 samples completed without an error.
+
+| Diagnostic | Source bytes | SQLite bytes | Verified events / tail | Prepare and audit | Acquisition median / max | Resume median / max | Backup pause median / max |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 8 balanced tasks, 128 sources, 320 execution and 1,024 solver nodes | 33,554,432 | 496,934,912 | 2,456 / 256 | 10.517 s | 0.276 / 0.300 s | 0.044 / 0.044 s | 0.239 / 0.243 s |
+| 32 concentrated tasks, 512 sources, 1,280 execution and 4,096 solver nodes | 134,217,728 | 1,987,391,488 | 9,800 / 1,000 | 42.420 s | 1.146 / 1.257 s | 0.214 / 0.219 s | 1.375 / 1.430 s |
+
+The fixtures authenticated one native receipt per source, checked the exact checkpoint tail, and independently verified parity with genesis replay. In a separate 128-source attribution run, SQLite `dbstat` reported 161,619,968 bytes for memory batches and 162,013,184 bytes each for current records and record versions, totaling 97.7% of the database file. Acquisition instrumentation measured 225.680 ms rebuilding the manifest and 46.432 ms verifying checkpoint-tail history, within a 272.773 ms acquisition. Storage amplification puts acquisition and backup pause at risk against the 5-second budgets at reference size. There is no full-size latency result yet.

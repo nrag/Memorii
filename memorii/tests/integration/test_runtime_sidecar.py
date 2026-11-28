@@ -8,20 +8,95 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from memorii.core.harness_state.consumer import ManagedRuntimeSpool
+from memorii.core.harness_state.credentials import SidecarCredentialStore
 from memorii.core.harness_state.service import RuntimeReadGrant
 from memorii.core.harness_state.sidecar import (
     RuntimeSidecar,
+    SidecarIntakeRequest,
     SidecarRequest,
     serve_loopback,
 )
-from memorii.core.persistence.runtime_contracts import TaskRecord
+from memorii.core.harness_state.write_authority import HostCommandGrantRequest, ManagedHostCommandAuthority
+from memorii.core.persistence.runtime_contracts import (
+    OperationOrigin,
+    RuntimeCommandReceipt,
+    RuntimeCommandRequest,
+    TaskRecord,
+)
 from memorii.core.persistence.runtime_repository import (
     RuntimeStateRepository,
     publish_runtime_change,
 )
+from memorii.core.storage_administration.operator import mint_owner_capability
 from memorii.core.storage_administration.service import StorageAdministrationService
 
 _NOW = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+def test_managed_http_origin_is_retained_and_dispatches_after_spool_reopen(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from memorii.tools.runtime_consume import main as consume
+
+    root = tmp_path / "installation"
+    administration = StorageAdministrationService(root)
+    administration.initialize()
+    spool_directory = root / "spool" / "managed"
+    spool = ManagedRuntimeSpool(spool_directory)
+    command = RuntimeCommandRequest(kind="start_task", operation_id="create-task", goal="managed intake")
+    credentials = SidecarCredentialStore(root / "control" / "runtime-credentials")
+    credential, secret = credentials.issue("principal:a")
+    ManagedHostCommandAuthority(administration).issue(
+        HostCommandGrantRequest(
+            grant_id="start",
+            principal=credential.principal,
+            credential_id=credential.credential_id,
+            client_namespace="host:a",
+            allowed_kinds=("start_task",),
+            expires_at=datetime.now(UTC) + timedelta(minutes=1),
+        ),
+        capability=mint_owner_capability(administration, "owner"),
+    )
+    sidecar = RuntimeSidecar.for_managed_installation(
+        administration,
+        credentials=credentials,
+        grant_factory=lambda principal: RuntimeReadGrant(
+            grant_id="read", principal=principal, epoch=1, expires_at=_NOW,
+        ),
+        spool=spool,
+    )
+    origin_header = {"Authorization": f"Bearer {secret}"}
+    url, server = serve_loopback(sidecar)
+    try:
+        with urllib.request.urlopen(urllib.request.Request(
+            url + "/v1/operations/prepare", data=command.model_dump_json().encode(), headers=origin_header,
+        ), timeout=3) as response:
+            proof = OperationOrigin.model_validate_json(response.read())
+        body = SidecarIntakeRequest(command=command).model_dump_json().encode()
+        denied, _ = sidecar.handle_intake_request(bearer_token=secret, origin=None, body=body)
+        assert denied == 403
+        assert spool.pending() == ()
+        with urllib.request.urlopen(urllib.request.Request(
+            url + "/v1/runtime/intake", data=body,
+            headers={**origin_header, "Memorii-Operation-Origin": proof.model_dump_json()},
+        ), timeout=3) as response:
+            assert response.status == 200
+        reopened = ManagedRuntimeSpool(spool_directory)
+        [entry] = reopened.pending()
+        assert entry.operation_origin == proof
+        args = ["--installation-root", str(root), "--managed", "--drain"]
+        assert consume(args) == 0
+        first = RuntimeCommandReceipt.model_validate_json(capsys.readouterr().out)
+        assert first.status == "committed" and first.operation_origin == proof.coordinate
+        assert consume(args) == 0
+        assert capsys.readouterr().out == ""
+        assert ManagedRuntimeSpool(spool_directory).pending() == ()
+        assert len(RuntimeStateRepository(administration.partition()).list_tasks()) == 1
+    finally:
+        server.shutdown()
+        server.server_close()
+        administration.close()
 
 
 def _sidecar(tmp_path: Path) -> tuple[RuntimeSidecar, str]:
@@ -76,7 +151,18 @@ def test_authorized_request_serves_envelope(tmp_path: Path) -> None:
     assert status == 200
     envelope = json.loads(payload)
     assert envelope["task_id"] == task_id
-    assert envelope["status"] in ("ready", "revalidate_required", "reconcile_required")
+    assert envelope["status"] in ("ready", "revalidation_required", "reconcile_required")
+    assert "task_version" not in envelope
+
+    status, payload = sidecar.handle_state_request(
+        bearer_token="credential:one",
+        origin=None,
+        body=SidecarRequest(task_id=task_id, include_task_version=True).model_dump_json().encode(),
+    )
+    assert status == 200
+    versioned = json.loads(payload)
+    assert versioned["task_version"] == 1
+    assert versioned["revision"] == envelope["revision"]
 
 
 def test_browser_origin_rejected_before_any_task_data(tmp_path: Path) -> None:
@@ -172,6 +258,8 @@ def test_python_client_speaks_the_same_protocol(tmp_path: Path) -> None:
         client = RuntimeStateClient(url, credential="credential:one")
         envelope = client.get_state(task_id)
         assert envelope.task_id == task_id
+        assert envelope.task_version is None
+        assert client.get_state(task_id, include_task_version=True).task_version == 1
         denied_client = RuntimeStateClient(url, credential="credential:wrong")
         with pytest.raises(RuntimeClientError, match="401 unauthenticated"):
             denied_client.get_state(task_id)
@@ -235,13 +323,18 @@ def test_credential_store_backed_sidecar_serves_and_denies(tmp_path: Path) -> No
     store.verify_permissions()
 
 
-def test_consume_cli_admits_dispatches_and_refuses_untrusted(tmp_path: Path) -> None:
+def test_consume_cli_admits_dispatches_and_refuses_untrusted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from memorii.stores.sqlite import partition as sqlite_partition
     from memorii.tools.runtime_consume import main as consume_main
 
     root = tmp_path / "installation"
-    administration = StorageAdministrationService(root)
-    administration.initialize()
-    administration.close()
+    with monkeypatch.context() as legacy:
+        legacy.setattr(sqlite_partition, "PARTITION_SCHEMA_VERSION", 1)
+        administration = StorageAdministrationService(root)
+        try:
+            administration.initialize()
+        finally:
+            administration.close()
 
     delivery = {
         "transport_message_id": "msg:one",
@@ -310,6 +403,49 @@ def test_consume_cli_admits_dispatches_and_refuses_untrusted(tmp_path: Path) -> 
         )
         == 3
     )
+
+
+def test_consume_cli_rejects_legacy_intake_and_drain_on_managed_root(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture,
+) -> None:
+    from memorii.core.harness_state.consumer import HostEventDelivery, LocalDurableSpool
+    from memorii.tools.runtime_consume import main as consume_main
+
+    root = tmp_path / "installation"
+    administration = StorageAdministrationService(root)
+    try:
+        administration.initialize()
+        previous = administration.acquire_verified_snapshot()
+    finally:
+        administration.close()
+    delivery = HostEventDelivery(
+        transport_message_id="unsigned-message", producer_binding="unsigned-producer",
+        command=RuntimeCommandRequest(kind="start_task", operation_id="unsigned", goal="Unsigned intent"),
+    )
+    incoming = tmp_path / "legacy.json"
+    incoming.write_text(delivery.model_dump_json(), encoding="utf-8")
+    shared = ["--installation-root", str(root)]
+    assert consume_main([*shared, "--producer", "unsigned-producer", "--delivery", str(incoming)]) == 3
+    assert "requires --managed" in caplog.text
+    assert not (root / "spool").exists()
+
+    # An older pending spool also cannot supply authority by CLI allowlist.
+    pending = LocalDurableSpool(tmp_path / "legacy-spool")
+    before = pending.admit(delivery, allowlisted_producers=("unsigned-producer",))
+    caplog.clear()
+    assert consume_main([
+        *shared, "--spool-directory", str(tmp_path / "legacy-spool"),
+        "--drain", "--allowlisted-producers", "unsigned-producer",
+    ]) == 3
+    assert "requires --managed" in caplog.text
+    assert pending.pending_deliveries(allowlisted_producers=("unsigned-producer",)) == ((before, delivery),)
+
+    reopened = StorageAdministrationService(root)
+    try:
+        assert reopened.acquire_verified_snapshot() == previous
+        assert not RuntimeStateRepository(reopened.partition()).list_tasks()
+    finally:
+        reopened.close()
 
 
 def _intake_sidecar(tmp_path: Path) -> tuple[RuntimeSidecar, str, Path]:

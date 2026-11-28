@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import os
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from secrets import token_bytes
@@ -30,8 +30,10 @@ from memorii.core.memory_plane.query import (
 from memorii.core.memory_plane.store import (
     SEMANTIC_CHECKPOINT_SECRET_PURPOSE,
     BackendCheckpointSignatureAuthority,
+    CatalogMetadataSnapshot,
     CheckpointSignatureAuthority,
     GovernedWritePolicy,
+    IndexedGovernedWritePolicy,
     MemoryPlaneCorruptionError,
     MemoryPlanePrecondition,
     MemoryPlaneRevisionConflictError,
@@ -40,6 +42,7 @@ from memorii.core.memory_plane.store import (
     PersistedBatch,
     clone_record,
     contains_runtime_context,
+    is_runtime_writeback_candidate,
     validate_expected_write_revision,
     validate_governed_write,
     validate_preconditions,
@@ -48,9 +51,78 @@ from memorii.core.storage_administration.revoked_identity_view import (
     RevokedIdentityServingGate,
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain
+from memorii.stores.sqlite.catalog_selection import selected_catalog_activation_id
 from memorii.stores.sqlite.partition import PartitionDataRepository
 
 _PARTITION_DATABASE_NAME = "partition.sqlite3"
+_CATALOG_ROW_LIMIT = 4_096
+_CATALOG_BYTE_LIMIT = 16 << 20
+_LEARNED_ACTIVATION_KIND = "learned_ontology_activation_attempt_v1"
+
+
+class _SqliteCatalogMetadataSnapshot:
+    """Bound candidate visits and decoded record bytes inside one read transaction."""
+
+    def __init__(self, connection: sqlite3.Connection, *, raw_payloads: bool) -> None:
+        self._connection = connection
+        self._raw_payloads = raw_payloads
+        self._visited = 0
+        self._remaining_bytes = _CATALOG_BYTE_LIMIT
+        self._records: dict[str, CanonicalMemoryRecord | None] = {}
+
+    def record(self, memory_id: str) -> CanonicalMemoryRecord | None:
+        if memory_id in self._records:
+            return self._records[memory_id]
+        if self._visited == _CATALOG_ROW_LIMIT:
+            raise MemoryPlaneCorruptionError("catalog metadata exceeds its row budget")
+        self._visited += 1
+        if self._raw_payloads:
+            query = (
+                "SELECT p.raw_size, CASE WHEN p.raw_size <= ? THEN CAST(p.body AS TEXT) END AS record_json"
+                " FROM memory_current_records c LEFT JOIN memory_payloads p USING (payload_digest)"
+                " WHERE c.memory_id = ?"
+            )
+        else:
+            query = (
+                "SELECT length(CAST(record_json AS BLOB)) AS raw_size,"
+                " CASE WHEN length(CAST(record_json AS BLOB)) <= ? THEN record_json END AS record_json"
+                " FROM memory_current_records WHERE memory_id = ?"
+            )
+        row = self._connection.execute(query, (self._remaining_bytes, memory_id)).fetchone()
+        result = None
+        if row is not None:
+            size = row["raw_size"]
+            if type(size) is not int or size <= 0 or size > self._remaining_bytes or row["record_json"] is None:
+                raise MemoryPlaneCorruptionError("catalog metadata is incomplete or exceeds its byte budget")
+            self._remaining_bytes -= size
+            result = _decode_record(row["record_json"])
+            if result.memory_id != memory_id:
+                raise MemoryPlaneCorruptionError("catalog metadata identity differs from its storage key")
+        self._records[memory_id] = result
+        return result
+
+    def activation_attempts(self, *, principal_id: str, agent_id: str) -> Iterator[CanonicalMemoryRecord]:
+        if self._raw_payloads:
+            selected_id = selected_catalog_activation_id(
+                self._connection, principal_id=principal_id, agent_id=agent_id,
+            )
+            if selected_id is not None:
+                yield self._activation_record(selected_id)
+            return
+        # Legacy SQLite lacks a scoped activation projection.
+        rows = self._connection.execute(
+            "SELECT memory_id FROM memory_current_records"
+            " INDEXED BY memory_current_records_source_kind WHERE source_kind = ?",
+            (_LEARNED_ACTIVATION_KIND,),
+        )
+        for row in rows:
+            yield self._activation_record(row["memory_id"])
+
+    def _activation_record(self, memory_id: str) -> CanonicalMemoryRecord:
+        record = self.record(memory_id)
+        if record is None or record.source_kind != _LEARNED_ACTIVATION_KIND:
+            raise MemoryPlaneCorruptionError("catalog activation differs from its lookup coordinate")
+        return record
 
 
 class SqliteMemoryPlaneStore:
@@ -84,7 +156,7 @@ class SqliteMemoryPlaneStore:
     def _load_or_create_protected_secret(self, *, purpose: str, length: int) -> bytes:
         if not purpose or length < 32:
             raise ValueError("protected secret purpose or length is invalid")
-        base_path = self._partition.database_path.parent
+        base_path = self._partition.protected_storage_root
         protected = base_path / ".protected"
         secret_path = protected / f"{hashlib.sha256(purpose.encode('utf-8')).hexdigest()}.key"
         with locked_file(base_path / ".protected.lock", exclusive=True):
@@ -160,14 +232,9 @@ class SqliteMemoryPlaneStore:
         authorization: MemoryPlaneWriteAuthorization | None = None,
     ) -> int:
         with self._partition.transaction(write=True) as connection:
-            _, data_revision, current_records = self._validated_state(connection)
-            validate_governed_write(
-                self._governed_write_policy,
-                records,
-                tuple(current_records.values()),
-                authorization,
+            return self.apply_batch_in_transaction(
+                connection, records, expected_revision=None, authorization=authorization,
             )
-            return self._append_batch_unlocked(connection, records, data_revision=data_revision)
 
     def revision(self) -> int:
         with self._partition.transaction(write=False) as connection:
@@ -185,27 +252,11 @@ class SqliteMemoryPlaneStore:
         transaction_precondition: Callable[[], None] | None = None,
     ) -> int:
         with self._partition.transaction(write=True) as connection:
-            validate_expected_write_revision(expected_write_revision)
-            if transaction_precondition is not None:
-                transaction_precondition()
-            write_revision, data_revision, current_records = self._validated_state(connection)
-            if expected_revision is not None and expected_revision != data_revision:
-                raise MemoryPlaneRevisionConflictError(
-                    f"memory-plane revision changed: expected {expected_revision}, actual {data_revision}"
-                )
-            if expected_write_revision is not None and expected_write_revision != write_revision:
-                raise MemoryPlaneRevisionConflictError(
-                    "memory-plane write revision changed: "
-                    f"expected {expected_write_revision}, actual {write_revision}"
-                )
-            validate_preconditions(current_records, preconditions)
-            validate_governed_write(
-                self._governed_write_policy,
-                records,
-                tuple(current_records.values()),
-                authorization,
+            return self.apply_batch_in_transaction(
+                connection, records, expected_revision=expected_revision,
+                expected_write_revision=expected_write_revision, preconditions=preconditions,
+                authorization=authorization, transaction_precondition=transaction_precondition,
             )
-            return self._append_batch_unlocked(connection, records, data_revision=data_revision)
 
     def apply_batch_in_transaction(
         self,
@@ -217,6 +268,7 @@ class SqliteMemoryPlaneStore:
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
         authorization: MemoryPlaneWriteAuthorization | None = None,
         transaction_precondition: Callable[[], None] | None = None,
+        verified_partition: bool = False,
     ) -> int:
         """Apply one batch inside a coordinator-owned partition transaction.
 
@@ -228,7 +280,11 @@ class SqliteMemoryPlaneStore:
         validate_expected_write_revision(expected_write_revision)
         if transaction_precondition is not None:
             transaction_precondition()
-        write_revision, data_revision, current_records = self._validated_state(connection)
+        self._ensure_validated_chain(connection)
+        write_revision, data_revision = self._partition.read_revision_state(connection)
+        current_records = self._current_records_for_write(
+            connection, records, preconditions, authorization, verified_partition=verified_partition,
+        )
         if expected_revision is not None and expected_revision != data_revision:
             raise MemoryPlaneRevisionConflictError(
                 f"memory-plane revision changed: expected {expected_revision}, actual {data_revision}"
@@ -246,6 +302,34 @@ class SqliteMemoryPlaneStore:
             authorization,
         )
         return self._append_batch_unlocked(connection, records, data_revision=data_revision)
+
+    def _current_records_for_write(
+        self,
+        connection: sqlite3.Connection,
+        records: tuple[CanonicalMemoryRecord, ...],
+        preconditions: tuple[MemoryPlanePrecondition, ...],
+        authorization: MemoryPlaneWriteAuthorization | None,
+        *,
+        verified_partition: bool,
+    ) -> dict[str, CanonicalMemoryRecord]:
+        policy = self._governed_write_policy
+        required = (
+            policy.required_current_record_ids(records, authorization)
+            if verified_partition and isinstance(policy, IndexedGovernedWritePolicy) else None
+        )
+        if required is None:
+            rows = self._partition.read_current_record_rows(connection)
+            return {row["memory_id"]: _decode_record(row["record_json"]) for row in rows}
+        identities = required.union(
+            (precondition.memory_id for precondition in preconditions),
+            (record.memory_id for record in records if is_runtime_writeback_candidate(record)),
+        )
+        result: dict[str, CanonicalMemoryRecord] = {}
+        for identity in sorted(identities):
+            row = self._partition.read_current_record_row(connection, identity)
+            if row is not None:
+                result[identity] = _decode_record(row["record_json"])
+        return result
 
     def read_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
         with self._partition.transaction(write=False) as connection:
@@ -265,6 +349,21 @@ class SqliteMemoryPlaneStore:
                 data_revision,
                 tuple(clone_record(record) for record in current_records.values()),
             )
+
+    def read_verified_catalog_metadata(
+        self,
+        callback: Callable[[int, CatalogMetadataSnapshot], object],
+        *,
+        signed_manifest_digest: str,
+    ) -> object:
+        """Read scoped rows while the managed caller holds verified publication."""
+        with self._partition.transaction(write=False) as connection:
+            if not self._partition.has_verified_manifest_base(connection, signed_manifest_digest):
+                raise MemoryPlaneCorruptionError("catalog metadata transaction differs from its verified manifest")
+            _, data_revision = self._partition.read_revision_state(connection)
+            return callback(data_revision, _SqliteCatalogMetadataSnapshot(
+                connection, raw_payloads=self._partition.uses_raw_memory_payloads(connection),
+            ))
 
     def read_write_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
         with self._partition.transaction(write=False) as connection:
@@ -452,7 +551,7 @@ class SqliteMemoryPlaneStore:
             return
         expected_revision = 1
         previous_data_revision = 0
-        for row in self._partition.read_batch_rows(connection):
+        for row in self._partition.iter_batch_rows(connection):
             try:
                 batch = PersistedBatch.model_validate_json(row["batch_json"])
             except ValueError as exc:

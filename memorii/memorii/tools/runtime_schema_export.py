@@ -15,18 +15,40 @@ import sys
 
 
 def build_openapi_document() -> dict[str, object]:
+    from memorii.core.harness_state.consolidation_read import ConsolidationReadPage, ConsolidationReadRequest
     from memorii.core.harness_state.consumer import SpoolRecord
     from memorii.core.harness_state.envelope import HarnessStateEnvelope
+    from memorii.core.harness_state.native_sources import (
+        NativeSourceCaptureRequest,
+        NativeSourceRecall,
+        NativeSourceRecallRequest,
+    )
     from memorii.core.harness_state.sidecar import (
         SidecarError,
         SidecarIntakeRequest,
         SidecarRequest,
     )
+    from memorii.core.persistence.runtime_contracts import OperationOrigin, RuntimeCommandReceipt, RuntimeCommandRequest
+    from memorii.core.persistence.writeback_decisions import WritebackDecisionReceipt, WritebackDecisionRequest
 
     def schema(model: type) -> dict[str, object]:
         return json.loads(
             json.dumps(model.model_json_schema(), sort_keys=True)
         )
+
+    def native_source_route(operation: str, request: type, response: type) -> dict[str, object]:
+        def content(model: type) -> dict[str, object]:
+            return {"application/json": {"schema": {"$ref": f"#/components/schemas/{model.__name__}"}}}
+
+        return {"post": {
+            "operationId": operation,
+            "security": [{"bearerAuth": []}],
+            "requestBody": {"required": True, "content": content(request)},
+            "responses": {
+                "200": {"description": "Authorized native source result", "content": content(response)},
+                "default": {"description": "Closed error envelope", "content": content(SidecarError)},
+            },
+        }}
 
     return {
         "openapi": "3.1.0",
@@ -43,6 +65,98 @@ def build_openapi_document() -> dict[str, object]:
         },
         "servers": [{"url": "http://127.0.0.1", "description": "loopback only"}],
         "paths": {
+            "/v1/runtime/source/capture": native_source_route(
+                "captureNativeSource", NativeSourceCaptureRequest, RuntimeCommandReceipt,
+            ),
+            "/v1/runtime/source/recall": native_source_route(
+                "recallNativeSource", NativeSourceRecallRequest, NativeSourceRecall,
+            ),
+            "/v1/consolidation/decision": {
+                "post": {
+                    "operationId": "decideWriteback",
+                    "security": [{"bearerAuth": []}],
+                    "parameters": [{
+                        "name": "Memorii-Operation-Origin", "in": "header", "required": True,
+                        "description": "Original signed decision intent, encoded as ASCII JSON.",
+                        "schema": {"type": "string", "maxLength": 8192},
+                    }],
+                    "requestBody": {
+                        "required": True,
+                        "content": {"application/json": {
+                            "schema": {"$ref": "#/components/schemas/WritebackDecisionRequest"},
+                        }},
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Verified host decision and delivery status",
+                            "content": {"application/json": {
+                                "schema": {"$ref": "#/components/schemas/WritebackDecisionReceipt"},
+                            }},
+                        },
+                        "default": {
+                            "description": "Closed error envelope",
+                            "content": {"application/json": {
+                                "schema": {"$ref": "#/components/schemas/SidecarError"},
+                            }},
+                        },
+                    },
+                }
+            },
+            "/v1/consolidation/read": {
+                "post": {
+                    "operationId": "readConsolidation",
+                    "security": [{"bearerAuth": []}],
+                    "requestBody": {
+                        "required": True,
+                        "content": {"application/json": {
+                            "schema": {"$ref": "#/components/schemas/ConsolidationReadRequest"},
+                        }},
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Scoped sealed consolidation result page",
+                            "content": {"application/json": {
+                                "schema": {"$ref": "#/components/schemas/ConsolidationReadPage"},
+                            }},
+                        },
+                        "default": {
+                            "description": "Closed error envelope",
+                            "content": {"application/json": {
+                                "schema": {"$ref": "#/components/schemas/SidecarError"},
+                            }},
+                        },
+                    },
+                }
+            },
+            "/v1/operations/prepare": {
+                "post": {
+                    "operationId": "prepareRuntimeCommand",
+                    "security": [{"bearerAuth": []}],
+                    "requestBody": {
+                        "required": True,
+                        "content": {"application/json": {
+                            "schema": {"oneOf": [
+                                {"$ref": "#/components/schemas/RuntimeCommandRequest"},
+                                {"$ref": "#/components/schemas/WritebackDecisionRequest"},
+                            ]},
+                        }},
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Installation-signed operation origin to retain before intake",
+                            "content": {"application/json": {
+                                "schema": {"$ref": "#/components/schemas/OperationOrigin"},
+                            }},
+                        },
+                        "default": {
+                            "description": "Closed error envelope",
+                            "content": {"application/json": {
+                                "schema": {"$ref": "#/components/schemas/SidecarError"},
+                            }},
+                        },
+                    },
+                }
+            },
             "/v1/runtime/state": {
                 "post": {
                     "operationId": "readRuntimeState",
@@ -81,6 +195,13 @@ def build_openapi_document() -> dict[str, object]:
                 "post": {
                     "operationId": "submitRuntimeCommand",
                     "security": [{"bearerAuth": []}],
+                    "parameters": [{
+                        "name": "Memorii-Operation-Origin",
+                        "in": "header",
+                        "required": True,
+                        "description": "Original signed proof, encoded as ASCII JSON. Required for managed intake.",
+                        "schema": {"type": "string", "maxLength": 8192},
+                    }],
                     "requestBody": {
                         "required": True,
                         "content": {
@@ -120,7 +241,17 @@ def build_openapi_document() -> dict[str, object]:
             },
             "schemas": {
                 "SidecarRequest": schema(SidecarRequest),
+                "NativeSourceCaptureRequest": schema(NativeSourceCaptureRequest),
+                "NativeSourceRecallRequest": schema(NativeSourceRecallRequest),
+                "NativeSourceRecall": schema(NativeSourceRecall),
+                "RuntimeCommandReceipt": schema(RuntimeCommandReceipt),
                 "SidecarIntakeRequest": schema(SidecarIntakeRequest),
+                "RuntimeCommandRequest": schema(RuntimeCommandRequest),
+                "OperationOrigin": schema(OperationOrigin),
+                "ConsolidationReadRequest": schema(ConsolidationReadRequest),
+                "ConsolidationReadPage": schema(ConsolidationReadPage),
+                "WritebackDecisionRequest": schema(WritebackDecisionRequest),
+                "WritebackDecisionReceipt": schema(WritebackDecisionReceipt),
                 "SpoolRecord": schema(SpoolRecord),
                 "HarnessStateEnvelope": schema(HarnessStateEnvelope),
                 "SidecarError": schema(SidecarError),

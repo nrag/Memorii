@@ -21,7 +21,7 @@ from memorii.core.memory_evolution.revocation_tombstones import (
 from memorii.core.memory_evolution.service import MemoryEvolutionService
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
-from memorii.core.scoped_context.service import _current_eligible
+from memorii.core.scoped_context.service import record_is_current
 from memorii.domain.enums import CommitStatus, MemoryDomain
 
 SUPPRESSION_ID = "a" * 64
@@ -167,5 +167,5 @@ def test_revoked_entity_link_is_not_served_by_retrieval() -> None:
 def test_scoped_context_current_eligibility_rejects_revoked_links() -> None:
     active = _link_record(_link("link:1", "entity:ada", "Ada", EntityLinkLifecycleState.ACTIVE))
     revoked = _link_record(_link("link:2", "entity:ada", "Ada", EntityLinkLifecycleState.REVOKED))
-    assert _current_eligible(active, NOW) is True
-    assert _current_eligible(revoked, NOW) is False
+    assert record_is_current(active, NOW) is True
+    assert record_is_current(revoked, NOW) is False

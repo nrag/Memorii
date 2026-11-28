@@ -208,7 +208,7 @@ class GovernedSourceAdmissionService:
             source_digest=request.source_digest,
             delivery_identity=original_fence.delivery_identity,
             required_outcome_scopes=required,
-            source_admission_index_digest=_index_digest(index),
+            source_admission_index_digest=source_admission_record_content_digest(index),
             canonical_envelope_digest=envelope_digest,
             operation_fence_binding=OperationFenceBinding.create(
                 operation_id=operation_id,
@@ -278,15 +278,15 @@ class GovernedSourceAdmissionService:
             delivery_principal_binding_digest=delivery_identity.delivery_principal_binding_digest,
             delivery_key_digest=delivery_identity.delivery_key_digest,
             required_scope_set_digest=required.required_scope_set_digest,
-            admission_index_digest=_index_digest(index),
+            admission_index_digest=source_admission_record_content_digest(index),
         )
         typed_outcome = _make_outcome(
             kind=outcome_kind,
             reason=outcome_reason,
             fact=fact,
             normalized_input=normalized_input,
-            selection_digest=selection_digest or _index_digest(selection),
-            verification_digest=verification_digest or _index_digest(verification),
+            selection_digest=selection_digest or source_admission_record_content_digest(selection),
+            verification_digest=verification_digest or source_admission_record_content_digest(verification),
             matched_corpus_case_id=matched_corpus_case_id,
         )
         outcome = _profile_evidence_record(
@@ -336,7 +336,7 @@ class GovernedSourceAdmissionService:
             source_digest=source_digest,
             delivery_identity=delivery_identity,
             required_outcome_scopes=required,
-            admission_index_digest=_index_digest(index),
+            admission_index_digest=source_admission_record_content_digest(index),
             operation_fence_binding=operation_fence,
             observation=_admitted_observation(
                 source=source,
@@ -402,15 +402,15 @@ class GovernedSourceAdmissionService:
             delivery_principal_binding_digest=delivery_identity.delivery_principal_binding_digest,
             delivery_key_digest=delivery_identity.delivery_key_digest,
             required_scope_set_digest=required.required_scope_set_digest,
-            admission_index_digest=_index_digest(index),
+            admission_index_digest=source_admission_record_content_digest(index),
         )
         typed_outcome = _make_outcome(
             kind=outcome_kind,
             reason=outcome_reason,
             fact=fact,
             normalized_input=normalized_input,
-            selection_digest=selection_digest or _index_digest(selection),
-            verification_digest=verification_digest or _index_digest(verification),
+            selection_digest=selection_digest or source_admission_record_content_digest(selection),
+            verification_digest=verification_digest or source_admission_record_content_digest(verification),
             matched_corpus_case_id=matched_corpus_case_id,
         )
         outcome = _profile_evidence_record(
@@ -421,7 +421,7 @@ class GovernedSourceAdmissionService:
             source_digest=source_digest,
             delivery_identity=delivery_identity,
             required_outcome_scopes=required,
-            admission_index_digest=_index_digest(index),
+            admission_index_digest=source_admission_record_content_digest(index),
             operation_fence_binding=operation_fence,
             observation=_admitted_observation(
                 source=source,
@@ -453,7 +453,7 @@ class GovernedSourceAdmissionService:
             source_digest=source_digest,
             delivery_identity=delivery_identity,
             required_outcome_scopes=required,
-            admission_index_digest=_index_digest(index),
+            admission_index_digest=source_admission_record_content_digest(index),
             operation_fence_binding=operation_fence,
             observation=_admitted_observation(
                 source=source,
@@ -470,7 +470,7 @@ class GovernedSourceAdmissionService:
     ) -> SemanticIngestionOutcomeLookupResponse:
         """Authorize from the protected index before touching any outcome store."""
 
-        index_id = _index_id(request.delivery_identity.delivery_key_digest)
+        index_id = source_admission_index_record_id(request.delivery_identity.delivery_key_digest)
         index = self._memory_plane.get_record(index_id)
         if index is None or index.source_kind != "semantic_ingestion_admission_index":
             return SemanticIngestionOutcomeLookupResponse()
@@ -578,7 +578,7 @@ class GovernedSourceAdmissionService:
         operation fence.  Any anomaly denies (returns ``None``) instead of
         disclosing bytes.
         """
-        index_id = _index_id(request.delivery_identity.delivery_key_digest)
+        index_id = source_admission_index_record_id(request.delivery_identity.delivery_key_digest)
         index = self._memory_plane.get_record(index_id)
         if index is None or index.source_kind != "semantic_ingestion_admission_index":
             return None
@@ -634,7 +634,7 @@ class GovernedSourceAdmissionService:
         )
         if retained is None:
             return None
-        index = self._memory_plane.get_record(_index_id(delivery_identity.delivery_key_digest))
+        index = self._memory_plane.get_record(source_admission_index_record_id(delivery_identity.delivery_key_digest))
         if index is None or index.source_kind != "semantic_ingestion_admission_index":
             return None
         try:
@@ -659,7 +659,7 @@ class GovernedSourceAdmissionService:
             source_digest=operation_fence.source_digest,
             delivery_identity=delivery_identity,
             required_outcome_scopes=required,
-            admission_index_digest=_index_digest(index),
+            admission_index_digest=source_admission_record_content_digest(index),
             operation_fence_binding=operation_fence,
             observation=observation,
         )
@@ -824,7 +824,7 @@ def _immutable_source_identity(source: CanonicalMemoryRecord) -> dict[str, objec
     return value
 
 
-def _index_digest(index: CanonicalMemoryRecord) -> str:
+def source_admission_record_content_digest(index: CanonicalMemoryRecord) -> str:
     return sha256(encode_typed_value(index.content)).hexdigest()
 
 
@@ -838,7 +838,7 @@ def _validate_governed_source(source: CanonicalMemoryRecord) -> None:
         raise ValueError("admission requires a governed immutable source record")
 
 
-def _index_id(delivery_key_digest: str) -> str:
+def source_admission_index_record_id(delivery_key_digest: str) -> str:
     return f"semantic_ingestion:admission:{delivery_key_digest}"
 
 
@@ -865,7 +865,7 @@ def _index_record(
     timestamp: datetime,
 ) -> CanonicalMemoryRecord:
     return CanonicalMemoryRecord(
-        memory_id=_index_id(delivery_identity.delivery_key_digest),
+        memory_id=source_admission_index_record_id(delivery_identity.delivery_key_digest),
         domain=MemoryDomain.TRANSCRIPT,
         text="",
         content={

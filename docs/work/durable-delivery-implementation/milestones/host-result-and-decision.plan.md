@@ -1,0 +1,45 @@
+# Host Result And Decision
+
+- Parent: [durable delivery implementation](../implementation.plan.md)
+- Status: active
+- Requirements: DUR-03/05/06/07/13/14
+- Dependencies: Durable intent and output
+- Closure identity: unset, record actual base, code head, dirty state and artifact/run digests before claim
+
+## Observable Acceptance
+
+An authenticated host reads scoped consolidation after restart, round-trips exact selectors and can accept or decline without modifying graph lifecycle.
+
+## Owners And Contract Changes
+
+RuntimeSidecar, HermesRuntimeStatePorts and installed Hermes factory, runtime repository, OpenClaw and Pi clients, tools/runtime_schema_export.py, sdk/typescript.
+
+Compose explicit read and decision routes and embedded equivalents. Read authorizes before lookup and release, binds cursor and omits suppressed IDs/counts. Accept publishes once-only decision, receipt and queue with fixed payload; decline creates no delivery. Keep skill scope separate. Extend generated OpenAPI/client contracts, prepare context and declared host support.
+
+## Verification
+
+Real callback and loopback requests, cross-task and cross-target denial, stale cursor and offer version/digest, suppression race, exact retry and divergent intent. An untrusted model cannot decide, and accepted staging does not occur before target publication. Compile, test, package and install the SDK against the updated schema.
+
+Existing regression anchors from memorii/ in the applicable pinned CI environment:
+
+```bash
+python -W error -m pytest tests/integration/test_runtime_sidecar.py tests/unit/core/test_harness_state_contract.py tests/unit/tools/test_runtime_schema_export.py tests/unit/core/test_runtime_command_dispatch.py -p no:cacheprovider
+```
+
+New path proof commands and exact test names must be registered through the [validation ledger](../validation.md) before implementation. Include the affected workflow job and artifact evidence. Review against the exact commit. Evidence maturity is design specified at this baseline. This packet is complete only with local and applicable enforced proof and reviewed closure. It satisfies only its bounded portion of the parent requirements.
+
+## Scope Boundary
+
+Use the approved design and existing semantic owners. Keep unsupported roots visibly unavailable. Record compatibility and rollout deltas at the actual candidate. Parent owns release authorization and aggregate gate outcome.
+
+## Progress And Review
+
+494508d3 wires the scoped result reader to installed managed sidecar composition, exact offer selectors, signed archive verification, authorization and suppression checks, and bound paging. The Python and TypeScript clients expose the reader. Current results can be read by an authorized host. The signed decision prepare and submit operations and transactional acceptance and enqueue remain open. The packet has no milestone approval.
+
+Review found an exception escaping the HTTP results envelope when the snapshot could not be acquired. The read route now maps storage and integrity failures to the existing closed response codes.
+
+The independent preimplementation matrix requires actual managed HTTP, host-only embedded entry, exact target scope, unchanged task lifecycle, once-only concurrent decisions, rollback and authorized retry. The delegated authority writer added finite writeback scope to the installed grant and owner CLI. The coordinator wired request preparation, the signed decision publication, stable shared operation reservation, pending candidate enqueue, result statuses, Python and TypeScript clients, and generated OpenAPI. The accepted content remains inert until its governed target commits. Current sourced-output tests exercise the installed host entry with owner-sealed fixture results. They do not establish a general production source-backed producer.
+
+Local evidence includes concurrent opposing decisions, a rollback after decision insertion and before enqueue, exact retry, source suppression after acceptance, and signed reopen. The TypeScript clean-package run passed 10 tests, typecheck and installed tarball verification. OpenAPI byte parity passed. OpenClaw/Pi host certification migration remains open.
+
+Source-backed episodic decisions now use real Hermes source capture and managed observation followed by provider disconnect. The result reader and both decision phases use the exact durable grant. Revocation before decision commit suppresses the archived locator and the episodic offer and prevents queue admission.

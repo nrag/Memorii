@@ -76,6 +76,11 @@ def test_checkpoint_is_signed_counted_and_verified(tmp_path: Path) -> None:
         with pytest.raises(RuntimeCheckpointError, match="signature"):
             verify_runtime_checkpoint(forged, verify=_verify)
 
+        altered_task = checkpoint.tasks[0].model_copy(update={"goal": "Changed without changing identity"})
+        altered_members = checkpoint.model_copy(update={"tasks": (altered_task,)})
+        with pytest.raises(RuntimeCheckpointError, match="member content"):
+            verify_runtime_checkpoint(altered_members, verify=_verify)
+
         with pytest.raises(ValueError, match="count mismatch"):
             # model_copy bypasses validation by design; parse is the boundary
             RuntimeCheckpoint.model_validate(

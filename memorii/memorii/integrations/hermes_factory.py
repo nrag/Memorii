@@ -22,6 +22,7 @@ from threading import RLock
 from types import SimpleNamespace
 from typing import Literal
 
+from memorii.core.memory_evolution.admission import source_admission_index_record_id
 from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedHostIngress,
     AuthenticatedIngressContext,
@@ -30,15 +31,23 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedSemanticSourceAuthority,
     AuthenticatedSemanticSourceInterval,
     DeliveryPrincipalBinding,
+    OperationFenceBinding,
     RequiredOutcomeScopeSet,
     encode_typed_value,
 )
 from memorii.core.memory_evolution.models import EntityType
+from memorii.core.memory_evolution.observation_activation_configuration import local_level2_package_root_digest
 from memorii.core.memory_plane import MemoryPlaneService
-from memorii.core.persistence.factory import select_persistent_memory_plane
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
+from memorii.core.memory_plane.store import (
+    MemoryPlaneCorruptionError,
+    MemoryPlaneRevisionConflictError,
+    RecordDigestPrecondition,
+)
+from memorii.core.persistence.factory import ManagedPartitionError, select_persistent_memory_plane
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.learned_replay import LearnedRetainedSourceReplayService
-from memorii.core.scoped_context.authority import InProcessScopedReadAuthority
+from memorii.core.scoped_context.authority import InProcessScopedReadAuthority, ScopedNamespaceGrantRow
 from memorii.core.semantic_ingestion.catalog_authority import (
     AgentLocalCatalogAuthorityScope,
     AuthenticatedPrincipalAgent,
@@ -56,10 +65,13 @@ from memorii.core.semantic_ingestion.catalog_authority import (
     ThreePredicateSeedCatalogAuthorityRepository,
 )
 from memorii.core.semantic_ingestion.catalog_capture_pin import PackageIndexedCatalogBundleLocator
+from memorii.core.semantic_ingestion.catalog_management import CatalogManagementRepository
+from memorii.core.semantic_ingestion.contracts import contract_digest
 from memorii.core.semantic_ingestion.coverage_observation import (
     CoverageSemanticOutcome,
     CoverageSourceSpan,
     ObserverBindingIdentity,
+    delivery_origin_lineage_digest,
 )
 from memorii.core.semantic_ingestion.coverage_observer import (
     OntologyObservationRequest,
@@ -76,28 +88,42 @@ from memorii.core.semantic_ingestion.hermes_completed_turn_runtime import (
 from memorii.core.semantic_ingestion.learned_relation import (
     ActivationPolicy,
     AgentLocalCatalogScope,
+    CatalogManagementUnavailable,
+    EvaluationRetryUnavailable,
     FrozenMentorsPairedEvaluator,
     IsolatedMentorsEvaluationExecutor,
     LearnedRelationCandidateService,
     LearnedRelationRuntime,
     OntologyActivation,
+    OntologyCandidateReceipt,
+    OntologyCandidateReview,
     OntologyCatalogVersion,
     OntologyChangeProposal,
+    OntologyEvidenceReference,
     PairedEvaluationCaseOutcome,
     PairedEvaluationCatalogBundle,
     learned_catalog_pointer_memory_id,
 )
 from memorii.core.semantic_ingestion.project_assertions_profile import load_project_assertions_bundle
+from memorii.core.storage_administration.service import StorageAdministrationError
 from memorii.core.user_context.preference_delegations import PreferenceDelegationRepository
 from memorii.core.user_context.preferences import (
     PreferenceAccessPolicy,
     PreferenceHolderAuthority,
     PreferenceService,
 )
+from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
+from memorii.integrations.catalog_read_binding import (
+    CatalogReadGrantReference,
+    CatalogReadOptIn,
+    bind_catalog_read,
+    stock_hermes_catalog_read_enabled,
+)
 from memorii.integrations.hermes_local_authority import (
     LocalLevel2AuthorityError,
     load_local_level2_authority,
     load_local_structured_tool_authority,
+    local_operator_id,
 )
 from memorii.integrations.hermes_runtime_binding import (
     HermesAuthenticatedForwardingReceipt,
@@ -231,10 +257,6 @@ def _isolated_mentors_evaluation_cases(
         # directory gives each arm its own memory plane, grant records, pin
         # records, writer state, and protected-reader snapshot.
         isolated_context = SimpleNamespace(**(vars(context) | {"storage_root": path}))
-        if not candidate:
-            return _build_local_level2_runtime_binding(
-                isolated_context, _enable_ontology_observer=False,
-            )
         # The private root derives its account identity through ordinary
         # factory composition, then reopens the same isolated store with the
         # exact inert bundle authority.  Nothing is selected or activated.
@@ -251,8 +273,19 @@ def _isolated_mentors_evaluation_cases(
                 or identity_runtime._authenticated_agent_id != scope.agent_id
             ):
                 raise ValueError("paired evaluation proposal is outside the isolated owner scope")
-        finally:
+            service = identity_root.service
+            parent, _ = service._catalog_bundle_locator.locate_selected(
+                service._memory_plane.read_snapshot()[1],
+                scope=CatalogAuthorityScope(schema_version=1, kind="base"),
+            )
+            if parent.version.version_digest != proposal.parent_catalog_digest:
+                raise ValueError("paired evaluation cannot execute the exact packaged parent")
+        except ValueError:
             identity_runtime.close()
+            raise
+        if not candidate:
+            return identity_root
+        identity_runtime.close()
         bundle = PairedEvaluationCatalogBundle.from_proposal(proposal=proposal)
         authority = PairedEvaluationAuthority.create(
             proposal_id=proposal.proposal_id,
@@ -473,6 +506,7 @@ def build_local_level2_authenticated_source_runtime(context: object) -> object:
     return build_authenticated_source_runtime(
         issue_ingress=issue_ingress,
         provider_service=binding.service,
+        catalog_read=binding.catalog_read,
         learned_ontology=AuthenticatedSourceLearnedOntologyBinding(
             activate_candidate=binding.activate_learned_candidate,
             approve_candidate=binding.approve_learned_candidate,
@@ -482,6 +516,11 @@ def build_local_level2_authenticated_source_runtime(context: object) -> object:
                 authenticated_author_id=binding.absent_author_id, now=datetime.now(UTC),
             ),
             close=completed_runtime.close,
+            review_candidate=binding.review_learned_candidate,
+            reject_candidate=binding.reject_learned_candidate,
+            select_prior_version=binding.select_prior_learned_version,
+            prepare_rebase=binding.prepare_learned_rebase,
+            retry_refresh=binding.retry_learned_catalog_refresh,
         ),
     )
 
@@ -520,11 +559,13 @@ def _build_local_level2_runtime_binding(
 
     now = datetime.now(UTC)
     authorization = local_level2_bootstrap_authorization_from_sidecar(sidecar, now=now)
-    operator_id = (
-        "memorii:hermes:operator:"
-        + sha256((f"memorii.hermes.local-level2-operator.v1:{authorization.installation_id}").encode()).hexdigest()
-    )
+    operator_id = local_operator_id(authorization.installation_id)
     agent_id = _canonical_agent_id(getattr(context, "agent_identity", None))
+    stock_read = getattr(context, "stock_catalog_read", False) is True and getattr(context, "catalog_read_opt_in", None) is None
+    stock_identity_preexisting = (
+        getattr(context, "user_id", None) is not None
+        or (storage_root / "local-operator-context.json").is_file()
+    )
     primary_agent_id = _bind_single_local_operator_context(
         storage_root=storage_root,
         installation_id=authorization.installation_id,
@@ -559,6 +600,20 @@ def _build_local_level2_runtime_binding(
         storage_root, allow_legacy_bootstrap=True
     )
     memory_plane = memory_selection.memory_plane
+    learned_scope = AgentLocalCatalogAuthorityScope(principal_id=operator_id, agent_id=agent_id)
+    catalog_management = CatalogManagementRepository(
+        memory_plane, partition_id=f"local:{authorization.installation_id}", scope=learned_scope,
+    )
+
+    def current_catalog_management_fence(scope: AgentLocalCatalogScope) -> RecordDigestPrecondition | None:
+        if context_kind != "primary" or not authority_is_current():
+            return None
+        return catalog_management.enabled_write_fence(scope)
+
+    def validate_catalog_management_host() -> None:
+        if context_kind != "primary" or not authority_is_current():
+            raise CatalogManagementUnavailable("local catalog management host authority is unavailable")
+
     # Fail-closed serving composition: the revoked-identity gate derives
     # from the installation control root and refreshes on journal writes;
     # legacy layouts without control state carry the valid empty view.
@@ -606,6 +661,7 @@ def _build_local_level2_runtime_binding(
         host_bootstrap_capability=capability,
         host_bootstrap_material_verifier=verifier,
         revoked_view=revoked_view,
+        catalog_read_suppression_view=revoked_view.sample_snapshot,
         scoped_read_authority=scoped_read_authority,
         ontology_observer_capability=observer,
         ontology_observer_authorizer=(lambda ingress, binding: (
@@ -613,6 +669,7 @@ def _build_local_level2_runtime_binding(
             and binding == observer.binding
             and ingress.delivery_principal_binding.principal_subject_id == operator_id
             and ingress.authenticated_agent_id == agent_id
+            and current_catalog_management_fence(learned_scope) is not None
         )) if observer is not None else None,
     )
     if service._composed_semantic_runtime is None:
@@ -666,7 +723,8 @@ def _build_local_level2_runtime_binding(
         ),
         delegation_repository=delegation_repository,
     )
-    if structured_resolver is not None and _provision_structured_authority:
+    selected_learned_on_open = memory_plane.get_record(learned_catalog_pointer_memory_id(learned_scope)) is not None
+    if structured_resolver is not None and _provision_structured_authority and not selected_learned_on_open:
         # The local tool cannot be advertised until its complete, factory-bound
         # authority tuple is durably active in the semantic writer's store.
         service.provision_structured_submission_authority(
@@ -825,6 +883,73 @@ def _build_local_level2_runtime_binding(
     )
     replay_writer = _InstalledReplayWriter()
 
+    def current_evaluation_sources(
+        proposal: OntologyChangeProposal, records: tuple[CanonicalMemoryRecord, ...],
+    ) -> tuple[OntologyEvidenceReference, ...]:
+        if proposal.catalog_scope != learned_scope or not authority_is_current():
+            return ()
+        by_id = {record.memory_id: record for record in records}
+        suppression = revoked_view.sample_snapshot(records)
+
+        def is_current(reference: OntologyEvidenceReference) -> bool:
+            source = by_id.get(reference.source_id)
+            if (
+                source is None or source.source_kind != "semantic_ingestion_source"
+                or source.domain is not MemoryDomain.TRANSCRIPT or source.status is not CommitStatus.COMMITTED
+                or source.agent_id != agent_id
+                or suppression.is_revoked_source(reference.source_id)
+                or suppression.is_revoked_record(reference.source_id)
+                or (source.task_id is not None and suppression.is_revoked_task(source.task_id))
+            ):
+                return False
+            try:
+                ingress = service._provider_ingestion.retained_authenticated_ingress_from_record(
+                    source=source, source_digest=reference.source_digest,
+                )
+            except ValueError:
+                return False
+            if (
+                ingress is None or ingress.authenticated_agent_id != agent_id
+                or ingress.delivery_principal_binding.principal_subject_id != operator_id
+                or ingress.delivery_principal_binding.tenant_partition_id != f"local:{authorization.installation_id}"
+                or ingress.required_outcome_scopes.required_scope_set_digest != reference.source_scope_digest
+                or not set(ingress.required_outcome_scopes.scopes).issubset(ingress.current_authorized_scopes.scopes)
+            ):
+                return False
+            if ingress.origin_lineage_evidence is not None:
+                lineage = ingress.origin_lineage_evidence.lineage_digest
+            else:
+                admission = source.content.get("source_admission")
+                key = admission.get("delivery_key_digest") if isinstance(admission, dict) else None
+                index = by_id.get(source_admission_index_record_id(key)) if isinstance(key, str) else None
+                if (
+                    index is None or index.source_kind != "semantic_ingestion_admission_index"
+                    or index.domain is not MemoryDomain.TRANSCRIPT or index.status is not CommitStatus.COMMITTED
+                    or index.visibility is not MemoryRecordVisibility.INTERNAL_CONTROL
+                    or suppression.is_revoked_record(index.memory_id)
+                ):
+                    return False
+                try:
+                    binding = OperationFenceBinding.model_validate(index.content.get("operation_fence_binding"))
+                except ValueError:
+                    return False
+                if (
+                    binding.source_id != reference.source_id or binding.source_digest != reference.source_digest
+                    or binding.delivery_key_digest != key
+                    or binding.delivery_principal_binding_digest != ingress.delivery_principal_binding.binding_digest
+                    or index.content.get("required_scope_set_digest") != reference.source_scope_digest
+                ):
+                    return False
+                lineage = delivery_origin_lineage_digest(
+                    principal_binding_digest=binding.delivery_principal_binding_digest,
+                    normalized_delivery_id_digest=(
+                        binding.delivery_identity.normalized_delivery_id.normalized_delivery_id_digest
+                    ),
+                )
+            return lineage == reference.origin_lineage_digest
+
+        return tuple(reference for reference in proposal.evidence if is_current(reference))
+
     learned_runtime = LearnedRelationRuntime(
         memory_plane=memory_plane,
         replay_writer=replay_writer,
@@ -832,6 +957,11 @@ def _build_local_level2_runtime_binding(
             owner_principal_id=scope.principal_id,
             owner_agent_id=scope.agent_id,
         ),
+        management_fence_for_scope=current_catalog_management_fence,
+        validate_management_host=validate_catalog_management_host,
+        bound_scope=learned_scope,
+        base_parent_locator=service._catalog_bundle_locator,
+        current_evaluation_sources=current_evaluation_sources if observer is not None else None,
     )
     paired_evaluator = FrozenMentorsPairedEvaluator()
     candidate_service = LearnedRelationCandidateService(
@@ -840,28 +970,26 @@ def _build_local_level2_runtime_binding(
         evaluator=paired_evaluator,
     )
 
+    recovery_proposals: set[str] | None = None
+
     class _InstalledRecurrenceCandidateAdmitter:
         def admit_recurrence_for_observation(
             self, *, group_id: str, principal_id: str, agent_id: str,
         ) -> object:
             if (principal_id, agent_id) != (operator_id, agent_id_outer):
                 raise LocalLevel2AuthorityError("learned recurrence owner is unavailable")
-            return candidate_service.admit_recurrence(
-                group_id=group_id,
-                authenticated=AuthenticatedPrincipalAgent(
-                    principal_id=principal_id, agent_id=agent_id,
-                ),
-            )
+            try:
+                return candidate_service.admit_recurrence(
+                    group_id=group_id,
+                    authenticated=AuthenticatedPrincipalAgent(
+                        principal_id=principal_id, agent_id=agent_id,
+                    ),
+                    recovery_proposals=recovery_proposals,
+                )
+            except (CatalogManagementUnavailable, EvaluationRetryUnavailable):
+                return None
 
     agent_id_outer = agent_id
-    # A missing model/API key leaves observation pending by design.  The
-    # candidate admitter belongs to the service-owned observer runner and is
-    # installed only when that runner (and its durable repositories) exists.
-    # The evaluation/replay path itself remains fully local and no-key.
-    if service._coverage_observer_runner is not None:
-        service.install_eligible_recurrence_candidate_admitter(
-            _InstalledRecurrenceCandidateAdmitter()
-        )
     completed_runtime = HermesCompletedTurnRuntime(
         service=service,
         installation_id=authorization.installation_id,
@@ -872,7 +1000,8 @@ def _build_local_level2_runtime_binding(
         authenticated_agent_id=agent_id,
         authenticated_author_id=operator_id,
         structured_authority_request=(
-            structured_resolver.issued_authority_request() if structured_resolver is not None else None
+            structured_resolver.issued_authority_request()
+            if structured_resolver is not None and not selected_learned_on_open else None
         ),
         structured_tool_is_current=(
             (lambda: authority_is_current() and _structured_tool_is_current(hermes_home))
@@ -891,47 +1020,196 @@ def _build_local_level2_runtime_binding(
                 proposal, cases, binding_digest, corpus_digest, budget_digest, context,
             )
         ),
+    ), artifact_digest=(
+        contract_digest(
+            b"memorii.learned-ontology.mentors-executor.v1",
+            {
+                "symbol": "memorii.integrations.hermes_factory._isolated_mentors_evaluation_cases",
+                "package_root_digest": local_level2_package_root_digest(Path(__file__).resolve().parents[1]),
+            },
+        )
+        if observer is not None else None
     ))
-    learned_scope = AgentLocalCatalogAuthorityScope(
-        principal_id=operator_id, agent_id=agent_id,
-    )
-    # Startup owns the two selection crash windows.  Recovery only retries
+    if service._coverage_observer_runner is not None:
+        service.install_eligible_recurrence_candidate_admitter(_InstalledRecurrenceCandidateAdmitter())
+    refreshed_attempt_id: str | None = None
+
+    def require_current_catalog_management() -> None:
+        if current_catalog_management_fence(learned_scope) is None:
+            raise CatalogManagementUnavailable("local catalog management is unavailable")
+
+    def refresh_learned_catalog() -> bool:
+        nonlocal refreshed_attempt_id
+        pointer = learned_runtime._load_pointer(learned_scope)
+        if pointer is None or structured_resolver is None:
+            return False
+        refreshed_attempt_id = None
+        try:
+            require_current_catalog_management()
+            authority = structured_resolver.issued_authority()
+            service.provision_structured_submission_authority(authority=authority)
+            request = structured_resolver.issued_authority_request()
+        except (OSError, ValueError, ManagedPartitionError, MemoryPlaneCorruptionError,
+                MemoryPlaneRevisionConflictError, StorageAdministrationError):
+            return False
+        if learned_runtime._load_pointer(learned_scope) != pointer:
+            return False
+        completed_runtime._structured_authority_request = request
+        refreshed_attempt_id = pointer.selected_attempt_id
+        return True
+
+    def retry_learned_catalog_refresh() -> bool:
+        require_current_catalog_management()
+        return refresh_learned_catalog()
+
+    def learned_ontology_status() -> dict[str, object]:
+        validate_catalog_management_host()
+        result = {
+            **learned_runtime.status(learned_scope),
+            "catalog_management": catalog_management.status(),
+        }
+        selected_attempt_id = result.get("selected_attempt_id")
+        if isinstance(selected_attempt_id, str):
+            result["refresh_pending"] = (
+                selected_attempt_id != refreshed_attempt_id or not _structured_tool_is_current(hermes_home)
+            )
+        return result
+
+    # Startup owns the two selection crash windows. Recovery retries only
     # immutable retained evidence through the same installed writer root.
     learned_runtime.recover(learned_scope)
+    if (
+        _provision_structured_authority and observer is not None
+        and current_catalog_management_fence(learned_scope) is not None
+    ):
+        recovery_proposals = set()
+        try:
+            candidate_service.recover_rebases(scope=learned_scope)
+            service._provider_ingestion.recover_coverage_observations()
+        finally:
+            recovery_proposals = None
+    if _provision_structured_authority:
+        refresh_learned_catalog()
 
     def activate_learned_candidate(proposal_id: str) -> OntologyActivation:
+        require_current_catalog_management()
         activation = learned_runtime.activate_candidate(
             proposal_id=proposal_id, principal_id=operator_id, agent_id=agent_id,
         )
-        if structured_resolver is None:
-            raise LocalLevel2AuthorityError("local structured tool authority is unavailable")
-        completed_runtime._structured_authority_request = structured_resolver.issued_authority_request()
+        refresh_learned_catalog()
         return activation
 
-    def approve_learned_candidate(proposal_id: str) -> OntologyChangeProposal:
-        return learned_runtime.approve_candidate(
+    def approve_learned_candidate(proposal_id: str) -> OntologyCandidateReceipt:
+        approved = learned_runtime.approve_candidate(
             proposal_id=proposal_id, principal_id=operator_id, agent_id=agent_id,
         )
+        return OntologyCandidateReceipt(proposal_id=approved.proposal_id, lifecycle=approved.lifecycle)
+
+    def review_learned_candidate(proposal_id: str) -> OntologyCandidateReview:
+        return learned_runtime.review_candidate(
+            proposal_id=proposal_id, principal_id=operator_id, agent_id=agent_id,
+            suppression_view=revoked_view.sample_snapshot,
+        )
+
+    def reject_learned_candidate(proposal_id: str) -> Literal["rejected"]:
+        learned_runtime.reject_candidate(
+            proposal_id=proposal_id, principal_id=operator_id, agent_id=agent_id,
+        )
+        return "rejected"
+
+    def prepare_learned_rebase() -> OntologyCandidateReceipt:
+        candidate = learned_runtime.prepare_rebase(
+            catalog_scope=learned_scope, principal_id=operator_id, agent_id=agent_id,
+            evaluator=paired_evaluator,
+        )
+        return OntologyCandidateReceipt(proposal_id=candidate.proposal_id, lifecycle=candidate.lifecycle)
 
     def select_prior_learned_version(target_version_digest: str) -> OntologyActivation:
         """Select a prior version through the installed owner authority."""
+        require_current_catalog_management()
         activation = learned_runtime.select_prior_version(
             catalog_scope=learned_scope,
             target_version_digest=target_version_digest,
             principal_id=operator_id,
             agent_id=agent_id,
         )
-        if structured_resolver is None:
-            raise LocalLevel2AuthorityError("local structured tool authority is unavailable")
-        authority = structured_resolver.issued_authority()
-        service.provision_structured_submission_authority(authority=authority)
-        completed_runtime._structured_authority_request = structured_resolver.issued_authority_request()
+        refresh_learned_catalog()
         return activation
 
+    raw_user_id = getattr(context, "user_id", None)
+    base_scope = CatalogAuthorityScope(schema_version=1, kind="base")
+    stock_opt_in = CatalogReadOptIn(
+        installation_id=authorization.installation_id, storage_root=storage_root,
+        user_id=raw_user_id, agent_id=agent_id, fact_scope=f"user:{operator_id}",
+        rows=(ScopedNamespaceGrantRow(domain=MemoryDomain.SEMANTIC, task_id=project_task_id,
+                                      session_id=None, user_id=operator_id, agent_id=agent_id),),
+        grant_references=(CatalogReadGrantReference(
+            catalog_scope=base_scope,
+            fact_grant_id=_grant_id(authorization.installation_id, operator_id, agent_id, "fact", f"user:{operator_id}"),
+            fact_grant_version=1,
+            catalog_grant_id=_grant_id(authorization.installation_id, operator_id, agent_id, "catalog_visibility", base_scope),
+            catalog_grant_version=1,
+        ),),
+    ) if stock_read else None
+
+    def current_catalog_read_opt_in() -> object:
+        opt_in = getattr(context, "catalog_read_opt_in", None)
+        if stock_read:
+            return stock_opt_in if stock_identity_preexisting and stock_hermes_catalog_read_enabled() else None
+        return opt_in() if callable(opt_in) else opt_in
+
+    def current_catalog_read_session() -> object:
+        try:
+            if (
+                getattr(context, "user_id", None) != raw_user_id
+                or getattr(context, "storage_root", None) != storage_root
+                or (getattr(context, "agent_identity", None) is None and not stock_read)
+                or _canonical_agent_id(getattr(context, "agent_identity", None)) != agent_id
+                or _require_local_cli_context(context) != context_kind
+            ):
+                return None
+        except LocalLevel2AuthorityError:
+            return None
+        session = getattr(context, "catalog_read_session", None)
+        return session() if callable(session) else getattr(context, "session_id", None)
+
+    def catalog_read_installation_is_current() -> bool:
+        if context_kind != "primary" or (raw_user_id is None and not stock_read) or not authority_is_current():
+            return False
+        try:
+            operator = json.loads((storage_root / "local-operator-context.json").read_bytes())
+        except (OSError, ValueError):
+            return False
+        raw_user_digest = sha256(
+            b"memorii.hermes.raw-user-consistency.v1\0" + (raw_user_id.strip() if isinstance(raw_user_id, str) else "").encode("utf-8")
+        ).hexdigest()
+        return (
+            isinstance(operator, dict)
+            and operator.get("schema") == "memorii.hermes.local-operator-context.v1"
+            and operator.get("installation_id") == authorization.installation_id
+            and (not stock_read or operator.get("primary_agent_id") == agent_id)
+            and operator.get("raw_user_consistency_digest") == raw_user_digest
+        )
+
+    catalog_read = bind_catalog_read(
+        service=service,
+        authority=scoped_read_authority,
+        installation_id=authorization.installation_id,
+        storage_root=storage_root,
+        raw_user_id=raw_user_id,
+        authenticated=AuthenticatedPrincipalAgent(principal_id=operator_id, agent_id=agent_id),
+        current_opt_in=current_catalog_read_opt_in,
+        configured=stock_read or getattr(context, "catalog_read_opt_in", None) is not None,
+        current_session=current_catalog_read_session,
+        installation_is_current=catalog_read_installation_is_current,
+        issue_ingress=ingress_resolver.issue,
+        allow_absent_user=stock_read,
+    )
     return HermesProviderRuntimeBinding(
         service=service,
         issue_ingress=ingress_resolver.issue,
         completed_turn_runtime=completed_runtime,
+        catalog_read=catalog_read,
         absent_author_id=operator_id,
         revoke_structured_submission_grant=(
             revoke_current_structured_grant if structured_resolver is not None else None
@@ -940,9 +1218,13 @@ def _build_local_level2_runtime_binding(
         approve_learned_candidate=approve_learned_candidate,
         select_prior_learned_version=select_prior_learned_version,
         learned_ontology_runtime=learned_runtime,
-        learned_ontology_status=lambda: learned_runtime.status(learned_scope),
+        learned_ontology_status=learned_ontology_status,
         issue_origin_receipt=ingress_resolver.issue_origin_receipt,
         issue_forwarding_receipt=ingress_resolver.issue_forwarding_receipt,
+        review_learned_candidate=review_learned_candidate,
+        reject_learned_candidate=reject_learned_candidate,
+        prepare_learned_rebase=prepare_learned_rebase,
+        retry_learned_catalog_refresh=retry_learned_catalog_refresh,
     )
 
 

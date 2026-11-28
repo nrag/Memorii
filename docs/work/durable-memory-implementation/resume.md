@@ -1,5 +1,7 @@
 # Implementation Resume Packet
 
+**Current handoff, November 23, 2026.** Start from the [implementation index](implementation.plan.md#next-action) and its [durable-delivery child WorkPlan](../durable-delivery-implementation/implementation.plan.md). Overall release gates remain in the [release conformance packet](milestones/release-conformance.plan.md). The storage and migration notes below capture an earlier implementation snapshot.
+
 Parent: [implementation index](implementation.plan.md). Status active. Storage-foundation sub-slices 1-3 landed and review-remediated (closure items queued); semantic-ontology sub-slices 1-7 landed with milestone review round 1 reconciled (zero P1/P2, conformance batch applied). Next: legacy-migration packet.
 
 Read AGENTS.md and .agents/PLANS.md, then this packet, [storage foundation](milestones/storage-foundation.plan.md), [bindings](production_entrypoint_bindings.md), [validation](validation.md), [gates](gates.md), [identity/change ledger](identity-and-changes.md) and the approved canonical design referenced in the index. Do not reload prior design review history unless a named contract is disputed.

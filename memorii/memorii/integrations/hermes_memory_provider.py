@@ -15,15 +15,28 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from agent.memory_provider import MemoryProvider  # pyright: ignore[reportMissingImports]
 
 from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedHostIngress
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.semantic_ingestion.catalog_inspection import (
+    CatalogBrowseResponse,
+    CatalogRelationInspectionResponse,
+    StructuredRecallDiagnosisResponse,
+)
 from memorii.core.semantic_ingestion.structured_fact_read import (
     StructuredFactReadRequest,
     StructuredFactReadResponse,
+)
+from memorii.integrations.catalog_read_binding import (
+    CATALOG_READ_TOOL_NAMES,
+    CatalogReadBinding,
+    CatalogReadOptIn,
+    catalog_read_tool_schemas,
+    dispatch_catalog_read,
+    stock_hermes_catalog_read_enabled,
 )
 from memorii.integrations.hermes_provider import HermesMemoryProvider, build_started_hermes_memory_provider
 from memorii.integrations.hermes_runtime_binding import (
@@ -32,6 +45,9 @@ from memorii.integrations.hermes_runtime_binding import (
     HermesOriginReceipt,
     HermesProviderRuntimeBinding,
 )
+
+if TYPE_CHECKING:
+    from memorii.core.semantic_ingestion.learned_relation import OntologyCandidateReceipt, OntologyCandidateReview
 
 _SERVICE_FACTORY_ENTRY_POINT_GROUP = "memorii.hermes.provider_service"
 _FIRST_PARTY_FACTORY_VALUE = "memorii.integrations.hermes_factory:build_local_level2_runtime_binding"
@@ -50,6 +66,9 @@ class HermesProviderServiceContext:
     agent_context: object | None
     agent_workspace: object | None
     parent_session_id: object | None
+    catalog_read_opt_in: CatalogReadOptIn | Callable[[], CatalogReadOptIn | None] | None = None
+    catalog_read_session: Callable[[], str] | None = None
+    stock_catalog_read: bool = False
 
 
 @dataclass(frozen=True)
@@ -76,10 +95,16 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         self._agent_identity: object | None = None
         self._issue_ingress: Callable[[HermesIngressRequest], AuthenticatedHostIngress] | None = None
         self._completed_turn_runtime: object | None = None
+        self._catalog_read: CatalogReadBinding | None = None
+        self._stock_catalog_read = False
         self._absent_author_id = "memorii.hermes.author.absent.v1"
         self._revoke_structured_submission_grant: Callable[[str], None] | None = None
         self._activate_learned_candidate: Callable[[str], object] | None = None
-        self._approve_learned_candidate: Callable[[str], object] | None = None
+        self._approve_learned_candidate: Callable[[str], OntologyCandidateReceipt] | None = None
+        self._review_learned_candidate: Callable[[str], OntologyCandidateReview] | None = None
+        self._reject_learned_candidate: Callable[[str], Literal["rejected"]] | None = None
+        self._prepare_learned_rebase: Callable[[], OntologyCandidateReceipt] | None = None
+        self._retry_learned_catalog_refresh: Callable[[], bool] | None = None
         self._select_prior_learned_version: Callable[[str], object] | None = None
         self._learned_ontology_runtime: object | None = None
         self._learned_ontology_status: Callable[[], object] | None = None
@@ -118,6 +143,14 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         factory, reason = _service_factory_status()
         if factory is None:
             raise RuntimeError(f"Memorii Hermes provider is unavailable: {reason}")
+        stock_read = (
+            kwargs.get("catalog_read_opt_in") is None
+            and stock_hermes_catalog_read_enabled()
+            and all(
+                kwargs.get(key) is None or _optional_text(kwargs[key]) is not None
+                for key in ("user_id", "user_id_alt")
+            )
+        )
         binding = factory(
             HermesProviderServiceContext(
                 storage_root=storage_root,
@@ -131,6 +164,9 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
                 # This is an execution-boundary marker, not user text.  Keep
                 # opaque host values intact so the factory can fail closed.
                 parent_session_id=kwargs.get("parent_session_id"),
+                catalog_read_opt_in=kwargs.get("catalog_read_opt_in"),
+                catalog_read_session=lambda: self._session_id if self._default_user_id == user_id else "",
+                stock_catalog_read=stock_read,
             )
         )
         if type(binding) is not HermesProviderRuntimeBinding:
@@ -145,10 +181,16 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         self._agent_identity = kwargs.get("agent_identity")
         self._issue_ingress = binding.issue_ingress
         self._completed_turn_runtime = binding.completed_turn_runtime
+        self._catalog_read = binding.catalog_read
+        self._stock_catalog_read = stock_read
         self._absent_author_id = binding.absent_author_id
         self._revoke_structured_submission_grant = binding.revoke_structured_submission_grant
         self._activate_learned_candidate = binding.activate_learned_candidate
         self._approve_learned_candidate = binding.approve_learned_candidate
+        self._review_learned_candidate = binding.review_learned_candidate
+        self._reject_learned_candidate = binding.reject_learned_candidate
+        self._prepare_learned_rebase = binding.prepare_learned_rebase
+        self._retry_learned_catalog_refresh = binding.retry_learned_catalog_refresh
         self._select_prior_learned_version = binding.select_prior_learned_version
         self._learned_ontology_runtime = binding.learned_ontology_runtime
         self._learned_ontology_status = binding.learned_ontology_status
@@ -159,13 +201,18 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         runtime = self._completed_turn_runtime
         schemas = getattr(runtime, "get_tool_schemas", None) if runtime is not None else None
         if not callable(schemas):
-            return []
+            return self.get_read_tool_schemas()
         value = schemas()
         if not isinstance(value, list) or not all(type(item) is dict for item in value):
             raise TypeError("Memorii completed-turn runtime returned invalid tool schemas")
-        return value
+        return [*value, *self.get_read_tool_schemas()]
 
     def handle_tool_call(self, tool_name: str, arguments: dict[str, object]) -> object:
+        if tool_name in CATALOG_READ_TOOL_NAMES:
+            result = self.handle_read_tool_call(tool_name, arguments)
+            if self._stock_catalog_read or self._catalog_read is None or not self._catalog_read.configured:
+                return json.dumps(result)
+            return result
         runtime = self._completed_turn_runtime
         handler = getattr(runtime, "handle_tool_call", None) if runtime is not None else None
         if callable(handler):
@@ -179,12 +226,36 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
             raise RuntimeError("learned ontology activation is unavailable")
         return action(proposal_id)
 
-    def approve_learned_candidate(self, proposal_id: str) -> object:
+    def approve_learned_candidate(self, proposal_id: str) -> OntologyCandidateReceipt:
         """Record the signed-in owner's candidate decision."""
         action = self._approve_learned_candidate
         if action is None:
             raise RuntimeError("learned ontology approval is unavailable")
         return action(proposal_id)
+
+    def review_learned_candidate(self, proposal_id: str) -> OntologyCandidateReview:
+        action = self._review_learned_candidate
+        if action is None:
+            raise RuntimeError("learned ontology review is unavailable")
+        return action(proposal_id)
+
+    def reject_learned_candidate(self, proposal_id: str) -> Literal["rejected"]:
+        action = self._reject_learned_candidate
+        if action is None:
+            raise RuntimeError("learned ontology rejection is unavailable")
+        return action(proposal_id)
+
+    def prepare_learned_rebase(self) -> OntologyCandidateReceipt:
+        action = self._prepare_learned_rebase
+        if action is None:
+            raise RuntimeError("learned ontology rebase is unavailable")
+        return action()
+
+    def retry_learned_catalog_refresh(self) -> bool:
+        action = self._retry_learned_catalog_refresh
+        if action is None:
+            raise RuntimeError("learned ontology refresh is unavailable")
+        return action()
 
     def select_prior_learned_version(self, target_version_digest: str) -> object:
         """Roll back through the factory-bound owner and refresh reader authority."""
@@ -209,6 +280,29 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
             authenticated_author_id=self._absent_author_id,
             now=datetime.now(UTC),
         )
+
+    def get_read_tool_schemas(self) -> list[dict[str, object]]:
+        return catalog_read_tool_schemas() if (self._catalog_read is not None and self._catalog_read.configured) or (self._catalog_read is None and stock_hermes_catalog_read_enabled()) else []
+
+    def handle_read_tool_call(self, tool_name: str, arguments: object) -> dict[str, object]:
+        if self._catalog_read is None:
+            return {"status": "unavailable"}
+        return dispatch_catalog_read(self._catalog_read, tool_name, arguments)
+
+    def browse_catalog(self, request: object) -> CatalogBrowseResponse:
+        if self._catalog_read is None:
+            return CatalogBrowseResponse.model_validate({"status": "unavailable"})
+        return self._catalog_read.browse_catalog(request)
+
+    def inspect_catalog_relation(self, request: object) -> CatalogRelationInspectionResponse:
+        if self._catalog_read is None:
+            return CatalogRelationInspectionResponse.model_validate({"status": "unavailable"})
+        return self._catalog_read.inspect_catalog_relation(request)
+
+    def diagnose_structured_recall(self, request: object) -> StructuredRecallDiagnosisResponse:
+        if self._catalog_read is None:
+            return StructuredRecallDiagnosisResponse.model_validate({"status": "unavailable"})
+        return self._catalog_read.diagnose_structured_recall(request)
 
     def read_structured_facts(
         self, request: StructuredFactReadRequest, *, session_id: str = "",
@@ -486,8 +580,18 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
             self._agent_identity = None
             self._issue_ingress = None
             self._completed_turn_runtime = None
+            self._catalog_read = None
             self._absent_author_id = "memorii.hermes.author.absent.v1"
             self._revoke_structured_submission_grant = None
+            self._activate_learned_candidate = None
+            self._approve_learned_candidate = None
+            self._review_learned_candidate = None
+            self._reject_learned_candidate = None
+            self._prepare_learned_rebase = None
+            self._retry_learned_catalog_refresh = None
+            self._select_prior_learned_version = None
+            self._learned_ontology_runtime = None
+            self._learned_ontology_status = None
             self._origin_receipts.clear()
             self._pending_forwarding_receipts.clear()
             self._issue_origin_receipt = None

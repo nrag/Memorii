@@ -13,11 +13,15 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
+import threading
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal, NoReturn
+
+from pydantic import ValidationError
 
 from memorii.core.memory_plane.file_lock import locked_file
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
@@ -33,6 +37,7 @@ from memorii.core.persistence.contracts import (
     GenesisPosition,
     InstallationControlJournalEntry,
     InstallationControlState,
+    InstallationGenerationChangeIntent,
     PartitionRevisionVector,
     RuntimeMaterializationManifest,
     RuntimePublicationIntent,
@@ -42,12 +47,34 @@ from memorii.core.persistence.contracts import (
     empty_chain_commitment,
     empty_pointer_set_digest,
 )
-from memorii.core.persistence.key_owner import LocalSigningKeyOwner
+from memorii.core.persistence.key_owner import (
+    OPERATION_ORIGIN_SIGNATURE_PURPOSE,
+    PARTITION_GENERATION_SIGNATURE_PURPOSE,
+    LocalSigningKeyOwner,
+)
+from memorii.core.persistence.runtime_contracts import OperationOrigin, OperationOriginCoordinate
+from memorii.core.persistence.runtime_journal import RuntimeJournalError, verify_runtime_history
+from memorii.core.storage_administration.generation_selection import (
+    PartitionGenerationSelector,
+    read_partition_generation_selector,
+    selected_partition_path,
+)
 from memorii.stores.sqlite.control import ControlDatabase, ControlJournalChainError
-from memorii.stores.sqlite.partition import PartitionDataRepository
+from memorii.stores.sqlite.partition import PartitionDataRepository, VerificationCookie
+from memorii.stores.sqlite.private_storage import (
+    PrivateStorageError,
+    ensure_private_directory,
+    prepare_installation_root,
+    require_private_directory,
+    require_private_file,
+)
 
 _CONTROL_FORMAT_VERSION = 1
 DEFAULT_SIGNER_KEY_ID = "installation-control"
+REPLACEMENT_RECOVERY_QUARANTINE = "replacement recovery pending independent seal"
+MODE_RECOVERY_QUARANTINE = "mode recovery pending independent seal"
+MODE_RECOVERY_DIRECTORY = "mode-recovery"
+MODE_RECOVERY_PENDING = "pending.json"
 _UNINITIALIZED = "uninitialized"
 _KNOWN_LAYOUT = frozenset(
     {"control", "partition", ".init.lock", ".publication.lock"}
@@ -64,6 +91,18 @@ class InstallationQuarantinedError(StorageAdministrationError):
 
 class InstallationIntegrityError(StorageAdministrationError):
     """Verification failed; no task-derived output may be released."""
+
+
+class InstallationPermissionsError(InstallationIntegrityError):
+    """Installation storage is not private to its filesystem owner."""
+
+
+class _RecoveryPublicationMismatch(InstallationIntegrityError):
+    """The selected partition disagrees with the exact intent under recovery."""
+
+    def __init__(self, message: str, tuple_digest: str | None) -> None:
+        super().__init__(message)
+        self.tuple_digest = tuple_digest
 
 
 class InitializationNotPossibleError(StorageAdministrationError):
@@ -111,15 +150,32 @@ class StorageAdministrationService:
         *,
         signer_key_id: str = DEFAULT_SIGNER_KEY_ID,
         writer_enrollment=None,
+        use_registered_writers: bool = False,
     ) -> None:
         self._root = Path(installation_root)
         self._signer_key_id = signer_key_id
         self._writer_enrollment = writer_enrollment
-        self._signing = LocalSigningKeyOwner(self._root / "control" / "keys")
-        self._control = ControlDatabase(
-            self._root / "control" / "control.sqlite3",
-            journal_verifier=self._verify_journal_signature,
-        )
+        control_root = self._root / "control"
+        try:
+            prepare_installation_root(self._root)
+            require_private_file(self._root / ".init.lock", allow_missing=True)
+            require_private_file(self._root / ".publication.lock", allow_missing=True)
+            ensure_private_directory(control_root)
+            ensure_private_directory(control_root / "keys")
+            self._signing = LocalSigningKeyOwner(control_root / "keys")
+            self._control = ControlDatabase(
+                control_root / "control.sqlite3",
+                journal_verifier=self._verify_journal_signature,
+            )
+            if use_registered_writers:
+                from memorii.core.storage_administration.writer_enrollment import WriterEnrollmentRegistry
+
+                ensure_private_directory(control_root / "writers")
+                self._writer_enrollment = WriterEnrollmentRegistry(control_root / "writers")
+        except (PrivateStorageError, NotADirectoryError) as exc:
+            raise InstallationPermissionsError(
+                "unsafe installation permissions; run memorii-operator repair-permissions"
+            ) from exc
         try:
             self._control.validate_journal()
         except ControlJournalChainError as exc:
@@ -127,7 +183,12 @@ class StorageAdministrationService:
                 f"control journal validation failed: {exc}"
             ) from exc
         self._partition: PartitionDataRepository | None = None
-        self._verified_tuples: dict[str, bool] = {}
+        self._partition_recovery = threading.local()
+        self._verified_tuples: dict[str, VerificationCookie] = {}
+        opened_state = self._control.read_control_state()
+        self._replacement_activation_pending = (
+            opened_state is not None and opened_state.quarantined_reason == REPLACEMENT_RECOVERY_QUARANTINE
+        )
         # Wired by the governance enforcement entry: re-emits one journal
         # entry's revocation directive. Until wired, pending enforcements
         # are reported (never silently dropped) by the drain.
@@ -208,12 +269,145 @@ class StorageAdministrationService:
         return self._root / "control" / "control.sqlite3"
 
     def partition_path(self) -> Path:
-        return self._root / "partition" / "partition.sqlite3"
+        self._require_replacement_activation()
+        path, _ = self._active_partition_selection()
+        return path
 
     def partition(self) -> PartitionDataRepository:
+        self._require_replacement_activation()
         if self._partition is None:
-            self._partition = PartitionDataRepository(self.partition_path())
+            path, selected = self._active_partition_selection()
+            identity = self._partition_file_identity(path) if path.exists() else None
+
+            def reject_publication(repository_id: str, row: sqlite3.Row | None, message: str) -> NoReturn:
+                recovering = getattr(self._partition_recovery, "intent", None)
+                if recovering is not None and recovering == self._control.read_pending_intent(repository_id):
+                    digest = None if row is None else str(row["tuple_digest"])
+                    raise _RecoveryPublicationMismatch(message, digest)
+                raise InstallationIntegrityError(message)
+
+            def require_current_generation(connection: sqlite3.Connection) -> None:
+                self._require_replacement_activation()
+                active_path, active = self._active_partition_selection()
+                if path != active_path or self._partition_file_identity(path) != identity:
+                    raise StorageAdministrationError("unavailable: partition selection changed; reopen the installation")
+                named_selection = active is not None
+                if active is None:
+                    state = self._control.read_control_state()
+                    if state is None:
+                        return
+                    active = self._control.read_publication_state(f"{state.installation_id}:default-partition")
+                if active is None:
+                    return
+                row = partition.read_publication_row(connection)
+                if row is None or row["generation_id"] != active.data_generation_id:
+                    reject_publication(
+                        active.repository_id, row, "partition generation does not match finalized control authority",
+                    )
+                active_digest = active.payload_digest()
+                correct_tuple = row["tuple_digest"] == active_digest
+                if named_selection or not correct_tuple:
+                    pending = self._control.read_pending_intent(active.repository_id)
+                    if pending is not None and pending != getattr(self._partition_recovery, "intent", None):
+                        raise InstallationIntegrityError("selected partition requires pending publication recovery")
+                else:
+                    pending = None
+                if not correct_tuple or (named_selection and not self._matches_signed_publication(row, active)):
+                    if (
+                        pending is None
+                        or pending.expected_old_discriminator != active_digest
+                        or row["tuple_digest"] != pending.candidate_state.payload_digest()
+                        or not self._matches_signed_publication(row, pending.candidate_state)
+                    ):
+                        reject_publication(
+                            active.repository_id, row, "selected partition does not match the finalized publication",
+                        )
+                    return
+                if not named_selection:
+                    return
+                cookie = partition.verification_cookie(connection)
+                if self._verified_tuples.get(active_digest) != cookie:
+                    if not self._matches_materialization(connection, active, partition=partition, cookie=cookie):
+                        reject_publication(
+                            active.repository_id, row, "selected partition materializations are not verified",
+                        )
+                    self._verified_tuples = {active_digest: cookie}
+
+            try:
+                partition = PartitionDataRepository(
+                    path, require_existing=selected is not None, transaction_guard=require_current_generation,
+                    protected_storage_root=self._root / "partition",
+                )
+            except (PrivateStorageError, NotADirectoryError) as exc:
+                raise InstallationPermissionsError(
+                    "unsafe installation permissions; run memorii-operator repair-permissions"
+                ) from exc
+            try:
+                if identity is None:
+                    identity = self._partition_file_identity(path)
+            except StorageAdministrationError:
+                partition.close()
+                raise
+            self._partition = partition
         return self._partition
+
+    def _active_partition_selection(self) -> tuple[Path, RuntimePublicationState | None]:
+        """Resolve only a selector signed for the currently finalized generation."""
+        partition_root = self._root / "partition"
+        try:
+            current = self._control.read_control_state()
+            if current is not None:
+                if current.quarantined_reason == MODE_RECOVERY_QUARANTINE:
+                    raise InstallationQuarantinedError(MODE_RECOVERY_QUARANTINE)
+                change = self._control.read_generation_change(f"{current.installation_id}:default-partition")
+                if change is not None and change.phase == "prepared":
+                    raise InstallationIntegrityError("partition generation change requires recovery")
+            selector = read_partition_generation_selector(self._root / "control")
+            if selector is None:
+                return partition_root / "partition.sqlite3", None
+            state = self._require_operational()
+            repository_id = f"{state.installation_id}:default-partition"
+            finalized = self._control.read_publication_state(repository_id)
+            if (
+                finalized is None
+                or finalized.installation_id != state.installation_id
+                or finalized.repository_id != repository_id
+                or finalized.eligibility_epoch != state.eligibility_epoch
+                or not self._selector_matches(selector, finalized)
+                or not self._signing.verify(
+                    self._signer_key_id, RUNTIME_PUBLICATION_SIGNATURE_PURPOSE,
+                    finalized.payload_digest(), finalized.signature,
+                )
+            ):
+                raise InstallationIntegrityError("partition selector does not match finalized control authority")
+            require_private_directory(partition_root)
+            require_private_directory(partition_root / "generations")
+            return selected_partition_path(partition_root, selector.generation_id), finalized
+        except PermissionError as exc:
+            raise InstallationPermissionsError(
+                "unsafe installation permissions; run memorii-operator repair-permissions"
+            ) from exc
+        except (OSError, ValueError) as exc:
+            raise InstallationIntegrityError("partition generation selection is unavailable") from exc
+
+    def _selector_matches(self, selector: PartitionGenerationSelector, publication: RuntimePublicationState) -> bool:
+        return (
+            selector.installation_id == publication.installation_id
+            and selector.repository_id == publication.repository_id
+            and selector.generation_id == publication.data_generation_id
+            and self._signing.verify(
+                self._signer_key_id, PARTITION_GENERATION_SIGNATURE_PURPOSE,
+                selector.unsigned_digest(), selector.signature,
+            )
+        )
+
+    @staticmethod
+    def _partition_file_identity(path: Path) -> tuple[int, int]:
+        try:
+            info = path.stat()
+        except OSError as exc:
+            raise StorageAdministrationError("unavailable: partition database identity cannot be read") from exc
+        return info.st_dev, info.st_ino
 
     def memory_plane_store(self) -> SqliteMemoryPlaneStore:
         return SqliteMemoryPlaneStore(self.partition())
@@ -239,10 +433,32 @@ class StorageAdministrationService:
         return state
 
     def _require_operational(self) -> InstallationControlState:
+        self._require_replacement_activation()
         state = self._control_state()
         if state.quarantined_reason is not None:
             raise InstallationQuarantinedError(state.quarantined_reason)
         return state
+
+    def _require_replacement_activation(self) -> None:
+        # The old control model understands quarantine. Keep direct partition
+        # access closed as well as normal verified factory and serving reads.
+        if self._replacement_activation_pending:
+            raise InstallationQuarantinedError(REPLACEMENT_RECOVERY_QUARANTINE)
+        if self.mode_recovery_pending():
+            raise InstallationQuarantinedError(MODE_RECOVERY_QUARANTINE)
+
+    def mode_recovery_pending(self, state: InstallationControlState | None = None) -> bool:
+        """Check the pre-effect guard and the persisted local quarantine."""
+        if state is not None and state.quarantined_reason == MODE_RECOVERY_QUARANTINE:
+            return True
+        mode_recovery = self._root / "control" / MODE_RECOVERY_DIRECTORY
+        if mode_recovery.exists() or mode_recovery.is_symlink():
+            pending = mode_recovery / MODE_RECOVERY_PENDING
+            if pending.exists() or pending.is_symlink():
+                return True
+            current = self._control.read_control_state() if state is None else state
+            return current is not None and current.quarantined_reason == MODE_RECOVERY_QUARANTINE
+        return False
 
     def _repository_id(self) -> str:
         return f"{self._control_state().installation_id}:default-partition"
@@ -279,11 +495,8 @@ class StorageAdministrationService:
 
     def initialize(self) -> InitializationReceipt:
         """Owner-authorized fresh installation on an absent or safe root."""
-        if self._root.exists():
-            self._reject_foreign_root_content()
-        else:
-            self._root.mkdir(parents=True)
-        with locked_file(self._root / ".init.lock", exclusive=True):
+        self._reject_foreign_root_content()
+        with locked_file(self._root / ".init.lock", exclusive=True, private=True):
             existing_state = self._control.read_control_state()
             if existing_state is not None:
                 return self._resume_or_conflict(existing_state)
@@ -593,7 +806,6 @@ class StorageAdministrationService:
                 after_digest=canonical_json_digest({"receipt": receipt_digest}),
             ),
         )
-        self._verified_tuples[candidate.payload_digest()] = True
         return InitializationReceipt(
             installation_id=candidate.installation_id,
             repository_id=repository_id,
@@ -621,6 +833,7 @@ class StorageAdministrationService:
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
         authorization: MemoryPlaneWriteAuthorization | None = None,
         transaction_precondition: Callable[[], None] | None = None,
+        validate_authority: Callable[[], None] | None = None,
         operation_binding: str = "memory_plane_batch",
         derived_semantic_index: object | None = None,
         derived_ontology_index: object | None = None,
@@ -634,6 +847,10 @@ class StorageAdministrationService:
         state; each replaces its derived index generation inside the same
         publication transaction so the signed manifest covers the records
         and the derived rows together.
+
+        `validate_authority` runs after verification under the publication
+        fence, before the write transaction, so it may read the partition.
+        The fence stays held through publication.
         """
         state = self._require_operational()
         if state.mode == "read_only" and operation_binding != "migrate":
@@ -662,44 +879,45 @@ class StorageAdministrationService:
                 raise StorageAdministrationError("installation is not initialized")
             # Anchor the publisher on verified state: publication extends the
             # last signed tuple, never unverified rows (anti-laundering rule).
-            self._verified_snapshot_locked(state)
+            self._verified_snapshot_locked()
+            state = self._require_operational()
+            if validate_authority is not None:
+                validate_authority()
             partition = self.partition()
             with partition.manual_write_transaction() as handle:
                 connection = handle.connection
-                pre_state = partition.read_publication_row(connection)
-                if pre_state is None or str(pre_state["tuple_digest"]) != (
-                    finalized.payload_digest()
-                ):
-                    raise InstallationIntegrityError(
-                        "partition pre-state does not match the finalized control tuple"
-                    )
-                memory_store.apply_batch_in_transaction(
-                    connection,
-                    records,
-                    expected_revision=expected_revision,
-                    expected_write_revision=expected_write_revision,
-                    preconditions=preconditions,
-                    authorization=authorization,
-                    transaction_precondition=transaction_precondition,
-                )
-                if derived_semantic_index is not None:
-                    index_write_revision, index_data_revision = (
-                        partition.read_revision_state(connection)
-                    )
-                    partition.replace_derived_semantic_index(
+                self._require_materialization_base(connection, finalized)
+                with partition.capture_materialization(connection, finalized.manifest_digest) as capture:
+                    memory_store.apply_batch_in_transaction(
                         connection,
-                        derived_semantic_index,
-                        write_revision=index_write_revision,
-                        data_revision=index_data_revision,
+                        records,
+                        expected_revision=expected_revision,
+                        expected_write_revision=expected_write_revision,
+                        preconditions=preconditions,
+                        authorization=authorization,
+                        transaction_precondition=transaction_precondition,
+                        verified_partition=True,
                     )
-                if derived_ontology_index is not None:
-                    partition.replace_derived_ontology_index(
-                        connection, derived_ontology_index
-                    )
+                    if derived_semantic_index is not None:
+                        index_write_revision, index_data_revision = (
+                            partition.read_revision_state(connection)
+                        )
+                        partition.replace_derived_semantic_index(
+                            connection,
+                            derived_semantic_index,
+                            write_revision=index_write_revision,
+                            data_revision=index_data_revision,
+                        )
+                    if derived_ontology_index is not None:
+                        partition.replace_derived_ontology_index(
+                            connection, derived_ontology_index
+                        )
+                forest = None if capture is None else capture.result
                 candidate = self._candidate_from_transaction(
                     connection,
                     generation_id=finalized.data_generation_id,
                     epoch=self._effective_epoch(state),
+                    manifest=None if forest is None else forest.manifest,
                 )
                 partition.write_publication_row(
                     connection,
@@ -729,17 +947,21 @@ class StorageAdministrationService:
                         after_digest=candidate.payload_digest(),
                     ),
                 )
+                cookie = partition.verification_cookie(connection)
                 handle.commit()
-            self._finalize_publication(candidate)
-            self._control.write_intent(
-                intent.model_copy(update={"phase": "finalized"}),
-                self._journal_entry(
-                    operation="publication_finalized",
-                    before_digest=finalized.payload_digest(),
-                    after_digest=candidate.payload_digest(),
-                ),
-            )
-            self._verified_tuples[candidate.payload_digest()] = True
+                # Partition readers must wait for the matching control state and terminal intent.
+                self._finalize_publication(candidate)
+                self._control.write_intent(
+                    intent.model_copy(update={"phase": "finalized"}),
+                    self._journal_entry(
+                        operation="publication_finalized",
+                        before_digest=finalized.payload_digest(),
+                        after_digest=candidate.payload_digest(),
+                    ),
+                )
+                if forest is not None:
+                    partition.cache_manifest_accumulator(cookie, forest)
+                self._verified_tuples = {candidate.payload_digest(): cookie}
             return PublicationOutcome(
                 ordinal=candidate.vector.partition_ordinal,
                 write_revision=candidate.vector.memory_write_revision,
@@ -749,15 +971,41 @@ class StorageAdministrationService:
 
     def resolve_pending_publication(self) -> Resolution:
         """Recover a prepared intent: exact-old aborts, exact-new finalizes."""
+        self._require_replacement_activation()
         repository_id = self._repository_id()
+        change = self._control.read_generation_change(repository_id)
+        if change is not None and change.phase == "prepared":
+            return self._recover_generation_change(change)
         intent = self._control.read_pending_intent(repository_id)
         if intent is None:
             return Resolution(disposition="clean", tuple_digest=None)
         partition = self.partition()
-        with partition.transaction(write=False) as connection:
-            row = partition.read_publication_row(connection)
-        data_digest = None if row is None else str(row["tuple_digest"])
         candidate_digest = intent.candidate_state.payload_digest()
+        self._partition_recovery.intent = intent
+        try:
+            with partition.transaction(write=False) as connection:
+                row = partition.read_publication_row(connection)
+                data_digest = None if row is None else str(row["tuple_digest"])
+                if data_digest in (
+                    candidate_digest, intent.expected_old_discriminator,
+                ) and partition.supports_runtime_history(connection):
+                    expected = (
+                        intent.candidate_state if data_digest == candidate_digest
+                        else self._control.read_publication_state(repository_id)
+                    )
+                    if (
+                        row is None or expected is None
+                        or expected.payload_digest() != data_digest
+                        or not self._matches_signed_publication(row, expected)
+                        or not self._matches_materialization(connection, expected)
+                    ):
+                        self._quarantine(intent)
+                        return Resolution(disposition="quarantined", tuple_digest=data_digest)
+        except _RecoveryPublicationMismatch as exc:
+            self._quarantine(intent)
+            return Resolution(disposition="quarantined", tuple_digest=exc.tuple_digest)
+        finally:
+            self._partition_recovery.intent = None
         if intent.operation_binding == "migrate" and data_digest is None:
             # Exact legacy state: adoption recorded, no tuple published.
             # Abort the marker intent and retain migration-only control so
@@ -799,6 +1047,59 @@ class StorageAdministrationService:
         self._quarantine(intent)
         return Resolution(disposition="quarantined", tuple_digest=data_digest)
 
+    def _recover_generation_change(self, intent: InstallationGenerationChangeIntent) -> Resolution:
+        """Resolve the cutover from its authenticated physical selector and exact SQLite tuple."""
+        partition_root = self._root / "partition"
+        old, new = intent.old_publication, intent.candidate_publication
+        publication = None
+        phase: Literal["aborted", "finalized", "quarantined"] = "quarantined"
+        try:
+            selector = read_partition_generation_selector(self._root / "control")
+            if selector is None and not intent.old_named_selector:
+                default_path = partition_root / "partition.sqlite3"
+                if not partition_root.is_symlink() and not default_path.is_symlink():
+                    publication, path = old, default_path
+            elif selector is not None:
+                if self._selector_matches(selector, new):
+                    publication = new
+                elif intent.old_named_selector and self._selector_matches(selector, old):
+                    publication = old
+                if publication is not None:
+                    path = selected_partition_path(partition_root, publication.data_generation_id)
+                    require_private_directory(partition_root / "generations")
+            if publication is not None:
+                require_private_directory(partition_root)
+                with PartitionDataRepository(
+                    path, require_existing=True, protected_storage_root=partition_root,
+                ) as partition, partition.transaction(
+                    write=False,
+                ) as connection:
+                    row = partition.read_publication_row(connection)
+                    if (
+                        row is not None and row["tuple_digest"] == publication.payload_digest()
+                        and self._matches_signed_publication(row, publication)
+                        and self._matches_materialization(connection, publication, partition=partition)
+                    ):
+                        phase = "aborted" if publication == old else "finalized"
+        except PermissionError as exc:
+            raise InstallationPermissionsError(
+                "unsafe installation permissions; run memorii-operator repair-permissions"
+            ) from exc
+        except (OSError, ValueError, sqlite3.DatabaseError):
+            # The selector or its chosen bytes did not authenticate either state.
+            publication = None
+        terminal = intent.model_copy(update={"phase": phase})
+        self._control.write_generation_change(
+            terminal,
+            self._journal_entry(
+                operation=f"generation_change_{phase}",
+                before_digest=intent.binding_digest(),
+                after_digest=terminal.binding_digest(),
+            ),
+        )
+        selected_digest = None if publication is None or phase == "quarantined" else publication.payload_digest()
+        return Resolution(disposition=phase, tuple_digest=selected_digest)
+
     def acquire_verified_snapshot(self) -> PartitionVerificationSnapshot:
         """Tier A plus Tier B verification of the released partition state.
 
@@ -807,17 +1108,73 @@ class StorageAdministrationService:
         concurrent publisher can never produce a torn old-control/new-data
         view; readers see one coherent finalized tuple.
         """
-        state = self._require_operational()
         with self._publication_fence():
-            return self._verified_snapshot_locked(state)
+            return self._verified_snapshot_locked()
 
-    def _verified_snapshot_locked(
-        self, state: InstallationControlState
-    ) -> PartitionVerificationSnapshot:
+    @contextmanager
+    def verified_operation_context(
+        self,
+    ) -> Iterator[tuple[InstallationControlState, RuntimePublicationState]]:
+        """Hold the publication fence through origin preparation or receipt release."""
+        with self._publication_fence():
+            self.resolve_pending_publication()
+            state = self._require_operational()
+            snapshot = self._verified_snapshot_locked()
+            finalized = self._control.read_publication_state(self._repository_id())
+            if finalized is None or finalized.payload_digest() != snapshot.tuple_digest:
+                raise InstallationIntegrityError("verified operation tuple is missing")
+            yield state, finalized
+
+    def current_publication_in_fence(self) -> tuple[InstallationControlState, RuntimePublicationState]:
+        """Read authority coordinates from a publication fence already held by the caller."""
+        state = self._require_operational()
+        finalized = self._control.read_publication_state(self._repository_id())
+        if finalized is None:
+            raise InstallationIntegrityError("current publication tuple is missing")
+        return state, finalized
+
+    @contextmanager
+    def publication_release_context(self) -> Iterator[tuple[InstallationControlState, RuntimePublicationState]]:
+        """Pin current authority for one nonblocking release of already verified bytes."""
+        with self._publication_fence(blocking=False):
+            state, finalized = self.current_publication_in_fence()
+            change = self._control.read_generation_change(finalized.repository_id)
+            if (
+                (change is not None and change.phase == "prepared")
+                or self._control.read_pending_intent(finalized.repository_id) is not None
+            ):
+                raise StorageAdministrationError("publication recovery must finish before release")
+            yield state, finalized
+
+    def sign_operation_origin(self, coordinate: OperationOriginCoordinate) -> OperationOrigin:
+        """Sign a resolved operation coordinate using the installation key owner."""
+        return OperationOrigin(
+            coordinate=coordinate,
+            signature=self._signing.sign(
+                self._signer_key_id,
+                OPERATION_ORIGIN_SIGNATURE_PURPOSE,
+                coordinate.signing_digest(),
+            ),
+        )
+
+    def verify_operation_origin(self, proof: OperationOrigin) -> bool:
+        """Authenticate origin with the configured installation key and purpose."""
+        try:
+            return self._signing.verify(
+                self._signer_key_id,
+                OPERATION_ORIGIN_SIGNATURE_PURPOSE,
+                proof.coordinate.signing_digest(),
+                proof.signature,
+            )
+        except (PermissionError, ValueError):
+            return False
+
+    def _verified_snapshot_locked(self) -> PartitionVerificationSnapshot:
         repository_id = self._repository_id()
         resolution = self.resolve_pending_publication()
         if resolution.disposition == "quarantined":
             raise InstallationQuarantinedError("pending publication quarantined")
+        state = self._require_operational()
         finalized = self._control.read_publication_state(repository_id)
         if finalized is None:
             raise StorageAdministrationError("installation is not initialized")
@@ -828,22 +1185,24 @@ class StorageAdministrationService:
         partition = self.partition()
         manifest_mismatch = False
         with partition.transaction(write=False) as connection:
+            cookie = partition.verification_cookie(connection)
             row = partition.read_publication_row(connection)
             if row is None or str(row["tuple_digest"]) != finalized.payload_digest():
                 raise InstallationIntegrityError(
                     "partition data does not match the finalized control tuple"
                 )
-            if not self._verified_tuples.get(finalized.payload_digest()):
-                entries = partition.compute_materialization_manifest(connection)
-                manifest = RuntimeMaterializationManifest(catalogs=entries)
-                if manifest.digest() != finalized.manifest_digest:
-                    manifest_mismatch = True
+            if partition.supports_runtime_history(connection) and not self._matches_signed_publication(
+                row, finalized,
+            ):
+                raise InstallationIntegrityError("partition metadata does not match the signed publication")
+            if self._verified_tuples.get(finalized.payload_digest()) != cookie:
+                manifest_mismatch = not self._matches_materialization(connection, finalized, cookie=cookie)
         if manifest_mismatch:
             self._quarantine_manifest_mismatch(finalized)
             raise InstallationIntegrityError(
                 "materialization manifest does not match the signed tuple"
             )
-        self._verified_tuples[finalized.payload_digest()] = True
+        self._verified_tuples = {finalized.payload_digest(): cookie}
         return PartitionVerificationSnapshot(
             tuple_digest=finalized.payload_digest(),
             ordinal=finalized.vector.partition_ordinal,
@@ -851,11 +1210,88 @@ class StorageAdministrationService:
             vector=finalized.vector,
         )
 
+    def _matches_signed_publication(self, row: sqlite3.Row, finalized: RuntimePublicationState) -> bool:
+        try:
+            return (
+                row["generation_id"] == finalized.data_generation_id
+                and row["position_kind"] == finalized.position.kind
+                and row["position_sequence"] == _position_sequence(finalized)
+                and row["position_digest"] == _position_digest(finalized)
+                and row["ordinal"] == finalized.vector.partition_ordinal
+                and row["manifest_digest"] == finalized.manifest_digest
+                and PartitionRevisionVector.model_validate_json(row["vector_json"]) == finalized.vector
+                and self._signing.verify(
+                    self._signer_key_id, RUNTIME_PUBLICATION_SIGNATURE_PURPOSE,
+                    finalized.payload_digest(), finalized.signature,
+                )
+            )
+        except (PermissionError, ValidationError):
+            return False
+
+    def _matches_materialization(
+        self, connection: sqlite3.Connection, finalized: RuntimePublicationState,
+        *, partition: PartitionDataRepository | None = None, cookie: VerificationCookie | None = None,
+    ) -> bool:
+        try:
+            if partition is None:
+                partition = self.partition()
+            if partition.supports_runtime_history(connection) and partition.read_revision_state(connection) != (
+                finalized.vector.memory_write_revision, finalized.vector.memory_data_revision,
+            ):
+                return False
+            forest = partition.rebuild_manifest_accumulator(connection)
+            manifest = (
+                forest.manifest if forest is not None else RuntimeMaterializationManifest(
+                    catalogs=partition.compute_materialization_manifest(connection),
+                )
+            )
+            if manifest.digest() != finalized.manifest_digest:
+                return False
+            verify_runtime_history(
+                connection,
+                finalized=finalized,
+                verify=lambda purpose, digest, signature: self._signing.verify(
+                    self._signer_key_id, purpose, digest, signature,
+                ),
+                checkpoint_signer_key_id=self._signer_key_id,
+                checkpoint_signer_fingerprint=(
+                    self._signing.public_key_fingerprint(self._signer_key_id)
+                    if finalized.checkpoint_digest is not None else None
+                ),
+            )
+            if cookie is not None:
+                if cookie != partition.verification_cookie(connection):
+                    return False
+                if forest is not None:
+                    partition.cache_manifest_accumulator(cookie, forest)
+        except (PermissionError, RuntimeJournalError, ValueError, sqlite3.DatabaseError):
+            return False
+        return True
+
+    def _require_materialization_base(
+        self, connection: sqlite3.Connection, finalized: RuntimePublicationState,
+    ) -> None:
+        """Bind the protected write-side cache inside the SQLite write lock."""
+        partition = self.partition()
+        row = partition.read_publication_row(connection)
+        if (
+            row is None or row["tuple_digest"] != finalized.payload_digest()
+            or (partition.supports_runtime_history(connection) and not self._matches_signed_publication(row, finalized))
+        ):
+            raise InstallationIntegrityError("partition pre-state does not match the finalized control tuple")
+        cookie = partition.verification_cookie(connection)
+        cache_matches = (
+            self._verified_tuples.get(finalized.payload_digest()) == cookie
+            and partition.has_verified_manifest_base(connection, finalized.manifest_digest)
+        )
+        if not cache_matches and not self._matches_materialization(connection, finalized, cookie=cookie):
+            raise InstallationIntegrityError("materialization base changed before publication")
+
     # --- internal ------------------------------------------------------
 
     @contextmanager
-    def _publication_fence(self):
-        with locked_file(self._root / ".publication.lock", exclusive=True):
+    def _publication_fence(self, *, blocking: bool = True):
+        with locked_file(self._root / ".publication.lock", exclusive=True, private=True, blocking=blocking):
             yield
 
     def _ensure_signing_key(self) -> str:
@@ -877,22 +1313,27 @@ class StorageAdministrationService:
         *,
         generation_id: str,
         epoch: int,
+        manifest: RuntimeMaterializationManifest | None = None,
     ) -> RuntimePublicationState:
         partition = self.partition()
         row = partition.read_publication_row(connection)
         prior_ordinal = 0 if row is None else int(row["ordinal"])
-        entries = partition.compute_materialization_manifest(connection)
-        manifest = RuntimeMaterializationManifest(catalogs=entries)
+        if manifest is None:
+            manifest = RuntimeMaterializationManifest(catalogs=partition.compute_materialization_manifest(connection))
         write_revision, data_revision = partition.read_revision_state(connection)
         state = self._control_state()
+        previous = self._control.read_publication_state(self._repository_id()) if row is not None else None
         vector = PartitionRevisionVector(
             partition_ordinal=prior_ordinal + 1,
-            runtime_position=GenesisPosition(),
+            runtime_position=GenesisPosition() if previous is None else previous.vector.runtime_position,
             memory_write_revision=write_revision,
             memory_data_revision=data_revision,
-            semantic_position=GenesisPosition(),
-            ontology_pointer_digest=empty_pointer_set_digest(),
+            semantic_position=GenesisPosition() if previous is None else previous.vector.semantic_position,
+            ontology_pointer_digest=(
+                empty_pointer_set_digest() if previous is None else previous.vector.ontology_pointer_digest
+            ),
         )
+        trust_digest = self._trust_registry_digest()
         unsigned = RuntimePublicationState(
             installation_id=state.installation_id,
             repository_id=self._repository_id(),
@@ -901,9 +1342,13 @@ class StorageAdministrationService:
                 sequence=prior_ordinal + 1, digest=manifest.digest()
             ),
             manifest_digest=manifest.digest(),
-            trust_registry_digest=self._trust_registry_digest(),
+            trust_registry_digest=trust_digest,
             eligibility_epoch=epoch,
             vector=vector,
+            runtime_history_ancestry=() if previous is None else previous.runtime_history_ancestry,
+            checkpoint_digest=(
+                previous.checkpoint_digest if previous is not None and previous.trust_registry_digest == trust_digest else None
+            ),
             signature="0" * 64,
         )
         return self._sign_state(unsigned)
@@ -1000,8 +1445,9 @@ class StorageAdministrationService:
         operation: str,
         before_digest: str | None = None,
         after_digest: str | None = None,
+        position: tuple[int, str] | None = None,
     ) -> InstallationControlJournalEntry:
-        revision, prior_digest = self._control.next_journal_position()
+        revision, prior_digest = self._control.next_journal_position() if position is None else position
         unsigned = InstallationControlJournalEntry(
             revision=revision,
             prior_digest=prior_digest,

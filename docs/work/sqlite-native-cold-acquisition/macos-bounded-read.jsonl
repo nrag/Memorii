@@ -1,0 +1,10 @@
+{"acquisition_runner_digest": "6bff25b3b94c86e050ad5d73d01cf6796d3315fc00e3039c350bc130997d43ca", "database_bytes": 5808439296, "page_bytes": 16384, "platform": "macOS-27.0.1-arm64-arm-64bit", "python": "3.12.16", "runner_digest": "6230721f18b847261806c0db6b3a3891a82c5b6d690dfb591107e00bec611d1a", "sqlite_version": "3.54.1", "type": "identity", "wheel_digest": "f896dfc2f80d2aad923f7bf6d598b7d59365c2325b2a2831b4005a2ee1af1843"}
+{"resident_pages": 0, "sample_index": 0, "total_pages": 354519, "type": "residency_before"}
+{"checkpoint_selected": true, "elapsed_ns": 6692801959, "manifest_ns": 5134291167, "raw_payload_verification_ns": 2599169083, "replay_ns": 1521124500, "tuple_digest": "b7a7b8690ef9b918a178e84a2948ce2f8a90b9af9a199a19b90f7836005eb83c", "type": "acquisition"}
+{"resident_pages": 339294, "sample_index": 0, "total_pages": 354519, "type": "residency_after"}
+{"resident_pages": 0, "sample_index": 1, "total_pages": 354519, "type": "residency_before"}
+{"checkpoint_selected": true, "elapsed_ns": 6580766083, "manifest_ns": 5087298958, "raw_payload_verification_ns": 2607486291, "replay_ns": 1466033166, "tuple_digest": "b7a7b8690ef9b918a178e84a2948ce2f8a90b9af9a199a19b90f7836005eb83c", "type": "acquisition"}
+{"resident_pages": 339294, "sample_index": 1, "total_pages": 354519, "type": "residency_after"}
+{"resident_pages": 0, "sample_index": 2, "total_pages": 354519, "type": "residency_before"}
+{"checkpoint_selected": true, "elapsed_ns": 6565723584, "manifest_ns": 5070734458, "raw_payload_verification_ns": 2589199083, "replay_ns": 1466624917, "tuple_digest": "b7a7b8690ef9b918a178e84a2948ce2f8a90b9af9a199a19b90f7836005eb83c", "type": "acquisition"}
+{"resident_pages": 339294, "sample_index": 2, "total_pages": 354519, "type": "residency_after"}

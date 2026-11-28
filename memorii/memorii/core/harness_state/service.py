@@ -88,6 +88,9 @@ class HarnessStateService:
         view: str = "summary",
         now: datetime | None = None,
         cursor: str | None = None,
+        checkpoint_ref: str | None = None,
+        installation_binding: tuple[str, int] | None = None,
+        include_task_version: bool = False,
     ) -> HarnessStateEnvelope:
         if self._grant_registry is not None:
             try:
@@ -103,6 +106,8 @@ class HarnessStateService:
         if not grant.authorizes(task_id, now=moment):
             # Denial before lookup: no task-existence disclosure.
             raise HarnessStateError("denied: read grant does not authorize this task")
+        if installation_binding is not None and self._revoked_view is not None and self._revoked_view.is_revoked_task(task_id):
+            raise HarnessStateError("denied: read grant does not authorize this task")
         # One consistent snapshot: every read runs in a single partition
         # read transaction so no field mixes revisions.
         partition = self._repository.partition
@@ -117,14 +122,29 @@ class HarnessStateService:
             )
             overlays = ()
             justifications = ()
-            if solver_runs:
-                primary = solver_runs[0]
+            pointer = task.active_solver_by_execution_node.get(task.root_execution_node_id)
+            if installation_binding is None:
+                primary = solver_runs[0] if solver_runs else None
+            else:
+                primary = next((run for run in solver_runs if run.solver_id == pointer), None)
+                if pointer is not None and (primary is None or primary.lifecycle != "active"):
+                    raise HarnessStateError("integrity_error: selected solver is unavailable")
+            selected_overlay_id = None
+            if primary is not None:
                 overlays = self._repository.list_overlays_in(
                     connection, primary.solver_id
                 )
                 justifications = self._repository.list_justifications_in(
                     connection, primary.solver_id
                 )
+                if installation_binding is None:
+                    selected_overlay_id = overlays[0].version_id if overlays else None
+                else:
+                    selected_overlay_id = primary.selected_overlay_id
+                    if selected_overlay_id is not None and all(
+                        overlay.version_id != selected_overlay_id for overlay in overlays
+                    ):
+                        raise HarnessStateError("integrity_error: selected solver overlay is unavailable")
             revision = partition.read_runtime_revision(connection)
         offset = 0
         continuation: str | None = None
@@ -138,6 +158,7 @@ class HarnessStateService:
                 runtime_revision=revision,
                 view=view,
                 now=moment,
+                installation_binding=installation_binding,
             )
         pending_actions = tuple(
             attempt.action_id
@@ -150,8 +171,17 @@ class HarnessStateService:
                 and self._revoked_view.is_revoked_justification(item.justification_id)
             )
 
+        candidate_statuses = {
+            justification_id: binding.candidate_status.value
+            for overlay in overlays if not overlay.committed
+            for binding in overlay.node_bindings if binding.candidate_status is not None
+            for justification_id in binding.active_justification_ids
+        }
         candidate_hypotheses = tuple(
-            HarnessOutputBlock(kind="work", label=item.justification_id, candidate=True)
+            HarnessOutputBlock(
+                kind="work", label=item.justification_id, candidate=True,
+                detail=candidate_statuses.get(item.justification_id),
+            )
             for item in justifications
             if item.active and _justification_served(item)
         )[:16]
@@ -182,6 +212,7 @@ class HarnessStateService:
                 view=view,
                 offset=offset + 16,
                 expires_at=moment + DEFAULT_CURSOR_LIFETIME,
+                installation_binding=installation_binding,
             )
         unexplained = tuple(
             HarnessOutputBlock(kind="evidence", label=binding.node_id)
@@ -221,16 +252,18 @@ class HarnessStateService:
             protocol_version=1,
             task_id=task_id,
             revision=revision,
+            task_version=task.version if include_task_version else None,
+            checkpoint_ref=checkpoint_ref,
             status=status,
             goal=task.goal,
             current_execution_node=task.root_execution_node_id,
             execution_status=task.lifecycle,
             remaining_acceptance=task.acceptance_criteria,
-            solver_id=solver_runs[0].solver_id if solver_runs else None,
-            solver_category=solver_runs[0].category if solver_runs else None,
+            solver_id=primary.solver_id if primary is not None else None,
+            solver_category=primary.category if primary is not None else None,
             candidate_hypotheses=candidate_hypotheses,
             committed_hypotheses=committed_hypotheses,
-            selected_overlay_id=overlays[0].version_id if overlays else None,
+            selected_overlay_id=selected_overlay_id,
             frontier=frontier,
             unexplained_evidence=unexplained,
             reopenable_branches=reopenable,

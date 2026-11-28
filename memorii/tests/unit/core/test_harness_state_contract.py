@@ -42,7 +42,9 @@ def _grant(task_id: str, *, epoch: int = 1, expires_in_minutes: int = 5) -> Runt
     )
 
 
-def _seeded_service(tmp_path: Path) -> tuple[HarnessStateService, str, RuntimeStateRepository]:
+def _seeded_service(
+    tmp_path: Path, *, select_solver: bool = True,
+) -> tuple[HarnessStateService, str, RuntimeStateRepository]:
     administration = StorageAdministrationService(tmp_path / "installation")
     administration.initialize()
     repository = RuntimeStateRepository(administration.partition())
@@ -57,6 +59,7 @@ def _seeded_service(tmp_path: Path) -> tuple[HarnessStateService, str, RuntimeSt
                 goal="Diagnose latency",
                 created_at=_NOW,
                 root_execution_node_id="exec:root",
+                active_solver_by_execution_node={"exec:root": "solver:harness"} if select_solver else {},
                 acceptance_criteria=("acceptance:p95-restored",),
             ),
         )
@@ -68,6 +71,7 @@ def _seeded_service(tmp_path: Path) -> tuple[HarnessStateService, str, RuntimeSt
                 parent_execution_node_id="exec:root",
                 category="diagnostic",
                 created_by="test",
+                selected_overlay_id="overlay:harness",
             ),
         )
         repo.apply_justification(
@@ -237,7 +241,7 @@ def test_frontier_budget_truncation_records_omission(tmp_path: Path) -> None:
     assert any("frontier truncated" in omission for omission in envelope.omissions)
 
 
-def _bound_ports(tmp_path: Path):
+def _bound_ports(tmp_path: Path, *, select_solver: bool = True):
     from memorii.core.harness_state.binding import (
         HermesRuntimeStatePorts,
         RuntimeTaskBinding,
@@ -246,7 +250,7 @@ def _bound_ports(tmp_path: Path):
         StorageAdministrationService,
     )
 
-    service, task_id, _repository = _seeded_service(tmp_path)
+    _, task_id, _ = _seeded_service(tmp_path, select_solver=select_solver)
     ports = HermesRuntimeStatePorts(
         StorageAdministrationService(tmp_path / "installation")
     )
@@ -303,14 +307,14 @@ def test_token_budget_overflow_degrades_to_reconcile_summary() -> None:
     assert len(full_text) > 2000 * 4
 
 
-def test_model_tools_serve_bound_views_and_state_plain_unavailable() -> None:
+def test_model_tools_serve_bound_views_and_state_plain_unavailable(tmp_path: Path) -> None:
     from memorii.core.harness_state.tools import (
         RUNTIME_MODEL_TOOLS,
         RuntimeModelTools,
         ToolCall,
     )
 
-    ports, task_id = _bound_ports(tmp_path := None or _tmp_factory())  # noqa: F841
+    ports, task_id = _bound_ports(tmp_path / "selected")
     tools = RuntimeModelTools(ports)
     execution = tools.dispatch(
         ToolCall(
@@ -319,10 +323,12 @@ def test_model_tools_serve_bound_views_and_state_plain_unavailable() -> None:
     )
     assert execution.status == "ok"
     assert execution.payload["task_id"] == task_id
-    solver = tools.dispatch(
-        ToolCall(name="memorii_get_solver_state", principal="principal:a")
-    )
+    solver_call = ToolCall(name="memorii_get_solver_state", principal="principal:a")
+    solver = tools.dispatch(solver_call)
     assert solver.status == "ok" and solver.payload["overlay"] == "overlay:harness"
+    unselected_ports, _ = _bound_ports(tmp_path / "unselected", select_solver=False)
+    unselected = RuntimeModelTools(unselected_ports).dispatch(solver_call)
+    assert unselected.status == "ok" and unselected.payload["overlay"] is None
     observation = tools.dispatch(
         ToolCall(name="memorii_record_observation", principal="principal:a")
     )
@@ -336,14 +342,6 @@ def test_model_tools_serve_bound_views_and_state_plain_unavailable() -> None:
             ToolCall(name="memorii_admin_wipe", principal="principal:a")
         )
     assert len(RUNTIME_MODEL_TOOLS) == 6
-    del tmp_path
-
-
-def _tmp_factory():
-    import tempfile
-    from pathlib import Path
-
-    return Path(tempfile.mkdtemp())
 
 
 def test_paging_cursor_walks_frontier_and_rejects_staleness(tmp_path: Path) -> None:

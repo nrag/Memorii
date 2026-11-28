@@ -93,6 +93,56 @@ _CANONICAL_COMPATIBILITY_READERS = {
     "tests.fixtures.semantic_ingestion.provider_compatibility.legacy_reader.read_outcome",
     "tests.fixtures.semantic_ingestion.provider_compatibility.legacy_reader.read_sync",
 }
+_CATALOG_READ_MODULE = "memorii.core.semantic_ingestion.catalog_inspection"
+_CATALOG_READ_SOURCE = "memorii/memorii/core/semantic_ingestion/catalog_inspection.py"
+_CATALOG_INSPECTION_REQUEST = "CatalogRelationInspectionRequest"
+_CATALOG_INSPECTION_RESPONSE = "CatalogRelationInspectionResponse"
+_RECALL_DIAGNOSIS_REQUEST = "StructuredRecallDiagnosisRequest"
+_RECALL_DIAGNOSIS_RESPONSE = "StructuredRecallDiagnosisResponse"
+_CATALOG_DESCRIPTOR = "CatalogRelationDescriptor"
+_CATALOG_LITERAL_ENDPOINT = "_LiteralEndpoint"
+_CATALOG_READ_MODELS = {
+    _CATALOG_INSPECTION_REQUEST: frozenset({"kind"}),
+    _CATALOG_INSPECTION_RESPONSE: frozenset({"status"}),
+    _RECALL_DIAGNOSIS_REQUEST: frozenset({"kind"}),
+    _RECALL_DIAGNOSIS_RESPONSE: frozenset({"status"}),
+    _CATALOG_DESCRIPTOR: frozenset({"read_form", "read_direction"}),
+    _CATALOG_LITERAL_ENDPOINT: frozenset({"kind", "value_type"}),
+    "_PredicateLookup": frozenset({"kind"}),
+    "_NameLookup": frozenset({"kind"}),
+    "_ExactRecall": frozenset({"kind"}),
+    "_UnresolvedRecall": frozenset({"kind"}),
+    "_EntityEndpoint": frozenset({"kind"}),
+    "_MatchedRelations": frozenset({"status"}),
+    "_AmbiguousRelations": frozenset({"status"}),
+    "_EmptyInspection": frozenset({"status"}),
+    "_FoundRecall": frozenset({"status"}),
+    "_EmptyRecall": frozenset({"status"}),
+}
+_CATALOG_READ_CHILDREN = {
+    (_CATALOG_INSPECTION_RESPONSE, "relations"): _CATALOG_DESCRIPTOR,
+    ("_MatchedRelations", "relations"): _CATALOG_DESCRIPTOR,
+    ("_AmbiguousRelations", "relations"): _CATALOG_DESCRIPTOR,
+    (_CATALOG_DESCRIPTOR, "object_endpoint"): _CATALOG_LITERAL_ENDPOINT,
+}
+_CATALOG_READ_DATA_FIELDS = {
+    _CATALOG_INSPECTION_REQUEST: frozenset({"name"}),
+    _RECALL_DIAGNOSIS_REQUEST: frozenset({"subject_entity_id"}),
+    "_NameLookup": frozenset({"name"}),
+    "_ExactRecall": frozenset({"subject_entity_id"}),
+}
+_CATALOG_READ_OPERATIONS = {
+    "inspect_catalog_relation": (_CATALOG_INSPECTION_REQUEST, _CATALOG_INSPECTION_RESPONSE),
+    "diagnose_structured_recall": (_RECALL_DIAGNOSIS_REQUEST, _RECALL_DIAGNOSIS_RESPONSE),
+}
+# Structured fixtures opt into the read schema through the canonical model's filename.
+_CATALOG_READ_FIXTURE_MODELS = {
+    "catalog_relation_inspection_request": _CATALOG_INSPECTION_REQUEST,
+    "catalog_relation_inspection_response": _CATALOG_INSPECTION_RESPONSE,
+    "catalog_relation_descriptor": _CATALOG_DESCRIPTOR,
+    "structured_recall_diagnosis_request": _RECALL_DIAGNOSIS_REQUEST,
+    "structured_recall_diagnosis_response": _RECALL_DIAGNOSIS_RESPONSE,
+}
 _DYNAMIC_BINDING_NAMES = {
     "__builtins__",
     # Keep the detector's own static vocabulary from being mistaken for a
@@ -181,6 +231,10 @@ def _proof_import_bindings(tree: ast.AST) -> dict[str, str]:
         for node in ast.walk(tree)
     ):
         return {}
+    return _unique_module_import_bindings(tree)
+
+
+def _unique_module_import_bindings(tree: ast.Module) -> dict[str, str]:
     bindings: dict[str, str] = {}
     import_binding_counts: dict[str, int] = {}
     module_import_ids = {
@@ -282,11 +336,14 @@ def _static_text_pair(
 
 
 class _PythonIdentityVisitor(ast.NodeVisitor):
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: str, catalog_imports: dict[str, str]) -> None:
         self.path = path
         self.violations: list[IdentityViolation] = []
         self._constant_scopes: list[dict[str, str | int]] = [{}]
         self._enum_depth = 0
+        self._catalog_imports = catalog_imports
+        self._catalog_class_fields: frozenset[str] = frozenset()
+        self._catalog_data_values: set[ast.AST] = set()
 
     def _resolve_constant(self, name: str) -> str | int | None:
         for scope in reversed(self._constant_scopes):
@@ -333,6 +390,8 @@ class _PythonIdentityVisitor(ast.NodeVisitor):
             )
 
     def _field_value(self, field: str, value: ast.AST, *, force_identity: bool = False) -> None:
+        if value in self._catalog_data_values:
+            return
         lowered = field.lower()
         if self._planning_field_coordinate(field, value):
             self.violations.append(
@@ -360,6 +419,62 @@ class _PythonIdentityVisitor(ast.NodeVisitor):
                         "planning/evidence coordinate used in identity-bearing field",
                     )
                 )
+
+    def _catalog_model(self, node: ast.expr) -> str | None:
+        if not self._catalog_imports and self.path != _CATALOG_READ_SOURCE:
+            return None
+        if not isinstance(node, (ast.Name, ast.Attribute)):
+            return None
+        qualified = ast.unparse(node)
+        first, dot, rest = qualified.partition(".")
+        qualified = self._catalog_imports.get(first, first) + dot + rest
+        if qualified.startswith(_CATALOG_READ_MODULE + "."):
+            model = qualified.removeprefix(_CATALOG_READ_MODULE + ".")
+        elif self.path == _CATALOG_READ_SOURCE:
+            model = qualified
+        else:
+            return None
+        return model if model in _CATALOG_READ_MODELS else None
+
+    def _catalog_field(self, model: str, field: str, value: ast.AST) -> None:
+        if field in _CATALOG_READ_DATA_FIELDS.get(model, ()):
+            self._catalog_data_values.add(value)
+        if field in _CATALOG_READ_MODELS[model] and not _is_identity_field(field):
+            self._field_value(field, value, force_identity=True)
+        child = _CATALOG_READ_CHILDREN.get((model, field))
+        if child is not None:
+            self._catalog_payload(child, value)
+
+    def _catalog_payload(self, model: str, node: ast.AST) -> None:
+        if isinstance(node, (ast.List, ast.Tuple)):
+            for item in node.elts:
+                self._catalog_payload(model, item)
+        elif isinstance(node, ast.Dict):
+            for key, value in zip(node.keys, node.values, strict=True):
+                if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                    self._catalog_field(model, key.value, value)
+                elif key is None:
+                    self._catalog_payload(model, value)
+
+    def _catalog_call(self, node: ast.Call) -> None:
+        if isinstance(node.func, ast.Attribute) and node.func.attr == "model_validate":
+            model = self._catalog_model(node.func.value)
+        else:
+            model = self._catalog_model(node.func)
+        if model is not None:
+            if node.args:
+                self._catalog_payload(model, node.args[0])
+            for keyword in node.keywords:
+                if keyword.arg is None or keyword.arg in {"root", "obj"}:
+                    self._catalog_payload(model, keyword.value)
+                else:
+                    self._catalog_field(model, keyword.arg, keyword.value)
+        elif (operation := _CATALOG_READ_OPERATIONS.get(_call_name(node))) is not None:
+            if node.args:
+                self._catalog_payload(operation[0], node.args[0])
+            for keyword in node.keywords:
+                if keyword.arg == "request":
+                    self._catalog_payload(operation[0], keyword.value)
 
     def _diagnostic_values(self, node: ast.Call) -> None:
         name = _call_name(node)
@@ -415,7 +530,10 @@ class _PythonIdentityVisitor(ast.NodeVisitor):
         if node.args.kwarg is not None:
             self._identifier(node.args.kwarg.arg, node.args.kwarg)
         self._constant_scopes.append({})
+        previous_fields = self._catalog_class_fields
+        self._catalog_class_fields = frozenset()
         self.generic_visit(node)
+        self._catalog_class_fields = previous_fields
         self._constant_scopes.pop()
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
@@ -433,7 +551,14 @@ class _PythonIdentityVisitor(ast.NodeVisitor):
         )
         self._constant_scopes.append({})
         self._enum_depth += int(is_enum)
+        previous_fields = self._catalog_class_fields
+        self._catalog_class_fields = (
+            _CATALOG_READ_MODELS.get(node.name, frozenset())
+            if self.path == _CATALOG_READ_SOURCE
+            else frozenset()
+        )
         self.generic_visit(node)
+        self._catalog_class_fields = previous_fields
         self._enum_depth -= int(is_enum)
         self._constant_scopes.pop()
 
@@ -464,6 +589,15 @@ class _PythonIdentityVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if isinstance(node.target, ast.Name) and node.target.id in self._catalog_class_fields:
+            annotation = node.annotation
+            if isinstance(annotation, ast.Subscript) and (
+                (isinstance(annotation.value, ast.Name) and annotation.value.id == "Literal")
+                or (isinstance(annotation.value, ast.Attribute) and annotation.value.attr == "Literal")
+            ):
+                self._field_value(node.target.id, annotation.slice, force_identity=True)
+            if node.value is not None and not _is_identity_field(node.target.id):
+                self._field_value(node.target.id, node.value, force_identity=True)
         if node.value is not None:
             if isinstance(node.target, ast.Name):
                 self._field_value(
@@ -514,6 +648,7 @@ class _PythonIdentityVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> None:
+        self._catalog_call(node)
         for argument in node.args:
             for item, text in _string_nodes(argument, self._resolve_name):
                 if re.fullmatch(r"SIA-(?:R\d{2}|T-[A-Z0-9-]+)", text):
@@ -526,6 +661,21 @@ class _PythonIdentityVisitor(ast.NodeVisitor):
                         )
                     )
         self._diagnostic_values(node)
+        self.generic_visit(node)
+
+    def visit_Compare(self, node: ast.Compare) -> None:
+        for left, right in zip((node.left, *node.comparators[:-1]), node.comparators, strict=True):
+            for result, expected in ((left, right), (right, left)):
+                accessor = result.func if isinstance(result, ast.Call) else result
+                if (
+                    isinstance(accessor, ast.Attribute)
+                    and isinstance(accessor.value, ast.Call)
+                    and (models := _CATALOG_READ_OPERATIONS.get(_call_name(accessor.value))) is not None
+                ):
+                    if accessor.attr == "model_dump" and isinstance(result, ast.Call):
+                        self._catalog_payload(models[1], expected)
+                    elif accessor.attr == "status" and isinstance(result, ast.Attribute):
+                        self._field_value("status", expected, force_identity=True)
         self.generic_visit(node)
 
     def visit_Assert(self, node: ast.Assert) -> None:
@@ -559,8 +709,10 @@ class _PythonIdentityVisitor(ast.NodeVisitor):
 
 
 def _scan_python(path: Path, relative: str) -> list[IdentityViolation]:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=relative)
-    visitor = _PythonIdentityVisitor(relative)
+    text = path.read_text(encoding="utf-8")
+    tree = ast.parse(text, filename=relative)
+    catalog_imports = _unique_module_import_bindings(tree) if "catalog_inspection" in text else {}
+    visitor = _PythonIdentityVisitor(relative, catalog_imports)
     visitor.visit(tree)
     return visitor.violations
 
@@ -588,6 +740,8 @@ def _scan_structured_value(
     path: str,
     location: str,
     inherited_field: str | None = None,
+    catalog_model: str | None = None,
+    catalog_parent_model: str | None = None,
 ) -> list[IdentityViolation]:
     violations: list[IdentityViolation] = []
     if isinstance(value, dict):
@@ -611,7 +765,14 @@ def _scan_structured_value(
                     )
                 )
             violations.extend(
-                _scan_structured_value(item, path=path, location=child, inherited_field=key_text)
+                _scan_structured_value(
+                    item,
+                    path=path,
+                    location=child,
+                    inherited_field=key_text,
+                    catalog_model=_CATALOG_READ_CHILDREN.get((catalog_model or "", key_text)),
+                    catalog_parent_model=catalog_model,
+                )
             )
     elif isinstance(value, list):
         for index, item in enumerate(value):
@@ -621,13 +782,17 @@ def _scan_structured_value(
                     path=path,
                     location=f"{location}[{index}]",
                     inherited_field=inherited_field,
+                    catalog_model=catalog_model,
+                    catalog_parent_model=catalog_parent_model,
                 )
             )
     elif (
         isinstance(value, str)
         and inherited_field is not None
+        and inherited_field not in _CATALOG_READ_DATA_FIELDS.get(catalog_parent_model or "", ())
         and (
-            _is_identity_field(inherited_field)
+            inherited_field in _CATALOG_READ_MODELS.get(catalog_parent_model or "", ())
+            or _is_identity_field(inherited_field)
             or inherited_field.lower() in _TRACEABILITY_FIELDS
         )
         and _planning_value(value)
@@ -985,7 +1150,14 @@ def scan_repository(root: Path, *, allowlist_path: Path) -> tuple[IdentityViolat
             )
         raw = path.read_text(encoding="utf-8")
         parsed = yaml.safe_load(raw) if path.suffix in {".yml", ".yaml"} else json.loads(raw)
-        violations.extend(_scan_structured_value(parsed, path=relative, location="$"))
+        catalog_model = (
+            _CATALOG_READ_FIXTURE_MODELS.get(path.stem)
+            if relative.startswith("memorii/tests/fixtures/semantic_ingestion/")
+            else None
+        )
+        violations.extend(
+            _scan_structured_value(parsed, path=relative, location="$", catalog_model=catalog_model)
+        )
 
     exception_by_key = {item.key: item for item in exceptions}
     observed_keys = {(item.path, item.location, item.value) for item in violations}

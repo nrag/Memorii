@@ -27,26 +27,53 @@ from cryptography.hazmat.primitives.serialization import (
 
 from memorii.core.persistence.contracts import (
     RUNTIME_CONTROL_JOURNAL_SIGNATURE_PURPOSE,
+    RUNTIME_EVENT_BATCH_SIGNATURE_PURPOSE,
     RUNTIME_PUBLICATION_SIGNATURE_PURPOSE,
 )
 
 INSTALLATION_BACKUP_MANIFEST_SIGNATURE_PURPOSE = (
     "memorii.installation-backup-manifest.v1"
 )
+RESTORE_STAGING_SIGNATURE_PURPOSE = "memorii.restore-staging.v1"
+PARTITION_GENERATION_SIGNATURE_PURPOSE = "memorii.partition-generation.v1"
 
 RUNTIME_CHECKPOINT_SIGNATURE_PURPOSE = "memorii.runtime-checkpoint.v1"
+
+OPERATION_ORIGIN_SIGNATURE_PURPOSE = "memorii.operation-origin.v1"
+
+INSTALLATION_CONTROL_RECOVERY_SIGNATURE_PURPOSE = "memorii.installation-control-recovery.v1"
+INSTALLATION_RECOVERY_HEAD_SIGNATURE_PURPOSE = "memorii.installation-recovery-head.v1"
+INSTALLATION_RECOVERY_ACTIVATION_SIGNATURE_PURPOSE = "memorii.installation-recovery-activation.v1"
 
 _SUPPORTED_PURPOSES = (
     RUNTIME_PUBLICATION_SIGNATURE_PURPOSE,
     RUNTIME_CONTROL_JOURNAL_SIGNATURE_PURPOSE,
     INSTALLATION_BACKUP_MANIFEST_SIGNATURE_PURPOSE,
+    RESTORE_STAGING_SIGNATURE_PURPOSE,
+    PARTITION_GENERATION_SIGNATURE_PURPOSE,
     RUNTIME_CHECKPOINT_SIGNATURE_PURPOSE,
+    OPERATION_ORIGIN_SIGNATURE_PURPOSE,
+    RUNTIME_EVENT_BATCH_SIGNATURE_PURPOSE,
+    INSTALLATION_CONTROL_RECOVERY_SIGNATURE_PURPOSE,
+    INSTALLATION_RECOVERY_HEAD_SIGNATURE_PURPOSE,
+    INSTALLATION_RECOVERY_ACTIVATION_SIGNATURE_PURPOSE,
 )
 _KEY_FILE_MODE = 0o600
 
 
 def _domain_separator(purpose: str) -> bytes:
     return purpose.encode("ascii") + b"\x00"
+
+
+def verify_public_signature(public_key: bytes, purpose: str, message: str, signature: str) -> bool:
+    """Verify a domain-separated signature using only a trusted raw Ed25519 key."""
+    LocalSigningKeyOwner._validate_purpose(purpose)
+    try:
+        verifier = Ed25519PublicKey.from_public_bytes(public_key)
+        verifier.verify(bytes.fromhex(signature), _domain_separator(purpose) + message.encode("utf-8"))
+    except (InvalidSignature, ValueError, TypeError):
+        return False
+    return True
 
 
 class LocalSigningKeyOwner:
@@ -84,8 +111,10 @@ class LocalSigningKeyOwner:
         return self._private_key_path(key_id).exists()
 
     def public_key_fingerprint(self, key_id: str) -> str:
-        public_bytes = self._public_bytes(self._load_private_key(key_id))
-        return hashlib.sha256(public_bytes).hexdigest()
+        return hashlib.sha256(self.public_key_bytes(key_id)).hexdigest()
+
+    def public_key_bytes(self, key_id: str) -> bytes:
+        return self._public_bytes(self._load_private_key(key_id))
 
     def sign(self, key_id: str, purpose: str, message: str) -> str:
         self._validate_purpose(purpose)

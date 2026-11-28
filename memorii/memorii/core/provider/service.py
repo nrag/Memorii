@@ -155,6 +155,7 @@ from memorii.core.provider.attention_models import (
     ProviderPrefetchAttentionEnvelope,
     ProviderToolAttentionEnvelope,
 )
+from memorii.core.provider.catalog_read_workflow import CatalogReadHostRequest, read_catalog_workflow
 from memorii.core.provider.classifier import make_event
 from memorii.core.provider.ingestion import (
     CapturedCatalogPinReference,
@@ -214,6 +215,11 @@ from memorii.core.semantic_ingestion.catalog_authority import (
     StructuredSubmissionAuthorityResolver,
 )
 from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedTurnPin
+from memorii.core.semantic_ingestion.catalog_inspection import (
+    CatalogBrowseResponse,
+    CatalogRelationInspectionResponse,
+    StructuredRecallDiagnosisResponse,
+)
 from memorii.core.semantic_ingestion.contracts import (
     ClaimAssertion,
     PreparedSource,
@@ -256,6 +262,7 @@ from memorii.core.semantic_ingestion.structured_fact_read import (
 from memorii.core.solver.frontier import SolverFrontierPlanner
 from memorii.core.storage_administration.revoked_identity_view import (
     RevokedIdentityServingGate,
+    RevokedIdentityView,
 )
 from memorii.core.work_state.models import WorkStateKind, WorkStateRecord, WorkStateStatus
 from memorii.core.work_state.selector import WorkStateSelector
@@ -382,6 +389,7 @@ class ProviderMemoryService:
         ] = (),
         structured_submission_authority_resolver: StructuredSubmissionAuthorityResolver | None = None,
         revoked_view: RevokedIdentityServingGate | None = None,
+        catalog_read_suppression_view: Callable[[tuple[CanonicalMemoryRecord, ...]], RevokedIdentityView] | None = None,
         ontology_observer_capability: OntologyObserverCapability | None = None,
         ontology_observer_authorizer: Callable[
             [AuthenticatedIngressContext, ObserverBindingIdentity], bool
@@ -392,6 +400,7 @@ class ProviderMemoryService:
         self._memory_plane = memory_plane or MemoryPlaneService()
         self._bootstrap_release_evidence = None
         self._revoked_view = revoked_view
+        self._catalog_read_suppression_view = catalog_read_suppression_view
         self._scoped_read_authority = scoped_read_authority
         self._structured_submission_authority_resolver = structured_submission_authority_resolver
         self._canonical_evidence_requested = canonical_evidence_enabled
@@ -1691,6 +1700,48 @@ class ProviderMemoryService:
             return CoverageObservationStatusResponse(status="unavailable")
         return CoverageObservationStatusResponse(
             status="ok", observations=observations
+        )
+
+    def _resolve_catalog_read_ingress(self, host_ingress: AuthenticatedHostIngress | None):
+        try:
+            return self._resolve_ingress(host_ingress)
+        except (TypeError, ValueError):
+            return None
+
+    def browse_catalog(
+        self, request: object, *, authenticated_host_ingress: AuthenticatedHostIngress | None = None,
+        host_read_request: CatalogReadHostRequest | None = None,
+    ) -> CatalogBrowseResponse:
+        return read_catalog_workflow(
+            request, operation="browse", ingress=self._resolve_catalog_read_ingress(authenticated_host_ingress),
+            host_request=host_read_request, host_authority=self._scoped_read_authority,
+            memory_plane=self._memory_plane, locator=self._catalog_bundle_locator,
+            now_provider=self._now_provider, legacy_verifier=self._semantic_atomic_store,
+            suppression_view=self._catalog_read_suppression_view,
+        )
+
+    def inspect_catalog_relation(
+        self, request: object, *, authenticated_host_ingress: AuthenticatedHostIngress | None = None,
+        host_read_request: CatalogReadHostRequest | None = None,
+    ) -> CatalogRelationInspectionResponse:
+        return read_catalog_workflow(
+            request, operation="inspect", ingress=self._resolve_catalog_read_ingress(authenticated_host_ingress),
+            host_request=host_read_request, host_authority=self._scoped_read_authority,
+            memory_plane=self._memory_plane, locator=self._catalog_bundle_locator,
+            now_provider=self._now_provider, legacy_verifier=self._semantic_atomic_store,
+            suppression_view=self._catalog_read_suppression_view,
+        )
+
+    def diagnose_structured_recall(
+        self, request: object, *, authenticated_host_ingress: AuthenticatedHostIngress | None = None,
+        host_read_request: CatalogReadHostRequest | None = None,
+    ) -> StructuredRecallDiagnosisResponse:
+        return read_catalog_workflow(
+            request, operation="diagnose", ingress=self._resolve_catalog_read_ingress(authenticated_host_ingress),
+            host_request=host_read_request, host_authority=self._scoped_read_authority,
+            memory_plane=self._memory_plane, locator=self._catalog_bundle_locator,
+            now_provider=self._now_provider, legacy_verifier=self._semantic_atomic_store,
+            suppression_view=self._catalog_read_suppression_view,
         )
 
     def read_structured_facts(

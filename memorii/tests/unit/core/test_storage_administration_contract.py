@@ -199,7 +199,7 @@ def test_initialize_publishes_genesis_and_returns_stable_receipt(tmp_path: Path)
 
 def test_initialize_rejects_foreign_root_content(tmp_path: Path) -> None:
     root = tmp_path / "installation"
-    root.mkdir()
+    root.mkdir(mode=0o700)
     (root / "stranger-file").write_text("foreign", encoding="utf-8")
     with StorageAdministrationService(root) as service, pytest.raises(
         InitializationNotPossibleError
@@ -263,7 +263,7 @@ def test_row_tampering_with_preserved_head_quarantines(tmp_path: Path) -> None:
     connection = sqlite3.connect(root / "partition" / "partition.sqlite3")
     try:
         connection.execute(
-            "UPDATE memory_current_records SET record_json = '{\"tampered\": true}'"
+            "UPDATE memory_current_records SET payload_digest = zeroblob(32)"
             " WHERE memory_id = 'mem:one'"
         )
         connection.commit()
@@ -281,8 +281,8 @@ def test_row_tampering_with_preserved_head_quarantines(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "statement",
     [
-        "UPDATE memory_batches SET batch_json = '{\"tampered\": true}' WHERE revision = 1",
-        "UPDATE memory_record_versions SET record_json = '{\"tampered\": true}'"
+        "UPDATE memory_batches SET member_count = member_count + 1 WHERE revision = 1",
+        "UPDATE memory_record_versions SET payload_digest = zeroblob(32)"
         " WHERE memory_id = 'mem:one'",
     ],
 )
@@ -315,7 +315,7 @@ def test_publish_refuses_after_out_of_band_row_tampering(tmp_path: Path) -> None
     connection = sqlite3.connect(root / "partition" / "partition.sqlite3")
     try:
         connection.execute(
-            "UPDATE memory_current_records SET record_json = '{\"tampered\": true}'"
+            "UPDATE memory_current_records SET payload_digest = zeroblob(32)"
             " WHERE memory_id = 'mem:one'"
         )
         connection.commit()
@@ -399,28 +399,56 @@ def test_empty_partition_file_without_control_initializes_cleanly(tmp_path: Path
         assert again.initialize().receipt_digest == receipt.receipt_digest
 
 
-def test_third_state_intent_quarantines_and_blocks_publication(tmp_path: Path) -> None:
-    with StorageAdministrationService(tmp_path / "installation") as service:
+@pytest.mark.parametrize(
+    ("statement", "reported_digest"),
+    [
+        ("UPDATE partition_publication SET tuple_digest = '" + "3" * 64 + "' WHERE id = 1", "3" * 64),
+        ("UPDATE partition_publication SET generation_id = 'foreign' WHERE id = 1", "candidate"),
+        ("DELETE FROM partition_publication WHERE id = 1", None),
+        ("UPDATE memory_payloads SET body = zeroblob(length(body))", "old"),
+    ],
+    ids=["third-tuple", "foreign-generation", "missing-publication", "corrupt-old-materialization"],
+)
+def test_third_state_intent_quarantines_and_blocks_publication(
+    tmp_path: Path, statement: str, reported_digest: str | None,
+) -> None:
+    root = tmp_path / "installation"
+    with StorageAdministrationService(root) as service:
         service.initialize()
         store = service.memory_plane_store()
-        service.publish_memory_plane_batch((_record("mem:one"),), store=store)
-        _stage_publication(service, store, (_record("mem:kept"),), commit=True)
+        old = service.publish_memory_plane_batch((_record("mem:one"),), store=store)
+        candidate_digest = _stage_publication(
+            service, store, (_record("mem:kept"),), commit=reported_digest != "old",
+        )
         # Corrupt the data publication row to a value that is neither the
         # exact-old nor the exact-new tuple digest: the third-state rule.
         connection = sqlite3.connect(service.partition_path())
         try:
-            connection.execute(
-                "UPDATE partition_publication SET tuple_digest ="
-                " '3333333333333333333333333333333333333333333333333333333333333333'"
-                " WHERE id = 1"
-            )
+            connection.execute(statement)
             connection.commit()
         finally:
             connection.close()
+        if reported_digest != "old":
+            with pytest.raises(InstallationIntegrityError), service.partition().transaction(write=False):
+                pytest.fail("an ordinary transaction reached unresolved partition data")
+        assert service._control_state().quarantined_reason is None
         resolution = service.resolve_pending_publication()
         assert resolution.disposition == "quarantined"
+        expected_digest = reported_digest
+        if reported_digest == "candidate":
+            expected_digest = candidate_digest
+        elif reported_digest == "old":
+            expected_digest = old.tuple_digest
+        assert resolution.tuple_digest == expected_digest
+
+    with StorageAdministrationService(root) as reopened:
+        assert reopened.resolve_pending_publication().disposition == "clean"
+        finalized = reopened._control.read_publication_state(reopened._repository_id())
+        assert finalized is not None and finalized.payload_digest() == old.tuple_digest
         with pytest.raises(InstallationQuarantinedError):
-            service.publish_memory_plane_batch((_record("mem:two"),), store=store)
+            reopened.acquire_verified_snapshot()
+        with pytest.raises(InstallationQuarantinedError):
+            reopened.publish_memory_plane_batch((_record("mem:two"),))
 
 
 def test_tampered_control_journal_rejects_service_use(tmp_path: Path) -> None:

@@ -518,7 +518,7 @@ def test_terminal_task_still_permits_checkpoint_and_resume(tmp_path: Path) -> No
         service._administration.close()
 
 
-def test_outbox_carries_dispatch_and_delivers_on_result(tmp_path: Path) -> None:
+def test_signed_outbox_keeps_digest_only_dispatch_inert(tmp_path: Path) -> None:
     service = _service(tmp_path)
     try:
         task_id = _seeded_task_id(service)
@@ -550,74 +550,58 @@ def test_outbox_carries_dispatch_and_delivers_on_result(tmp_path: Path) -> None:
         assert entry["origin_operation_id"] == "op:outbox:dispatch"
         assert entry["target_protocol"] == "memorii.runtime-intake/v1"
 
-        # The outbox worker delivers the entry with a target receipt.
-        from memorii.core.persistence.runtime_api import deliver_outbox
+        from memorii.core.persistence.runtime_api import RuntimeCommandError, deliver_outbox
 
-        delivered = deliver_outbox(
-            service.repository, lambda entry: "receipt:" + entry.delivery_id
-        )
-        assert len(delivered) == 1
-        assert delivered[0].status == "delivered"
-        assert delivered[0].target_result == "receipt:outbox:op:outbox:dispatch"
-        assert delivered[0].attempt_count == 1
+        def unexpected_delivery(_entry: RuntimeOutboxDelivery) -> str:
+            pytest.fail("signed digest-only rows must never call a legacy target")
+
+        signed = service._administration.acquire_verified_snapshot()
+        with pytest.raises(RuntimeCommandError, match="needs_reconciliation"):
+            deliver_outbox(service.repository, unexpected_delivery)
+        assert service._administration.acquire_verified_snapshot() == signed
     finally:
         service._administration.close()
 
 
-def test_deliver_outbox_drains_pending_fail_closed(tmp_path: Path) -> None:
+def test_deliver_outbox_drains_legacy_pending_fail_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from memorii.core.persistence.runtime_api import (
         deliver_outbox,
     )
+    from memorii.core.persistence.runtime_repository import RuntimeStateRepository
+    from memorii.stores.sqlite.partition import PartitionDataRepository
 
-    service = _service(tmp_path)
-    try:
-        task_id = _seeded_task_id(service)
-        service.dispatch(
-            RuntimeCommandRequest(
-                kind="record_action_dispatch",
-                operation_id="op:drain:one",
-                task_id=task_id,
-                expected_revision=1,
-            )
-        )
+    monkeypatch.setattr("memorii.stores.sqlite.partition.PARTITION_SCHEMA_VERSION", 1)
+    with PartitionDataRepository(tmp_path / "legacy.sqlite3") as partition:
+        repository = RuntimeStateRepository(partition)
+
+        def seed(delivery_id: str) -> None:
+            with partition.transaction(write=True) as connection:
+                repository.apply_outbox_row(connection, RuntimeOutboxDelivery(
+                    delivery_id=f"outbox:op:drain:{delivery_id}", origin_operation_id=f"op:drain:{delivery_id}",
+                    kind="work_projection", target_protocol="memorii.runtime-intake/v1",
+                    payload_digest="a" * 64, fence_token=1,
+                ))
+
+        seed("one")
         receipts: list[str] = []
         delivered = deliver_outbox(
-            service.repository,
+            repository,
             lambda entry: receipts.append(entry.delivery_id) or "receipt:one",
         )
         assert len(delivered) == 1
         assert delivered[0].status == "delivered"
         assert receipts == ["outbox:op:drain:one"]
         # Second drain finds nothing pending (idempotent by row state).
-        assert deliver_outbox(service.repository, lambda entry: "x") == ()
+        assert deliver_outbox(repository, lambda entry: "x") == ()
 
         # A raising transport delivers nothing: entries stay pending.
-        service.dispatch(
-            RuntimeCommandRequest(
-                kind="record_action_dispatch",
-                operation_id="op:drain:two",
-                task_id=task_id,
-                expected_revision=1,
-            )
-        )
+        seed("two")
 
         def exploding(entry: RuntimeOutboxDelivery) -> str:
             raise RuntimeError("transport down")
 
         with pytest.raises(RuntimeError, match="transport down"):
-            deliver_outbox(service.repository, exploding)
-        import sqlite3 as _sqlite3
-
-        connection = _sqlite3.connect(
-            service._administration.partition().database_path
-        )
-        try:
-            pending = connection.execute(
-                "SELECT record_json FROM runtime_outbox_deliveries"
-                " WHERE record_json LIKE '%\"pending\"%'"
-            ).fetchall()
-        finally:
-            connection.close()
-        assert pending, "failed delivery stays pending for retry"
-    finally:
-        service._administration.close()
+            deliver_outbox(repository, exploding)
+        with partition.transaction(write=False) as connection:
+            pending, = repository.list_outbox_deliveries(connection)
+        assert pending.delivery_id == "outbox:op:drain:two"

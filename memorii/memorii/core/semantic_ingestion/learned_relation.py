@@ -11,11 +11,19 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from contextlib import suppress
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
-from typing import Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+    model_validator,
+)
 
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
@@ -28,6 +36,10 @@ from memorii.core.memory_plane.store import (
 from memorii.core.semantic_ingestion.catalog_authority import (
     AgentLocalCatalogAuthorityScope,
     AuthenticatedPrincipalAgent,
+    CatalogAuthorityError,
+    CatalogAuthorityScope,
+    catalog_selection_pointer_memory_id,
+    catalog_version_memory_id,
 )
 from memorii.core.semantic_ingestion.contracts import contract_digest
 from memorii.core.semantic_ingestion.coverage_observation import CoverageObservationRepository
@@ -38,6 +50,10 @@ from memorii.core.semantic_ingestion.coverage_recurrence import (
     recurrence_owner_scope_digest,
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
+
+if TYPE_CHECKING:
+    from memorii.core.memory_evolution.writer_admission import CatalogBundleLocator
+    from memorii.core.storage_administration.revoked_identity_view import RevokedIdentityView
 
 _DIGEST = r"^[0-9a-f]{64}$"
 _RELATION_ID = "mentors"
@@ -61,6 +77,7 @@ _KIND_VERSION = "learned_ontology_catalog_version_v1"
 _KIND_POINTER = "learned_ontology_catalog_pointer_v1"
 _KIND_ATTEMPT = "learned_ontology_activation_attempt_v1"
 _KIND_REPLAY = "learned_ontology_replay_operation_v1"
+_EVALUATION_DECISION_STATES = ("awaiting_decision", "approved_for_activation", "active", "rejected", "activation_conflict")
 
 
 def _digest(domain: bytes, value: object) -> str:
@@ -76,6 +93,14 @@ def _digest(domain: bytes, value: object) -> str:
 
 class LearnedRelationError(ValueError):
     """The closed learned-relation protocol rejected a request."""
+
+
+class _ProposalLifecycleConflict(LearnedRelationError):
+    """The durable proposal no longer matches the transition predecessor."""
+
+
+class CatalogManagementUnavailable(LearnedRelationError):
+    """The installed catalog management grant is absent or has changed."""
 
 
 def validate_mentors_tool_proposal(proposal: object, *, arguments: dict[str, object]) -> None:
@@ -215,20 +240,32 @@ class PairedEvaluationCaseOutcome(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class CatalogRebaseOrigin(BaseModel):
+    """Exact selected legacy overlay being replaced by a newly evaluated edit."""
+
+    legacy_version_digest: str = Field(pattern=_DIGEST)
+    expected_pointer_digest: str = Field(pattern=_DIGEST)
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+ProposalLifecycle = Literal[
+    "draft", "validating", "validated", "evaluating", "evaluation_unavailable", "evaluated",
+    "awaiting_decision", "approved_for_activation", "active", "rejected", "activation_conflict",
+]
+
+
 class OntologyChangeProposal(BaseModel):
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1, 2] = 1
     proposal_id: str = Field(pattern=r"^ocp_[0-9a-f]{64}$")
     catalog_scope: AgentLocalCatalogScope
     parent_catalog_digest: str = Field(pattern=_DIGEST)
     operation: Literal["add_relation"] = "add_relation"
     relation: RelationDeclaration
     evidence: tuple[OntologyEvidenceReference, ...] = Field(min_length=1, max_length=8)
-    lifecycle: Literal[
-        "draft", "validating", "validated", "evaluation_unavailable", "evaluated",
-        "awaiting_decision", "approved_for_activation", "active", "rejected",
-        "activation_conflict",
-    ] = "draft"
+    lifecycle: ProposalLifecycle = "draft"
     evaluation: PairedEvaluation | None = None
+    rebase: CatalogRebaseOrigin | None = None
     proposal_digest: str = Field(pattern=_DIGEST)
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -237,39 +274,84 @@ class OntologyChangeProposal(BaseModel):
     def create(
         cls, *, catalog_scope: AgentLocalCatalogScope, parent_catalog_digest: str,
         relation: RelationDeclaration, evidence: tuple[OntologyEvidenceReference, ...],
+        rebase: CatalogRebaseOrigin | None = None,
     ) -> OntologyChangeProposal:
         canonical_evidence = tuple(sorted(evidence, key=lambda item: item.source_id))
         if len({item.source_id for item in canonical_evidence}) != len(canonical_evidence):
             raise LearnedRelationError("proposal evidence sources must be unique")
-        body = {
-            "schema_version": 1, "catalog_scope": catalog_scope,
-            "parent_catalog_digest": parent_catalog_digest, "operation": "add_relation",
-            "relation": relation,
-        }
+        body = cls._relation_identity(catalog_scope, parent_catalog_digest, relation)
+        if rebase is not None:
+            body["schema_version"] = 2
+            body["rebase"] = rebase.model_dump(mode="json")
+        domain = (b"memorii.learned-ontology.change-proposal.v1" if rebase is None
+                  else b"memorii.learned-ontology.rebase-proposal.v2")
         proposal_digest = _digest(
-            b"memorii.learned-ontology.change-proposal.v1",
-            {
-                "schema_version": 1, "catalog_scope": catalog_scope.model_dump(mode="json"),
-                "parent_catalog_digest": parent_catalog_digest, "operation": "add_relation",
-                "relation": relation.model_dump(mode="json"),
-            },
+            domain, body,
         )
-        return cls(
-            **body, evidence=canonical_evidence, lifecycle="draft", evaluation=None,
-            proposal_id=f"ocp_{proposal_digest}", proposal_digest=proposal_digest
-        )
+        return cls.model_validate({
+            **body, "evidence": canonical_evidence, "proposal_id": f"ocp_{proposal_digest}",
+            "proposal_digest": proposal_digest,
+        })
+
+    @staticmethod
+    def _relation_identity(
+        scope: AgentLocalCatalogScope, parent: str, relation: RelationDeclaration,
+    ) -> dict[str, object]:
+        return {
+            "schema_version": 1, "catalog_scope": scope.model_dump(mode="json"),
+            "parent_catalog_digest": parent, "operation": "add_relation",
+            "relation": relation.model_dump(mode="json"),
+        }
+
+    @model_serializer(mode="wrap")
+    def serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
+        body = handler(self)
+        if self.schema_version == 1:
+            body.pop("rebase", None)
+        return body
 
     @model_validator(mode="after")
     def validate_identity(self) -> OntologyChangeProposal:
+        if (self.schema_version == 1) != (self.rebase is None):
+            raise ValueError("proposal rebase provenance is invalid")
         if self.evidence != tuple(sorted(self.evidence, key=lambda item: item.source_id)):
             raise ValueError("proposal evidence is not canonical")
         if len({item.source_id for item in self.evidence}) != len(self.evidence):
             raise ValueError("proposal evidence sources are duplicated")
         body = self.model_dump(mode="json", exclude={"proposal_id", "proposal_digest", "lifecycle", "evaluation", "evidence"})
-        expected = _digest(b"memorii.learned-ontology.change-proposal.v1", body)
+        domain = (b"memorii.learned-ontology.change-proposal.v1" if self.rebase is None
+                  else b"memorii.learned-ontology.rebase-proposal.v2")
+        expected = _digest(domain, body)
         if self.proposal_digest != expected or self.proposal_id != f"ocp_{expected}":
             raise ValueError("proposal identity is invalid")
         return self
+
+
+class OntologyCandidateReceipt(BaseModel):
+    """Proposal transition acknowledgment without evidence or declaration content."""
+
+    proposal_id: str = Field(pattern=r"^ocp_[0-9a-f]{64}$")
+    lifecycle: ProposalLifecycle
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class OntologyCandidateReview(BaseModel):
+    """Owner-only projection of the evidence and decision retained for one edit."""
+
+    proposal_id: str
+    catalog_scope: AgentLocalCatalogScope
+    relation: RelationDeclaration
+    evidence: tuple[OntologyEvidenceReference, ...]
+    parent_version_digest: str | None
+    parent_status: Literal["selected", "historical", "unavailable"]
+    selected_version_digest: str | None
+    lifecycle: ProposalLifecycle
+    evaluation: PairedEvaluation | None
+    owner_decision: Literal["approved", "rejected"] | None
+    rebase: CatalogRebaseOrigin | None = None
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 class OntologyCatalogVersion(BaseModel):
@@ -283,6 +365,11 @@ class OntologyCatalogVersion(BaseModel):
     version_digest: str = Field(pattern=_DIGEST)
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @property
+    def predicate_ids(self) -> tuple[str, ...]:
+        """Expose the verified relation inventory to shared catalog readers."""
+        return self.relation_ids
 
     @classmethod
     def create(cls, *, catalog_scope: AgentLocalCatalogScope, catalog_digest: str,
@@ -413,7 +500,7 @@ class OntologyActivation(BaseModel):
     def create(cls, **body: object) -> OntologyActivation:
         identity = {key: value for key, value in body.items() if key != "status"}
         digest = _digest(b"memorii.learned-ontology.activation.v1", identity)
-        return cls(**body, attempt_id=f"oca_{digest}", activation_digest=digest)
+        return cls.model_validate({**body, "attempt_id": f"oca_{digest}", "activation_digest": digest})
 
     @model_validator(mode="after")
     def validate_identity(self) -> OntologyActivation:
@@ -455,6 +542,53 @@ class OrdinarySemanticReplayWriter(Protocol):
         self, *, source_id: str, source_digest: str, catalog_scope: AgentLocalCatalogScope,
         catalog_digest: str, replay_operation_id: str,
     ) -> Literal["committed", "abstained", "revoked", "deleted"]: ...
+
+
+class EvaluationExecutionBinding(BaseModel):
+    """Exact installed executor and frozen test inputs for a durable run."""
+
+    artifact_digest: str = Field(pattern=_DIGEST)
+    binding_digest: str = Field(pattern=_DIGEST)
+    corpus_digest: str = Field(pattern=_DIGEST)
+    budget_digest: str = Field(pattern=_DIGEST)
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    def matches(self, result: PairedEvaluation) -> bool:
+        return (
+            self.binding_digest == result.binding_digest
+            and self.corpus_digest == result.corpus_digest
+            and self.budget_digest == result.budget_digest
+        )
+
+
+class _EvaluationAttempt(BaseModel):
+    schema_version: Literal[1] = 1
+    proposal_id: str = Field(pattern=r"^ocp_[0-9a-f]{64}$")
+    catalog_scope: AgentLocalCatalogScope
+    parent_version_digest: str = Field(pattern=_DIGEST)
+    evidence_digest: str = Field(pattern=_DIGEST)
+    binding: EvaluationExecutionBinding
+    generation: int = Field(ge=1)
+    lease_until: AwareDatetime | None = None
+    result_digest: str | None = Field(default=None, pattern=_DIGEST)
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_state(self) -> _EvaluationAttempt:
+        if (self.lease_until is None) == (self.result_digest is None):
+            raise ValueError("evaluation attempt must be claimed or completed")
+        return self
+
+
+_EVALUATION_HEAD_KIND = "learned_ontology_evaluation_attempt_v1"
+_EVALUATION_RESULT_KIND = "learned_ontology_evaluation_result_v1"
+_EVALUATION_CLAIM_LEASE = timedelta(minutes=10)
+
+
+class EvaluationRetryUnavailable(LearnedRelationError):
+    """No safe evaluation retry can be made under the current commitments."""
 
 
 class RegisteredPairedEvaluator(Protocol):
@@ -556,12 +690,25 @@ class FrozenMentorsPairedEvaluator:
 
     def __init__(self, executor: PairedEvaluationExecutor | None = None) -> None:
         self._executor = executor
+        self._execution_artifact_digest: str | None = None
 
-    def bind_executor(self, executor: PairedEvaluationExecutor) -> None:
+    def bind_executor(self, executor: PairedEvaluationExecutor, *, artifact_digest: str | None = None) -> None:
         """Attach the installed isolated execution root after it is composed."""
         if self._executor is not None:
             raise LearnedRelationError("paired evaluator executor is already bound")
         self._executor = executor
+        self._execution_artifact_digest = artifact_digest
+
+    @property
+    def execution_binding(self) -> EvaluationExecutionBinding | None:
+        if self._execution_artifact_digest is None:
+            return None
+        return EvaluationExecutionBinding(
+            artifact_digest=self._execution_artifact_digest,
+            binding_digest=self.binding_digest,
+            corpus_digest=self.corpus_digest,
+            budget_digest=self.budget_digest,
+        )
 
     @property
     def corpus_digest(self) -> str:
@@ -673,86 +820,592 @@ class LearnedRelationRuntime:
 
     def __init__(self, *, memory_plane: MemoryPlaneService,
                  replay_writer: OrdinarySemanticReplayWriter,
-                 policy_for_scope: Callable[[AgentLocalCatalogScope], ActivationPolicy]) -> None:
+                 policy_for_scope: Callable[[AgentLocalCatalogScope], ActivationPolicy],
+                 management_fence_for_scope: Callable[
+                     [AgentLocalCatalogScope], RecordDigestPrecondition | None
+                 ] | None = None,
+                 validate_management_host: Callable[[], None] | None = None,
+                 bound_scope: AgentLocalCatalogScope | None = None,
+                 base_parent_locator: CatalogBundleLocator | None = None,
+                 current_evaluation_sources: Callable[
+                     [OntologyChangeProposal, tuple[CanonicalMemoryRecord, ...]], tuple[OntologyEvidenceReference, ...]
+                 ] | None = None,
+                 evaluation_now: Callable[[], datetime] | None = None) -> None:
         self._plane = memory_plane
         self._replay_writer = replay_writer
         self._policy_for_scope = policy_for_scope
+        self._management_fence_for_scope = management_fence_for_scope
+        self._validate_management_host = validate_management_host
+        self._bound_scope = bound_scope
+        self._base_parent_locator = base_parent_locator
+        self._current_evaluation_sources = current_evaluation_sources
+        self._evaluation_now = evaluation_now or (lambda: datetime.now(UTC))
+
+    def _verified_base_parent(
+        self, expected_digest: str, *, records: tuple[CanonicalMemoryRecord, ...] | None = None,
+    ) -> tuple[RecordDigestPrecondition, ...]:
+        if self._base_parent_locator is None:
+            return ()
+        base = CatalogAuthorityScope(schema_version=1, kind="base")
+        if records is None:
+            _, records = self._plane.read_snapshot()
+        try:
+            parent, _ = self._base_parent_locator.locate_selected(records, scope=base)
+        except CatalogAuthorityError as exc:
+            raise LearnedRelationError("the selected packaged parent is unavailable") from exc
+        if (
+            isinstance(parent.version, OntologyCatalogVersion)
+            or parent.version.version_digest != expected_digest
+            or tuple(sorted((*parent.version.predicate_ids, _RELATION_ID))) != learned_overlay_relation_ids()
+        ):
+            raise LearnedRelationError("candidate does not name the exact packaged parent")
+        guards = []
+        for memory_id in (catalog_selection_pointer_memory_id(base), catalog_version_memory_id(expected_digest)):
+            parent_record = _record_for(records, memory_id)
+            if parent_record is None:
+                raise LearnedRelationError("the selected packaged parent is unavailable")
+            guards.append(RecordDigestPrecondition(memory_id=memory_id, expected_digest=record_digest(parent_record)))
+        return tuple(guards)
+
+    @staticmethod
+    def _catalog_content_digest(proposal: OntologyChangeProposal) -> str:
+        return _digest(b"memorii.learned-ontology.catalog-content.v1", {
+            "parent": proposal.parent_catalog_digest, "relation": proposal.relation.model_dump(mode="json"),
+        })
+
+    def _verified_rebase_origin(
+        self, pointer: CatalogPointer,
+    ) -> tuple[OntologyChangeProposal, tuple[RecordDigestPrecondition, ...]]:
+        if self._base_parent_locator is None:
+            raise LearnedRelationError("verified packaged parent is unavailable for rebase")
+        _, records = self._plane.read_snapshot()
+        scope = pointer.catalog_scope
+        legacy, selected = locate_selected_learned_catalog(
+            records, scope=scope,
+            authenticated=AuthenticatedPrincipalAgent(principal_id=scope.principal_id, agent_id=scope.agent_id),
+        )
+        if selected != pointer or legacy.parent_version_digest is not None or legacy.introduced_proposal_id is None:
+            raise LearnedRelationError("the selected catalog is not a provable parentless overlay")
+        origin_record = _require_control_record(
+            _record_for(records, legacy.introduced_proposal_id), source_kind=_KIND_PROPOSAL,
+        )
+        attempt_record = _require_control_record(
+            _record_for(records, selected.selected_attempt_id), source_kind=_KIND_ATTEMPT,
+        )
+        legacy_record = _require_control_record(
+            _record_for(records, learned_catalog_version_memory_id(legacy)), source_kind=_KIND_VERSION,
+        )
+        proposal = self._decode_proposal(origin_record)
+        attempt = OntologyActivation.model_validate(attempt_record.content["activation"])
+        if (
+            proposal is None or proposal.proposal_id != origin_record.memory_id
+            or proposal.catalog_scope != scope or proposal.lifecycle != "active" or proposal.rebase is not None
+            or proposal.evaluation is None or not proposal.evaluation.passes
+            or legacy.catalog_digest != self._catalog_content_digest(proposal)
+            or attempt.operation != "activate_candidate" or attempt.proposal_id != proposal.proposal_id
+        ):
+            raise LearnedRelationError("the original catalog selection proof is unavailable")
+        packaged = self._verified_base_parent(proposal.parent_catalog_digest, records=records)
+        guards = tuple(
+            RecordDigestPrecondition(memory_id=record.memory_id, expected_digest=record_digest(record))
+            for record in (origin_record, attempt_record, legacy_record)
+        )
+        return proposal, (*packaged, *guards)
+
+    def prepare_rebase(
+        self, *, catalog_scope: AgentLocalCatalogScope, principal_id: str, agent_id: str,
+        evaluator: RegisteredPairedEvaluator,
+    ) -> OntologyChangeProposal:
+        """Prepare and evaluate a new edit using independently verified legacy coordinates."""
+        policy = self._policy_for_scope(catalog_scope)
+        if (principal_id, agent_id) != (policy.owner_principal_id, policy.owner_agent_id):
+            raise LearnedRelationError("catalog owner authorization is required")
+        fence = self._management_fence(catalog_scope)
+        pointer = self._load_pointer(catalog_scope)
+        if pointer is None:
+            raise LearnedRelationError("catalog has no selected overlay to rebase")
+        original, _ = self._verified_rebase_origin(pointer)
+        candidate = OntologyChangeProposal.create(
+            catalog_scope=catalog_scope, parent_catalog_digest=original.parent_catalog_digest,
+            relation=original.relation, evidence=original.evidence,
+            rebase=CatalogRebaseOrigin(
+                legacy_version_digest=pointer.selected_version_digest, expected_pointer_digest=pointer.pointer_digest,
+            ),
+        )
+        if self._current_evaluation_sources is not None:
+            return self._run_registered_evaluation(candidate, evaluator, fence)
+        if self._plane.get_record(candidate.proposal_id) is None:
+            candidate = self._prepare_candidate(candidate, fence)
+        else:
+            loaded = self._require_proposal(candidate.proposal_id)
+            if loaded.model_copy(update={"lifecycle": "draft", "evaluation": None}) != candidate:
+                raise LearnedRelationError("rebase proposal identity collides")
+            candidate = loaded
+        if candidate.lifecycle != "validated":
+            return self._finish_evaluation_publication(candidate, *fence)
+        self._require_unchanged_fence(catalog_scope, fence)
+        result = evaluator.evaluate(candidate)
+        if result.binding_digest != evaluator.binding_digest:
+            raise LearnedRelationError("paired rebase evaluation does not match the installed evaluator")
+        return self._record_evaluation(self._require_proposal(candidate.proposal_id), result, fence)
+
+    @staticmethod
+    def _evaluation_head_id(proposal_id: str) -> str:
+        return f"learned-evaluation-attempt:{proposal_id}"
+
+    @staticmethod
+    def _evaluation_result_id(attempt: _EvaluationAttempt) -> str:
+        return f"learned-evaluation-result:{attempt.proposal_id}:{attempt.generation}"
+
+    @staticmethod
+    def _evaluation_record(
+        *, memory_id: str, kind: str, content: dict[str, object],
+    ) -> CanonicalMemoryRecord:
+        return CanonicalMemoryRecord(
+            memory_id=memory_id, domain=MemoryDomain.EXECUTION, text="", content=content,
+            source_kind=kind, status=CommitStatus.COMMITTED,
+            visibility=MemoryRecordVisibility.INTERNAL_CONTROL, timestamp=datetime.now(UTC),
+        )
+
+    def _evaluation_guards(
+        self, proposal: OntologyChangeProposal,
+    ) -> tuple[RecordDigestPrecondition | RecordAbsentPrecondition, ...]:
+        if self._base_parent_locator is None or self._current_evaluation_sources is None:
+            raise EvaluationRetryUnavailable("registered evaluation authority is unavailable")
+        _, records = self._plane.read_snapshot()
+        pointer_id = learned_catalog_pointer_memory_id(proposal.catalog_scope)
+        pointer_record = _record_for(records, pointer_id)
+        try:
+            if proposal.rebase is None:
+                if pointer_record is not None:
+                    raise EvaluationRetryUnavailable("the observed edit's original parent is no longer selected")
+                parent_guards = self._verified_base_parent(proposal.parent_catalog_digest, records=records)
+                pointer_guard = RecordAbsentPrecondition(memory_id=pointer_id)
+            else:
+                pointer = self._load_pointer(proposal.catalog_scope)
+                if pointer is None or pointer_record is None:
+                    raise EvaluationRetryUnavailable("the rebase origin is no longer selected")
+                parent_guards = self._rebase_selection_guards(proposal, pointer)
+                pointer_guard = RecordDigestPrecondition(memory_id=pointer_id, expected_digest=record_digest(pointer_record))
+        except LearnedRelationError as exc:
+            raise EvaluationRetryUnavailable("the exact original parent is unavailable") from exc
+        if self._current_evaluation_sources(proposal, records) != proposal.evidence:
+            raise EvaluationRetryUnavailable("the original evidence is unavailable")
+        source_guards = tuple(
+            RecordDigestPrecondition(memory_id=source.memory_id, expected_digest=record_digest(source))
+            for reference in proposal.evidence
+            if (source := _record_for(records, reference.source_id)) is not None
+        )
+        if len(source_guards) != len(proposal.evidence):
+            raise EvaluationRetryUnavailable("the original evidence is not retained")
+        return (pointer_guard, *parent_guards, *source_guards)
+
+    def _run_registered_evaluation(
+        self, draft: OntologyChangeProposal, evaluator: RegisteredPairedEvaluator,
+        fence: tuple[RecordDigestPrecondition, ...],
+    ) -> OntologyChangeProposal:
+        current_record = self._plane.get_record(draft.proposal_id)
+        if current_record is None:
+            proposal = draft.model_copy(update={"lifecycle": "validated"})
+        else:
+            proposal = self._require_proposal(draft.proposal_id)
+            if proposal.lifecycle not in {"validated", "evaluation_unavailable"}:
+                return self._finish_evaluation_publication(proposal, *fence)
+        artifact_binding = getattr(evaluator, "execution_binding", None)
+        if not isinstance(artifact_binding, EvaluationExecutionBinding):
+            raise EvaluationRetryUnavailable("registered evaluator binding is unavailable")
+        evidence_digest = _digest(
+            b"memorii.learned-ontology.evaluation-evidence.v1",
+            tuple(ref.model_dump(mode="json") for ref in proposal.evidence),
+        )
+        head_id = self._evaluation_head_id(proposal.proposal_id)
+        head = self._plane.get_record(head_id)
+        generation = 1
+        if head is None:
+            if current_record is not None:
+                # A pre-existing proposal without an anchor has no proven original executor.
+                return proposal
+            head_guard = RecordAbsentPrecondition(memory_id=head_id)
+        else:
+            if current_record is None:
+                raise EvaluationRetryUnavailable("the evaluation proposal is unavailable")
+            persisted = _require_control_record(head, source_kind=_EVALUATION_HEAD_KIND)
+            previous = _EvaluationAttempt.model_validate(persisted.content.get("attempt"))
+            if (
+                previous.proposal_id != proposal.proposal_id or previous.catalog_scope != proposal.catalog_scope
+                or previous.parent_version_digest != proposal.parent_catalog_digest
+                or previous.evidence_digest != evidence_digest or previous.binding != artifact_binding
+            ):
+                raise EvaluationRetryUnavailable("the evaluation binding or original evidence changed")
+            if previous.lease_until is not None and previous.lease_until > self._evaluation_now():
+                return proposal
+            if previous.result_digest is not None:
+                result_record = _require_control_record(
+                    self._plane.get_record(self._evaluation_result_id(previous)), source_kind=_EVALUATION_RESULT_KIND,
+                )
+                retained = PairedEvaluation.model_validate(result_record.content.get("evaluation"))
+                if (
+                    retained.available or retained.evaluation_digest != previous.result_digest
+                    or proposal.evaluation != retained or not previous.binding.matches(retained)
+                    or result_record.content.get("attempt") != previous.model_dump(mode="json")
+                ):
+                    raise EvaluationRetryUnavailable("the previous unavailable evaluation proof is invalid")
+            generation = previous.generation + 1
+            head_guard = RecordDigestPrecondition(memory_id=head_id, expected_digest=record_digest(head))
+        guards = self._evaluation_guards(proposal)
+        claim = _EvaluationAttempt(
+            proposal_id=proposal.proposal_id, catalog_scope=proposal.catalog_scope,
+            parent_version_digest=proposal.parent_catalog_digest, evidence_digest=evidence_digest,
+            binding=artifact_binding, generation=generation, lease_until=self._evaluation_now() + _EVALUATION_CLAIM_LEASE,
+        )
+        claim_record = self._evaluation_record(
+            memory_id=head_id, kind=_EVALUATION_HEAD_KIND, content={"attempt": claim.model_dump(mode="json")},
+        )
+        proposal_record = self._proposal_record(proposal) if current_record is None else current_record
+        proposal_guard = (
+            RecordAbsentPrecondition(memory_id=proposal.proposal_id) if current_record is None else
+            RecordDigestPrecondition(memory_id=proposal.proposal_id, expected_digest=record_digest(current_record))
+        )
+        try:
+            self._plane.conditionally_write_records(
+                (claim_record, proposal_record) if current_record is None else (claim_record,),
+                preconditions=(head_guard, proposal_guard, *guards, *fence),
+                transaction_precondition=self._validate_management_host if fence else None,
+            )
+        except MemoryPlaneRevisionConflictError as exc:
+            self._require_unchanged_fence(proposal.catalog_scope, fence)
+            raise EvaluationRetryUnavailable("the evaluation claim changed before execution") from exc
+        result = PairedEvaluation.model_validate(evaluator.evaluate(proposal).model_dump())
+        if not artifact_binding.matches(result):
+            raise EvaluationRetryUnavailable("the evaluation result differs from its registered binding")
+        finished = claim.model_copy(update={"lease_until": None, "result_digest": result.evaluation_digest})
+        outcome = self._evaluation_record(
+            memory_id=self._evaluation_result_id(finished), kind=_EVALUATION_RESULT_KIND,
+            content={"attempt": finished.model_dump(mode="json"), "evaluation": result.model_dump(mode="json")},
+        )
+        head_replacement = self._evaluation_record(
+            memory_id=head_id, kind=_EVALUATION_HEAD_KIND, content={"attempt": finished.model_dump(mode="json")},
+        )
+        evaluating = proposal.model_copy(update={"lifecycle": "evaluating", "evaluation": result})
+        guards = self._evaluation_guards(proposal)
+        try:
+            self._plane.conditionally_write_records(
+                (outcome, head_replacement, self._proposal_record(evaluating)),
+                preconditions=(
+                    RecordDigestPrecondition(memory_id=head_id, expected_digest=record_digest(claim_record)),
+                    RecordDigestPrecondition(memory_id=proposal.proposal_id, expected_digest=record_digest(proposal_record)),
+                    RecordAbsentPrecondition(memory_id=outcome.memory_id), *guards, *fence,
+                ),
+                transaction_precondition=self._validate_management_host if fence else None,
+            )
+        except MemoryPlaneRevisionConflictError as exc:
+            self._require_unchanged_fence(proposal.catalog_scope, fence)
+            raise EvaluationRetryUnavailable("the evaluation claim changed before publication") from exc
+        return self._finish_evaluation_publication(evaluating, *fence)
+
+    def _require_bound_scope(self, scope: AgentLocalCatalogScope) -> None:
+        if self._bound_scope is not None and self._bound_scope != scope:
+            raise LearnedRelationError("catalog scope is outside the installed binding")
+
+    def _management_fence(self, scope: AgentLocalCatalogScope) -> tuple[RecordDigestPrecondition, ...]:
+        self._require_bound_scope(scope)
+        if self._management_fence_for_scope is None:
+            return ()
+        fence = self._management_fence_for_scope(scope)
+        if fence is None:
+            raise CatalogManagementUnavailable("catalog management is unavailable")
+        return (fence,)
 
     def prepare_candidate(self, proposal: OntologyChangeProposal) -> OntologyChangeProposal:
+        return self._prepare_candidate(proposal, self._management_fence(proposal.catalog_scope))
+
+    def _prepare_candidate(
+        self, proposal: OntologyChangeProposal, fence: tuple[RecordDigestPrecondition, ...],
+    ) -> OntologyChangeProposal:
         if proposal.lifecycle != "draft":
             raise LearnedRelationError("only a draft proposal can be prepared")
-        self._write_proposal(proposal)
-        validating = proposal.model_copy(update={"lifecycle": "validating"})
-        self._replace_proposal(proposal, validating)
-        validated = validating.model_copy(update={"lifecycle": "validated"})
-        self._replace_proposal(validating, validated)
+        # Preparation is deterministic and has no external work between
+        # draft and validation. Publish its final state in one fenced write.
+        validated = proposal.model_copy(update={"lifecycle": "validated"})
+        self._write_proposal(validated, *fence)
         return validated
 
     def record_evaluation(self, *, proposal_id: str, evaluation: PairedEvaluation) -> OntologyChangeProposal:
         proposal = self._require_proposal(proposal_id)
+        return self._record_evaluation(proposal, evaluation, self._management_fence(proposal.catalog_scope))
+
+    def _record_evaluation(
+        self, proposal: OntologyChangeProposal, evaluation: PairedEvaluation,
+        fence: tuple[RecordDigestPrecondition, ...],
+    ) -> OntologyChangeProposal:
+        evaluation = PairedEvaluation.model_validate(evaluation.model_dump())
+        if proposal.evaluation is not None:
+            if proposal.lifecycle in {"draft", "validating", "validated"}:
+                raise LearnedRelationError("proposal is not awaiting evaluation")
+            if proposal.evaluation != evaluation:
+                raise LearnedRelationError("paired evaluation differs from the published result")
+            return self._finish_evaluation_publication(proposal, *fence)
         if proposal.lifecycle != "validated":
             raise LearnedRelationError("proposal is not awaiting evaluation")
-        evaluating = proposal.model_copy(update={"lifecycle": "evaluating"})
-        self._replace_proposal(proposal, evaluating)
+        evaluating = proposal.model_copy(update={"lifecycle": "evaluating", "evaluation": evaluation})
+        outcome = self._evaluation_outcome_lifecycle(evaluation)
+        successors = (outcome, *_EVALUATION_DECISION_STATES) if outcome == "evaluated" else (outcome,)
+        evaluating = self._publish_evaluation_transition(proposal, evaluating, *fence, successors=successors)
+        return self._finish_evaluation_publication(evaluating, *fence)
+
+    def _finish_evaluation_publication(
+        self, proposal: OntologyChangeProposal, *fence: RecordDigestPrecondition,
+    ) -> OntologyChangeProposal:
+        evaluation = proposal.evaluation
+        if evaluation is None:
+            # Early evaluating rows contain no result to finalize.
+            return proposal
+        if proposal.lifecycle == "evaluating":
+            outcome = self._evaluation_outcome_lifecycle(evaluation)
+            completed = proposal.model_copy(update={"lifecycle": outcome})
+            proposal = self._publish_evaluation_transition(
+                proposal, completed, *fence, successors=_EVALUATION_DECISION_STATES if outcome == "evaluated" else (),
+            )
+        if proposal.lifecycle == "evaluated":
+            if not evaluation.passes:
+                raise LearnedRelationError("candidate evaluation has not passed")
+            awaiting = proposal.model_copy(update={"lifecycle": "awaiting_decision"})
+            return self._publish_evaluation_transition(
+                proposal, awaiting, *fence, successors=_EVALUATION_DECISION_STATES[1:],
+            )
+        return proposal
+
+    @staticmethod
+    def _evaluation_outcome_lifecycle(
+        evaluation: PairedEvaluation,
+    ) -> Literal["evaluation_unavailable", "evaluated", "rejected"]:
         if not evaluation.available:
-            lifecycle = "evaluation_unavailable"
-        elif evaluation.passes:
-            lifecycle = "evaluated"
+            return "evaluation_unavailable"
+        return "evaluated" if evaluation.passes else "rejected"
+
+    def _publish_evaluation_transition(
+        self, old: OntologyChangeProposal, new: OntologyChangeProposal,
+        *fence: RecordDigestPrecondition, successors: tuple[str, ...],
+    ) -> OntologyChangeProposal:
+        try:
+            self._replace_proposal(old, new, *fence)
+        except _ProposalLifecycleConflict:
+            winner = self._require_proposal(old.proposal_id)
+            if (
+                winner.lifecycle not in (new.lifecycle, *successors)
+                or winner.model_copy(update={"lifecycle": new.lifecycle}) != new
+            ):
+                raise
+            return winner
+        return new
+
+    def review_candidate(
+        self, *, proposal_id: str, principal_id: str, agent_id: str,
+        suppression_view: Callable[[tuple[CanonicalMemoryRecord, ...]], RevokedIdentityView],
+    ) -> OntologyCandidateReview:
+        """Read explicitly scoped review evidence under the current management grant."""
+        proposal, fence = self._owner_candidate(proposal_id, principal_id=principal_id, agent_id=agent_id)
+
+        def read(_revision: int, records: tuple[CanonicalMemoryRecord, ...]) -> OntologyCandidateReview:
+            from memorii.core.memory_evolution.admission import source_admission_source_digest
+
+            by_id = {record.memory_id: record for record in records}
+            proposal_record = _require_control_record(by_id.get(proposal_id), source_kind=_KIND_PROPOSAL)
+            current = self._decode_proposal(proposal_record)
+            if current is None or current.proposal_id != proposal_id or current.catalog_scope != proposal.catalog_scope:
+                raise LearnedRelationError("proposal is unavailable")
+            if any(
+                (witness := by_id.get(condition.memory_id)) is None
+                or record_digest(witness) != condition.expected_digest
+                for condition in fence
+            ):
+                raise CatalogManagementUnavailable("catalog management changed before review")
+
+            view = suppression_view(records)
+            verified = (
+                () if self._current_evaluation_sources is None else self._current_evaluation_sources(current, records)
+            )
+            evidence = []
+            for reference in current.evidence:
+                source = by_id.get(reference.source_id)
+                if (
+                    source is None or source.source_kind != "semantic_ingestion_source"
+                    or source.domain is not MemoryDomain.TRANSCRIPT
+                    or source.status is not CommitStatus.COMMITTED
+                    or view.is_revoked_source(source.memory_id) or view.is_revoked_record(source.memory_id)
+                    or (source.task_id is not None and view.is_revoked_task(source.task_id))
+                ):
+                    continue
+                if reference in verified:
+                    evidence.append(reference)
+                    continue
+                admission = source.content.get("source_admission")
+                if (
+                    (source.user_id, source.agent_id) != (principal_id, agent_id)
+                    or (isinstance(admission, dict) and "retained_authenticated_ingress" in admission)
+                ):
+                    continue
+                try:
+                    if source_admission_source_digest(source) == reference.source_digest:
+                        evidence.append(reference)
+                except (TypeError, ValueError):
+                    continue
+
+            selected, parent_status = self._review_parent(current, records)
+            decision: Literal["approved", "rejected"] | None = None
+            if current.lifecycle in {"approved_for_activation", "active", "activation_conflict"}:
+                decision = "approved"
+            if current.lifecycle == "rejected" and current.evaluation is not None and current.evaluation.passes:
+                decision = "rejected"
+            if self._validate_management_host is not None:
+                self._validate_management_host()
+            return OntologyCandidateReview(
+                proposal_id=current.proposal_id, catalog_scope=current.catalog_scope,
+                relation=current.relation, evidence=tuple(evidence),
+                parent_version_digest=(
+                    current.parent_catalog_digest if parent_status != "unavailable" else None
+                ),
+                parent_status=parent_status,
+                selected_version_digest=selected, lifecycle=current.lifecycle,
+                evaluation=current.evaluation, owner_decision=decision, rebase=current.rebase,
+            )
+
+        result = self._plane.read_snapshot_linearized(read)
+        if not isinstance(result, OntologyCandidateReview):
+            raise LearnedRelationError("proposal review is unavailable")
+        return result
+
+    def _review_parent(
+        self, proposal: OntologyChangeProposal, records: tuple[CanonicalMemoryRecord, ...],
+    ) -> tuple[str | None, Literal["selected", "historical", "unavailable"]]:
+        if self._base_parent_locator is None:
+            return None, "unavailable"
+        scope = proposal.catalog_scope
+        authenticated = AuthenticatedPrincipalAgent(principal_id=scope.principal_id, agent_id=scope.agent_id)
+        base = CatalogAuthorityScope(schema_version=1, kind="base")
+        selected_scope = scope if _record_for(records, learned_catalog_pointer_memory_id(scope)) is not None else base
+        selected = None
+        try:
+            current, _ = self._base_parent_locator.locate_selected(
+                records, scope=selected_scope, authenticated=authenticated,
+            )
+            selected = current.version.version_digest
+            if selected == proposal.parent_catalog_digest:
+                return selected, "selected"
+        except CatalogAuthorityError:
+            pass
+        parent_digest = proposal.parent_catalog_digest
+        learned = _record_for(records, learned_catalog_version_memory_id(parent_digest))
+        packaged = _record_for(records, catalog_version_memory_id(parent_digest))
+        if (learned is None) == (packaged is None):
+            return selected, "unavailable"
+        if learned is not None:
+            version_id = f"ontology-catalog:{parent_digest}"
+            historical_scope = scope
         else:
-            lifecycle = "rejected"
-        updated = evaluating.model_copy(update={"lifecycle": lifecycle, "evaluation": evaluation})
-        self._replace_proposal(evaluating, updated)
-        if lifecycle != "evaluated":
-            return updated
-        awaiting = updated.model_copy(update={"lifecycle": "awaiting_decision"})
-        self._replace_proposal(updated, awaiting)
-        return awaiting
+            assert packaged is not None
+            raw = packaged.content.get("catalog_version")
+            version_id = raw.get("version_id") if isinstance(raw, dict) else None
+            if not isinstance(version_id, str):
+                return selected, "unavailable"
+            historical_scope = base
+        try:
+            self._base_parent_locator.locate_historical(
+                records, version_id=version_id, version_digest=parent_digest,
+                scope=historical_scope, authenticated=authenticated,
+            )
+        except CatalogAuthorityError:
+            return selected, "unavailable"
+        return selected, "historical"
+
+    def _owner_candidate(
+        self, proposal_id: str, *, principal_id: str, agent_id: str,
+    ) -> tuple[OntologyChangeProposal, tuple[RecordDigestPrecondition, ...]]:
+        record = _require_control_record(self._plane.get_record(proposal_id), source_kind=_KIND_PROPOSAL)
+        proposal = self._decode_proposal(record)
+        if proposal is None or proposal.proposal_id != proposal_id:
+            raise LearnedRelationError("proposal is unavailable")
+        self._require_bound_scope(proposal.catalog_scope)
+        policy = self._policy_for_scope(proposal.catalog_scope)
+        if (principal_id, agent_id) != (
+            proposal.catalog_scope.principal_id, proposal.catalog_scope.agent_id,
+        ) or (principal_id, agent_id) != (policy.owner_principal_id, policy.owner_agent_id):
+            raise LearnedRelationError("catalog owner authorization is required")
+        return proposal, self._management_fence(proposal.catalog_scope)
+
+    def reject_candidate(self, *, proposal_id: str, principal_id: str, agent_id: str) -> OntologyChangeProposal:
+        proposal, fence = self._owner_candidate(proposal_id, principal_id=principal_id, agent_id=agent_id)
+        if proposal.lifecycle == "rejected" and proposal.evaluation is not None and proposal.evaluation.passes:
+            return proposal
+        if proposal.lifecycle != "awaiting_decision" or proposal.evaluation is None or not proposal.evaluation.passes:
+            raise LearnedRelationError("candidate is not awaiting a decision")
+        rejected = proposal.model_copy(update={"lifecycle": "rejected"})
+        try:
+            self._replace_proposal(proposal, rejected, *fence)
+        except _ProposalLifecycleConflict:
+            if self._require_proposal(proposal_id) != rejected:
+                raise
+        return rejected
 
     def approve_candidate(self, *, proposal_id: str, principal_id: str, agent_id: str) -> OntologyChangeProposal:
-        proposal = self._require_proposal(proposal_id)
-        policy = self._policy_for_scope(proposal.catalog_scope)
-        if (principal_id, agent_id) != (policy.owner_principal_id, policy.owner_agent_id):
-            raise LearnedRelationError("catalog owner authorization is required")
+        proposal, fence = self._owner_candidate(proposal_id, principal_id=principal_id, agent_id=agent_id)
+        if proposal.lifecycle == "approved_for_activation" and proposal.evaluation is not None and proposal.evaluation.passes:
+            return proposal
         if proposal.lifecycle != "awaiting_decision" or proposal.evaluation is None or not proposal.evaluation.passes:
             raise LearnedRelationError("candidate evaluation has not passed")
         updated = proposal.model_copy(update={"lifecycle": "approved_for_activation"})
-        self._replace_proposal(proposal, updated)
+        self._replace_proposal(proposal, updated, *fence)
         return updated
 
     def activate_candidate(self, *, proposal_id: str, principal_id: str, agent_id: str) -> OntologyActivation:
         proposal = self._require_proposal(proposal_id)
+        self._require_bound_scope(proposal.catalog_scope)
         policy = self._policy_for_scope(proposal.catalog_scope)
         if (principal_id, agent_id) != (policy.owner_principal_id, policy.owner_agent_id):
             raise LearnedRelationError("catalog owner authorization is required")
         if proposal.lifecycle == "active":
             return self._selected_attempt_for_proposal(proposal)
+        fence = self._management_fence(proposal.catalog_scope)
         if proposal.lifecycle != "approved_for_activation":
             raise LearnedRelationError("candidate has not been approved")
         pointer = self._load_pointer(proposal.catalog_scope)
-        if pointer is not None and pointer.selected_version_digest != proposal.parent_catalog_digest:
+        rebase = proposal.rebase
+        if rebase is not None:
+            if pointer is None or rebase.expected_pointer_digest != pointer.pointer_digest:
+                raise LearnedRelationError("rebase pointer expectation is stale")
+            self._rebase_selection_guards(proposal, pointer)
+        elif pointer is not None and pointer.selected_version_digest != proposal.parent_catalog_digest:
             conflicted = proposal.model_copy(update={"lifecycle": "activation_conflict"})
-            self._replace_proposal(proposal, conflicted)
+            self._replace_proposal(proposal, conflicted, *fence)
             raise LearnedRelationError("candidate parent is no longer selected")
+        parent_digest = (
+            proposal.parent_catalog_digest if rebase is not None
+            else pointer.selected_version_digest if pointer is not None else None
+        )
+        if pointer is None and self._base_parent_locator is not None:
+            self._verified_base_parent(proposal.parent_catalog_digest)
+            parent_digest = proposal.parent_catalog_digest
         version = OntologyCatalogVersion.create(
             catalog_scope=proposal.catalog_scope,
-            catalog_digest=_digest(b"memorii.learned-ontology.catalog-content.v1", {
-                "parent": proposal.parent_catalog_digest, "relation": proposal.relation.model_dump(mode="json")}),
-            parent_version_digest=(pointer.selected_version_digest if pointer else None),
+            catalog_digest=self._catalog_content_digest(proposal),
+            parent_version_digest=parent_digest,
             relation_ids=learned_overlay_relation_ids(),
             introduced_proposal_id=proposal.proposal_id,
         )
-        self._write_version(version)
+        self._write_version(version, *fence)
         attempt = OntologyActivation.create(
             schema_version=1, catalog_scope=proposal.catalog_scope,
             operation="activate_candidate", proposal_id=proposal.proposal_id,
             target_version_digest=version.version_digest,
             expected_pointer_digest=(pointer.pointer_digest if pointer else None),
             expected_pointer_sequence=(pointer.activation_sequence if pointer else None),
-            authorizing_decision_digest=self._decision_digest(policy=policy, proposal=proposal),
+            authorizing_decision_digest=self._fenced_decision(
+                self._decision_digest(policy=policy, proposal=proposal), fence,
+            ),
             status="prepared",
         )
-        self._write_attempt(attempt)
-        selected = self._select(attempt=attempt, expected_pointer=pointer)
+        self._write_attempt(attempt, *fence)
+        selected = self._select(attempt=attempt, expected_pointer=pointer, management_fence=fence)
         active = proposal.model_copy(update={"lifecycle": "active"})
         self._replace_proposal(proposal, active)
         self._replay(active, version)
@@ -760,6 +1413,7 @@ class LearnedRelationRuntime:
 
     def select_prior_version(self, *, catalog_scope: AgentLocalCatalogScope, target_version_digest: str,
                              principal_id: str, agent_id: str) -> OntologyActivation:
+        self._require_bound_scope(catalog_scope)
         policy = self._policy_for_scope(catalog_scope)
         if (principal_id, agent_id) != (policy.owner_principal_id, policy.owner_agent_id):
             raise LearnedRelationError("catalog owner authorization is required")
@@ -768,6 +1422,7 @@ class LearnedRelationRuntime:
             raise LearnedRelationError("catalog has no selected version")
         if target_version_digest == pointer.selected_version_digest:
             return self._require_attempt(pointer.selected_attempt_id)
+        fence = self._management_fence(catalog_scope)
         if not self._is_ancestor(
                 catalog_scope, current=pointer.selected_version_digest, target=target_version_digest):
             raise LearnedRelationError("rollback target is not a selected ancestor")
@@ -778,13 +1433,16 @@ class LearnedRelationRuntime:
             proposal_id=None, target_version_digest=target_version_digest,
             expected_pointer_digest=pointer.pointer_digest,
             expected_pointer_sequence=pointer.activation_sequence,
-            authorizing_decision_digest=self._rollback_decision_digest(policy=policy, target=target_version_digest),
+            authorizing_decision_digest=self._fenced_decision(
+                self._rollback_decision_digest(policy=policy, target=target_version_digest), fence,
+            ),
             status="prepared",
         )
-        self._write_attempt(attempt)
-        return self._select(attempt=attempt, expected_pointer=pointer)
+        self._write_attempt(attempt, *fence)
+        return self._select(attempt=attempt, expected_pointer=pointer, management_fence=fence)
 
     def status(self, scope: AgentLocalCatalogScope) -> dict[str, object]:
+        self._require_bound_scope(scope)
         pointer = self._load_pointer(scope)
         proposals = [self._decode_proposal(record) for record in self._plane.list_records(source_kind=_KIND_PROPOSAL)]
         outcomes: dict[str, int] = {}
@@ -806,6 +1464,7 @@ class LearnedRelationRuntime:
             "active_catalog_digest": None if pointer is None else self._require_version(pointer.selected_version_digest).catalog_digest,
             "active_version_digest": None if pointer is None else pointer.selected_version_digest,
             "activation_sequence": None if pointer is None else pointer.activation_sequence,
+            **({"selected_attempt_id": pointer.selected_attempt_id} if pointer is not None else {}),
             "candidate_count": len([item for item in proposals if item and item.catalog_scope == scope]),
             "candidate_ids": tuple(
                 item.proposal_id for item in proposals
@@ -816,13 +1475,28 @@ class LearnedRelationRuntime:
         }
 
     def recover(self, scope: AgentLocalCatalogScope) -> None:
-        """Finish one interrupted selection and retry selected catalog replay.
+        """Finish published evaluations and interrupted selection for one scope.
 
-        Recovery reads only immutable control records.  A prepared attempt is
-        never treated as selected until its pointer CAS succeeds; a pointer
-        that already names the attempt is sufficient to finalize its durable
-        selected projection after a crash.
+        A durable evaluation can finish publication without executing inference.
+        A prepared selection must win its pointer CAS before becoming selected.
+        If the pointer already names the attempt, finalize selection and retry
+        its ordinary replay.
         """
+        self._require_bound_scope(scope)
+        for record in self._plane.list_records(source_kind=_KIND_PROPOSAL):
+            proposal = self._decode_proposal(record)
+            if (
+                proposal is not None
+                and proposal.proposal_id == record.memory_id
+                and proposal.catalog_scope == scope
+                and proposal.lifecycle in {"evaluating", "evaluated"}
+                and record.domain == MemoryDomain.EXECUTION
+                and record.status == CommitStatus.COMMITTED
+                and record.visibility == MemoryRecordVisibility.INTERNAL_CONTROL
+            ):
+                with suppress(CatalogManagementUnavailable):
+                    self._finish_evaluation_publication(proposal, *self._management_fence(scope))
+
         attempts = []
         for record in self._plane.list_records(source_kind=_KIND_ATTEMPT):
             try:
@@ -855,6 +1529,9 @@ class LearnedRelationRuntime:
             self._replay(proposal, self._require_version(selected.target_version_digest))
 
     def _replay(self, proposal: OntologyChangeProposal, version: OntologyCatalogVersion) -> None:
+        if proposal.rebase is not None:
+            # Rebase fixes selection metadata. Keep old evidence's historical fact pins.
+            return
         for evidence in proposal.evidence:
             operation_id = "ontology-replay:" + _digest(b"memorii.learned-ontology.replay.v1", {
                 "source_id": evidence.source_id, "source_digest": evidence.source_digest,
@@ -876,7 +1553,10 @@ class LearnedRelationRuntime:
             with suppress(MemoryPlaneRevisionConflictError):
                 self._plane.conditionally_write_records((record,), preconditions=(RecordAbsentPrecondition(memory_id=operation_id),))
 
-    def _select(self, *, attempt: OntologyActivation, expected_pointer: CatalogPointer | None) -> OntologyActivation:
+    def _select(
+        self, *, attempt: OntologyActivation, expected_pointer: CatalogPointer | None,
+        management_fence: tuple[RecordDigestPrecondition, ...] = (),
+    ) -> OntologyActivation:
         next_pointer = CatalogPointer.create(catalog_scope=attempt.catalog_scope,
             selected_version_digest=attempt.target_version_digest,
             selected_attempt_id=attempt.attempt_id,
@@ -902,20 +1582,67 @@ class LearnedRelationRuntime:
             or attempt.expected_pointer_sequence != expected_pointer.activation_sequence
         ):
             raise LearnedRelationError("activation pointer expectation is stale")
-        conditions = ((RecordAbsentPrecondition(memory_id=record.memory_id),) if expected_pointer is None else
-                      (RecordDigestPrecondition(memory_id=record.memory_id,
-                       expected_digest=record_digest(persisted)),))
+        condition = (
+            RecordAbsentPrecondition(memory_id=record.memory_id)
+            if expected_pointer is None or persisted is None
+            else RecordDigestPrecondition(memory_id=record.memory_id, expected_digest=record_digest(persisted))
+        )
+        parent_guards = ()
+        proposal = self._require_proposal(attempt.proposal_id) if attempt.proposal_id is not None else None
+        if proposal is not None and proposal.rebase is not None:
+            if expected_pointer is None:
+                raise LearnedRelationError("rebase pointer expectation is unavailable")
+            version = self._require_version(attempt.target_version_digest)
+            if (
+                version.parent_version_digest != proposal.parent_catalog_digest
+                or version.catalog_digest != self._catalog_content_digest(proposal)
+                or version.introduced_proposal_id != proposal.proposal_id
+            ):
+                raise LearnedRelationError("rebased catalog does not match its evaluated proposal")
+            parent_guards = self._rebase_selection_guards(proposal, expected_pointer)
+        elif expected_pointer is None and self._base_parent_locator is not None:
+            version = self._require_version(attempt.target_version_digest)
+            if version.parent_version_digest is None:
+                raise LearnedRelationError("candidate lacks an exact packaged parent")
+            parent_guards = self._verified_base_parent(version.parent_version_digest)
         try:
-            self._plane.conditionally_write_records((record,), preconditions=conditions)
+            self._plane.conditionally_write_records(
+                (record,), preconditions=(condition, *management_fence, *parent_guards),
+                transaction_precondition=self._validate_management_host if management_fence else None,
+            )
         except MemoryPlaneRevisionConflictError as exc:
+            self._require_unchanged_fence(attempt.catalog_scope, management_fence)
             raise LearnedRelationError("catalog pointer compare-and-swap conflicted") from exc
         self._finalize_selected(attempt)
         return self._require_attempt(attempt.attempt_id)
+
+    def _rebase_selection_guards(
+        self, proposal: OntologyChangeProposal, pointer: CatalogPointer,
+    ) -> tuple[RecordDigestPrecondition, ...]:
+        if (
+            proposal.rebase is None or proposal.rebase.expected_pointer_digest != pointer.pointer_digest
+            or proposal.rebase.legacy_version_digest != pointer.selected_version_digest
+        ):
+            raise LearnedRelationError("rebase pointer expectation is stale")
+        original, guards = self._verified_rebase_origin(pointer)
+        if (
+            proposal.parent_catalog_digest != original.parent_catalog_digest
+            or proposal.relation != original.relation or proposal.evidence != original.evidence
+        ):
+            raise LearnedRelationError("rebase origin does not match the evaluated edit")
+        return guards
 
     def _recover_prepared(self, attempt: OntologyActivation) -> None:
         pointer = self._load_pointer(attempt.catalog_scope)
         if pointer is not None and pointer.selected_attempt_id == attempt.attempt_id:
             self._finalize_selected(attempt)
+            return
+        try:
+            fence = self._management_fence(attempt.catalog_scope)
+        except CatalogManagementUnavailable:
+            return
+        if fence and not self._prepared_decision_matches(attempt, fence):
+            self._replace_attempt(attempt, attempt.model_copy(update={"status": "abandoned"}))
             return
         expected_matches = (
             (pointer is None and attempt.expected_pointer_digest is None)
@@ -927,7 +1654,9 @@ class LearnedRelationRuntime:
         )
         if expected_matches:
             try:
-                self._select(attempt=attempt, expected_pointer=pointer)
+                self._select(attempt=attempt, expected_pointer=pointer, management_fence=fence)
+                return
+            except CatalogManagementUnavailable:
                 return
             except LearnedRelationError:
                 pass
@@ -936,7 +1665,7 @@ class LearnedRelationRuntime:
         if attempt.operation == "activate_candidate" and attempt.proposal_id is not None:
             proposal = self._require_proposal(attempt.proposal_id)
             if proposal.lifecycle == "approved_for_activation":
-                self._replace_proposal(proposal, proposal.model_copy(update={"lifecycle": "activation_conflict"}))
+                self._replace_proposal(proposal, proposal.model_copy(update={"lifecycle": "activation_conflict"}), *fence)
 
     def _finalize_selected(self, attempt: OntologyActivation) -> None:
         current = self._require_attempt(attempt.attempt_id)
@@ -998,6 +1727,37 @@ class LearnedRelationRuntime:
         })
 
     @staticmethod
+    def _fenced_decision(decision: str, fence: tuple[RecordDigestPrecondition, ...]) -> str:
+        if not fence:
+            return decision
+        return _digest(b"memorii.learned-ontology.fenced-decision.v1", {
+            "decision": decision,
+            "grant_record": fence[0].memory_id,
+            "grant_digest": fence[0].expected_digest,
+        })
+
+    def _prepared_decision_matches(
+        self, attempt: OntologyActivation, fence: tuple[RecordDigestPrecondition, ...],
+    ) -> bool:
+        policy = self._policy_for_scope(attempt.catalog_scope)
+        if attempt.operation == "activate_candidate":
+            if attempt.proposal_id is None:
+                return False
+            proposal = self._require_proposal(attempt.proposal_id)
+            if proposal.lifecycle != "approved_for_activation" or proposal.catalog_scope != attempt.catalog_scope:
+                return False
+            decision = self._decision_digest(policy=policy, proposal=proposal)
+        else:
+            decision = self._rollback_decision_digest(policy=policy, target=attempt.target_version_digest)
+        return self._fenced_decision(decision, fence) == attempt.authorizing_decision_digest
+
+    def _require_unchanged_fence(
+        self, scope: AgentLocalCatalogScope, fence: tuple[RecordDigestPrecondition, ...],
+    ) -> None:
+        if fence and self._management_fence(scope) != fence:
+            raise CatalogManagementUnavailable("catalog management changed before the write")
+
+    @staticmethod
     def _scope_key(scope: AgentLocalCatalogScope) -> str:
         return contract_digest(b"memorii.learned-ontology.learned-scope-key.v1", scope.model_dump(mode="json"))
 
@@ -1021,37 +1781,61 @@ class LearnedRelationRuntime:
             content={"activation": item.model_dump(mode="json")}, status=CommitStatus.COMMITTED,
             source_kind=_KIND_ATTEMPT, visibility=MemoryRecordVisibility.INTERNAL_CONTROL, timestamp=datetime.now(UTC))
 
-    def _write_proposal(self, item: OntologyChangeProposal) -> None:
+    def _write_proposal(self, item: OntologyChangeProposal, *fence: RecordDigestPrecondition) -> None:
         try:
-            self._plane.conditionally_write_records((self._proposal_record(item),), preconditions=(RecordAbsentPrecondition(memory_id=item.proposal_id),))
+            self._plane.conditionally_write_records(
+                (self._proposal_record(item),),
+                preconditions=(RecordAbsentPrecondition(memory_id=item.proposal_id), *fence),
+                transaction_precondition=self._validate_management_host if fence else None,
+            )
         except MemoryPlaneRevisionConflictError as exc:
+            self._require_unchanged_fence(item.catalog_scope, fence)
             if self._require_proposal(item.proposal_id) != item:
                 raise LearnedRelationError("proposal identity collides") from exc
 
-    def _replace_proposal(self, old: OntologyChangeProposal, new: OntologyChangeProposal) -> None:
-        # Lifecycle changes receive a fresh identity, so use one stable record key.
-        record = self._proposal_record(new)
-        record = record.model_copy(update={"memory_id": old.proposal_id})
+    def _replace_proposal(
+        self, old: OntologyChangeProposal, new: OntologyChangeProposal, *fence: RecordDigestPrecondition,
+    ) -> None:
         persisted = self._plane.get_record(old.proposal_id)
-        if persisted is None:
+        predecessor = self._decode_proposal(persisted)
+        if persisted is None or predecessor is None:
             raise LearnedRelationError("proposal is unavailable")
+        if predecessor != old:
+            raise _ProposalLifecycleConflict("proposal lifecycle conflicted")
+        record = self._proposal_record(new).model_copy(update={"memory_id": old.proposal_id})
         try:
-            self._plane.conditionally_write_records((record,), preconditions=(RecordDigestPrecondition(memory_id=old.proposal_id, expected_digest=record_digest(persisted)),))
+            self._plane.conditionally_write_records(
+                (record,),
+                preconditions=(
+                    RecordDigestPrecondition(memory_id=old.proposal_id, expected_digest=record_digest(persisted)),
+                    *fence,
+                ),
+                transaction_precondition=self._validate_management_host if fence else None,
+            )
         except MemoryPlaneRevisionConflictError as exc:
-            raise LearnedRelationError("proposal lifecycle conflicted") from exc
+            self._require_unchanged_fence(old.catalog_scope, fence)
+            raise _ProposalLifecycleConflict("proposal lifecycle conflicted") from exc
 
-    def _write_version(self, item: OntologyCatalogVersion) -> None:
+    def _write_version(self, item: OntologyCatalogVersion, *fence: RecordDigestPrecondition) -> None:
         record = self._version_record(item)
         try:
-            self._plane.conditionally_write_records((record,), preconditions=(RecordAbsentPrecondition(memory_id=record.memory_id),))
+            self._plane.conditionally_write_records(
+                (record,), preconditions=(RecordAbsentPrecondition(memory_id=record.memory_id), *fence),
+                transaction_precondition=self._validate_management_host if fence else None,
+            )
         except MemoryPlaneRevisionConflictError as exc:
+            self._require_unchanged_fence(item.catalog_scope, fence)
             if self._require_version(item.version_digest) != item:
                 raise LearnedRelationError("catalog version identity collides") from exc
 
-    def _write_attempt(self, item: OntologyActivation) -> None:
+    def _write_attempt(self, item: OntologyActivation, *fence: RecordDigestPrecondition) -> None:
         try:
-            self._plane.conditionally_write_records((self._attempt_record(item),), preconditions=(RecordAbsentPrecondition(memory_id=item.attempt_id),))
+            self._plane.conditionally_write_records(
+                (self._attempt_record(item),), preconditions=(RecordAbsentPrecondition(memory_id=item.attempt_id), *fence),
+                transaction_precondition=self._validate_management_host if fence else None,
+            )
         except MemoryPlaneRevisionConflictError as exc:
+            self._require_unchanged_fence(item.catalog_scope, fence)
             if self._require_attempt(item.attempt_id) != item:
                 raise LearnedRelationError("activation identity collides") from exc
 
@@ -1125,6 +1909,7 @@ class LearnedRelationCandidateService:
 
     def admit_recurrence(
         self, *, group_id: str, authenticated: AuthenticatedPrincipalAgent,
+        recovery_proposals: set[str] | None = None,
     ) -> OntologyChangeProposal:
         group = self._recurrence.load(group_id)
         if group is None or not group.proposal_eligible:
@@ -1144,6 +1929,24 @@ class LearnedRelationCandidateService:
             agent_id=authenticated.agent_id,
         ):
             raise LearnedRelationError("recurrence group is outside the authenticated owner")
+        fence = self._runtime._management_fence(scope)
+        durable = self._runtime._current_evaluation_sources is not None
+        relation = RelationDeclaration(description="A person mentors another person.")
+        if durable:
+            if self._evaluator is None or group.catalog_scope != CatalogAuthorityScope(schema_version=1, kind="base"):
+                raise EvaluationRetryUnavailable("the originally observed packaged evaluator is unavailable")
+            identity = OntologyChangeProposal._relation_identity(scope, group.catalog_digest, relation)
+            proposal_digest = _digest(b"memorii.learned-ontology.change-proposal.v1", identity)
+            existing = self._plane.get_record(f"ocp_{proposal_digest}")
+            if existing is not None:
+                proposal = self._runtime._require_proposal(existing.memory_id)
+                if recovery_proposals is not None:
+                    if proposal.proposal_id in recovery_proposals:
+                        return proposal
+                    recovery_proposals.add(proposal.proposal_id)
+                return self._runtime._run_registered_evaluation(
+                    proposal, self._evaluator, fence,
+                )
         evidence: list[OntologyEvidenceReference] = []
         for evidence_id in group.evidence_ids:
             gap = self._gaps.load(evidence_id)
@@ -1162,6 +1965,8 @@ class LearnedRelationCandidateService:
                 or observation.origin_lineage_digest != gap.origin_lineage_digest
                 or (observation.principal_id, observation.agent_id)
                 != (authenticated.principal_id, authenticated.agent_id)
+                or observation.catalog_scope != group.catalog_scope
+                or observation.catalog_digest != group.catalog_digest
             ):
                 raise LearnedRelationError("recurrence observation is invalid")
             source = self._plane.get_record(observation.source_id)
@@ -1181,54 +1986,75 @@ class LearnedRelationCandidateService:
             ))
         if len({item.origin_lineage_digest for item in evidence}) < 3 or len(evidence) != len(group.evidence_ids):
             raise LearnedRelationError("recurrence evidence is not independent")
-        pointer = self._runtime._load_pointer(scope)
+        pointer = self._runtime._load_pointer(scope) if not durable else None
         parent_digest = group.catalog_digest if pointer is None else pointer.selected_version_digest
         proposal = OntologyChangeProposal.create(
             catalog_scope=scope, parent_catalog_digest=parent_digest,
-            relation=RelationDeclaration(description="A person mentors another person."),
+            relation=relation,
             evidence=tuple(evidence),
         )
+        if durable:
+            if self._evaluator is None or group.catalog_scope != CatalogAuthorityScope(schema_version=1, kind="base"):
+                raise EvaluationRetryUnavailable("the originally observed packaged evaluator is unavailable")
+            if recovery_proposals is not None:
+                recovery_proposals.add(proposal.proposal_id)
+            return self._runtime._run_registered_evaluation(proposal, self._evaluator, fence)
         try:
             existing = self._runtime._require_proposal(proposal.proposal_id)
         except LearnedRelationError:
             existing = None
-        if existing is not None:
-            if (
-                existing.catalog_scope != proposal.catalog_scope
-                or existing.parent_catalog_digest != proposal.parent_catalog_digest
-                or existing.operation != proposal.operation
-                or existing.relation != proposal.relation
-                or existing.proposal_digest != proposal.proposal_digest
-            ):
-                raise LearnedRelationError("proposal identity collides")
-            return existing
-        try:
-            prepared = self._runtime.prepare_candidate(proposal)
-        except (LearnedRelationError, MemoryPlaneRevisionConflictError):
-            prepared = self._runtime._require_proposal(proposal.proposal_id)
-            if (
-                prepared.catalog_scope != proposal.catalog_scope
-                or prepared.parent_catalog_digest != proposal.parent_catalog_digest
-                or prepared.operation != proposal.operation
-                or prepared.relation != proposal.relation
-                or prepared.proposal_digest != proposal.proposal_digest
-            ):
-                raise LearnedRelationError("proposal identity collides") from None
-            if prepared.lifecycle != "validated":
-                return prepared
+        if existing is None:
+            try:
+                existing = self._runtime._prepare_candidate(proposal, fence)
+            except CatalogManagementUnavailable:
+                raise
+            except LearnedRelationError:
+                existing = self._runtime._require_proposal(proposal.proposal_id)
+        if (
+            existing.catalog_scope != proposal.catalog_scope
+            or existing.parent_catalog_digest != proposal.parent_catalog_digest
+            or existing.operation != proposal.operation
+            or existing.relation != proposal.relation
+            or existing.proposal_digest != proposal.proposal_digest
+        ):
+            raise LearnedRelationError("proposal identity collides")
+        if existing.lifecycle != "validated":
+            return self._runtime._finish_evaluation_publication(existing, *fence)
+        prepared = existing
+        self._runtime._require_unchanged_fence(scope, fence)
         if self._evaluator is None:
-            return self._runtime.record_evaluation(
-                proposal_id=prepared.proposal_id,
-                evaluation=PairedEvaluation.create(
+            return self._runtime._record_evaluation(
+                prepared,
+                PairedEvaluation.create(
                     binding_digest="0" * 64, targeted_positive_count=0,
                     targeted_positive_committed_and_read=0, parent_regressions=0,
                     unsupported_or_misleading_failures=0, scope_or_provenance_failures=0,
                     available=False,
                 ),
+                fence,
             )
-        return self._runtime.record_evaluation(
-            proposal_id=prepared.proposal_id, evaluation=self._evaluator.evaluate(prepared),
+        evaluation = self._evaluator.evaluate(prepared)
+        return self._runtime._record_evaluation(
+            self._runtime._require_proposal(prepared.proposal_id), evaluation, fence,
         )
+
+    def recover_rebases(
+        self, *, scope: AgentLocalCatalogScope,
+    ) -> None:
+        """Advance only already anchored explicit rebases for this owner."""
+        if self._evaluator is None or self._runtime._current_evaluation_sources is None:
+            return
+        for record in self._plane.list_records(source_kind=_EVALUATION_HEAD_KIND):
+            head = _EvaluationAttempt.model_validate(record.content.get("attempt"))
+            if head.catalog_scope != scope:
+                continue
+            proposal = self._runtime._require_proposal(head.proposal_id)
+            if proposal.rebase is None or proposal.lifecycle not in {"validated", "evaluation_unavailable"}:
+                continue
+            with suppress(CatalogManagementUnavailable, EvaluationRetryUnavailable):
+                self._runtime._run_registered_evaluation(
+                    proposal, self._evaluator, self._runtime._management_fence(scope),
+                )
 
 
 def learned_runtime_bundle_digest(version: OntologyCatalogVersion) -> str:
@@ -1290,9 +2116,10 @@ def learned_catalog_pointer_memory_id(scope: AgentLocalCatalogScope) -> str:
     )
 
 
-def learned_catalog_version_memory_id(version: OntologyCatalogVersion) -> str:
+def learned_catalog_version_memory_id(version: OntologyCatalogVersion | str) -> str:
     """Return the persisted coordinate for one immutable learned version."""
-    return "learned-catalog-version:" + version.version_digest
+    digest = version if isinstance(version, str) else version.version_digest
+    return "learned-catalog-version:" + digest
 
 
 def locate_selected_learned_catalog(
@@ -1338,7 +2165,7 @@ def locate_historical_learned_catalog(
     """Resolve a pinned learned version without consulting the current head."""
     _require_agent_owner(scope=scope, authenticated=authenticated)
     record = _require_control_record(
-        _record_for(records, "learned-catalog-version:" + version_digest), source_kind=_KIND_VERSION,
+        _record_for(records, learned_catalog_version_memory_id(version_digest)), source_kind=_KIND_VERSION,
     )
     try:
         version = OntologyCatalogVersion.model_validate(record.content["version"])

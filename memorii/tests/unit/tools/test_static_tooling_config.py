@@ -53,6 +53,20 @@ def test_dev_extra_installs_static_tooling() -> None:
     assert any(isinstance(dep, str) and dep.startswith("pyright>=") for dep in dev)
 
 
+def test_release_metadata_excludes_checkout_linguistic_profile() -> None:
+    project = _pyproject()["project"]
+    assert isinstance(project, dict)
+    optional = project["optional-dependencies"]
+    assert isinstance(optional, dict)
+    assert "local" not in optional
+    dependencies = list(project["dependencies"]) + [
+        item for extra in optional.values() for item in extra
+    ]
+    assert all(not item.lower().startswith(("torch", "stanza", "spacy", "en-core-web-trf")) for item in dependencies)
+    requirements = (PROJECT_ROOT / "tests/support/linguistic_dependencies.txt").read_text(encoding="utf-8")
+    assert "torch==2.2.2" not in requirements
+
+
 def test_ruff_config_is_correctness_oriented() -> None:
     ruff = _tool_config("ruff")
     lint = ruff["lint"]
@@ -339,7 +353,7 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
     assert jobs["benchmark-contracts"]["name"] == "Benchmark Contracts"
     assert jobs["benchmark-contracts"]["needs"] == ["benchmark-contract-tests", "benchmark-artifacts"]
     assert scoped_context["name"] == "Scoped Context Integration"
-    assert scoped_context["timeout-minutes"] == "10"
+    assert scoped_context["timeout-minutes"] == "15"
     scoped_run = next(step for step in scoped_context["steps"] if step["name"] == "Run scoped-context composition roots")
     assert "tests/integration/test_scoped_context_production_binding.py" in scoped_run["run"]
     assert "-W error" in scoped_run["run"]

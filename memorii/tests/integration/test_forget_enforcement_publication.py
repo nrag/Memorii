@@ -17,7 +17,7 @@ from memorii.core.memory_plane.service import MemoryPlaneService  # noqa: E402
 from memorii.core.persistence.factory import (  # noqa: E402
     PublishedMemoryPlaneStore,
 )
-from memorii.core.scoped_context.service import _current_eligible  # noqa: E402
+from memorii.core.scoped_context.service import record_is_current  # noqa: E402
 from memorii.core.storage_administration.operator import (  # noqa: E402
     ModeChangeRequest,
 )
@@ -153,8 +153,8 @@ def test_forget_enforcement_publication_appends_the_directive(tmp_path: Path) ->
         assert claim_now.content["claim_state"]["lifecycle_state"] == "revoked"
         assert link_now.content["entity_link"]["lifecycle_state"] == "revoked"
         assert "enforcement fixture" not in json.dumps(claim_now.content)
-        assert _current_eligible(claim_now, datetime.now(UTC)) is False
-        assert _current_eligible(link_now, datetime.now(UTC)) is False
+        assert record_is_current(claim_now, datetime.now(UTC)) is False
+        assert record_is_current(link_now, datetime.now(UTC)) is False
 
         # The serving view derives the revoked identities from the journal
         # plus the directive index record written by the publication.

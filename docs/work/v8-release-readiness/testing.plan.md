@@ -1,0 +1,114 @@
+# Installed release verification
+
+- Work ID: v8-release-verification
+- Work type: testing
+- Delivery fidelity: Level 3, first production rollout
+- Status: active
+- Coordinator: Codex
+- Created: 2026-11-27
+- Last updated: 2026-11-27
+- Parent WorkPlan: [implementation](implementation.plan.md)
+- Related WorkPlans: [installed rehearsal](../installed-release-rehearsal/testing.plan.md), [reference capacity](../reference-capacity-qualification/testing.plan.md)
+- Canonical inputs: [release design](../../design/v8_release_readiness.md), [acceptance matrices](validation.md), [static tooling](../../development/static_tooling.md)
+- Expected outputs: pinned installed host proof, compatibility and release evidence with explicit gate ownership
+
+## Objective and scope
+
+Keep deterministic release-shaped evidence fast and keep real host, native
+capacity and exact live component verification in their existing slower gates.
+Retain established coverage while replacing editable native certificate inputs
+with one pinned base wheel. Review changed workflow and artifact identities
+before relying on the result.
+
+| Proof | Existing or changed owner | Observable failure |
+| --- | --- | --- |
+| Exact operator task and source grants | Feature-local integration test `test_installed_native_operator.py`, existing runtime and storage tests | Wrong same-principal credential gains access, incomplete enrollment becomes active, retry mutates original task |
+| Local host bounds and retry | SDK `npm test` on compiled client, real loopback and adapter callback tests | Scheme, remote or redirect escape, oversized body or shared deadline breach, changed persisted resume receipt on restart |
+| Installed native assets | Existing host-container certification and host pins | Missing image, editable or wrong-digest Python, copied-over host assets, failed real host journey |
+| Retained analyzer profile | Existing PR, canonical mode parity and live jobs with checkout-only pinned linguistic requirements | Lost test family, unsupported profile, unresolved engine or model task |
+| Candidate platform capacity | Current reference-capacity workflow and exact fixture audit on configured runners | Mixed artifact scope, missing attempts, staged upgrade presented as fresh default, missed budgets |
+
+## Evidence and gates
+
+Unit and integration tests will use warning-error pytest and current relevant
+static checks. Dedicated host jobs require actual container execution. Local
+shimbed adapter and disposable Docker runs each retain their own evidence
+limits. Prior staged capacity results remain historical. No test selection or
+threshold change is authorized. Review changed CI dependency inputs against
+their existing test owner and runtime. Exact final artifact and host
+verification remain open.
+
+The 2026-11-27 worktree at 694e5651 passed 137 focused Python tests with
+warnings as errors, including real loopback release, indexed backup and
+restore, native source authority and catalog selection. Ruff and configured
+Pyright passed. Identity and static tooling passed 173 tests. The current
+shard verifier collected 5,359 tests and passed. Node transport tests passed
+20 cases, plus installed SDK and generated-schema checks. A clean install of
+worktree wheel
+`0bf004d7f8ff135185c88bb3f06c4fd85bb304f2515e62b6452e1b9aa0d610c9`
+passed four operator/backup tests. The separate pinned host rehearsal used the
+older wheel recorded by the supported distribution milestone. Both artifacts
+are local worktree evidence. The targeted 137 tests exclude the broader Hermes
+family. A separate broad run had 184 passes and one Hermes activation failure
+before catalog dispatch. Clean baseline attribution is unresolved. A rerun
+against the concurrent Hermes test update at 05663f34 was started. The
+recorded test totals do not include this in-progress run.
+
+Review fixes were checked at 05663f34 with 138 integrated passes. A further
+five operator integration tests passed, including a foreground CLI subprocess
+that denies spool registration while the service is live and allows it after
+exit. The wheel rebuilt after spool and socket changes,
+`d01b5b572baa15d96f9693f159a3b4245d97e0b5e352b7eac1c64b2bc5442598`,
+passed an out-of-checkout run using the actual `memorii-operator` console
+script for initialization, enrollment and foreground serving. The run crossed
+same-principal credentials, captured over HTTP, restarted the process,
+recalled and then denied the revoked scope. This is local macOS functional
+evidence for a worktree wheel. It does not replace the candidate-bound host,
+recovery and platform runs.
+
+Runtime checkpoint `2a9e140b` built from its committed source archive as
+wheel `4a07d3a6a9bf08a1195878ec4e03cb591dd488c40b8caddb4a82b5d3f27594d9`.
+Its installed CLI rehearsal and eight additional out-of-checkout tests
+passed. A separate wheel from `74e70d06`, digest
+`e8eef73a35910035004ec44f7cfa142912b2efce8b5118cd319244df904bcd51`,
+created the baseline pre-index v8 installation and signed archive. The
+checkpoint wheel verified the staged backfill, selected a new v8 generation
+and reported readiness. The committed archive matched all 1,966 installed
+proof member pins. Local Durable Storage passed 81 tests, and the focused
+operator, backup and recovery verification passed 70 tests after review.
+
+The SDK passed 22 localhost and transport tests, installed tarball proof
+and generated contract parity. Its npm production dependency audit reported
+zero advisories. Python 3.12 advisory scans of the locked reference base and
+resolved provider plus live extras reported no known advisories. These
+results do not cover the OS image package inventories.
+
+The committed `a59d0df6` wheel
+`627ddb61376f9d92f197362ab8e015ae4075b30a13aac9f5ef437ed82933160e`
+passed the installed foreground operator/API rehearsal and six installed
+mode, status and replacement recovery tests outside the checkout. The
+committed `2a9e140b` archive passed all 111 Durable Runtime integration tests
+and the real installed Package Smoke proof, including the independent
+negative package and authority inputs. The local identity and static tooling
+regression passed 181 tests and shard verification collected 5,383 tests.
+
+The `ac10d5a1` candidate was built from an isolated clean checkout. Its
+manifest pins wheel `d7f2803b09a24f7e767f4067bbfe05b4b8dd06228d0adf5914f0f088cdb9b482`,
+Pi archive `7ae578229757805612d54be53489078c125a77642570e24f63a7988804ef1bc8`
+and OpenClaw archive `3111c611a2071ba1974c2d3805fda324ecd3097053a7527bb29cac380258f49f`.
+The unpacked Pi lock audit returned zero findings. The unpacked OpenClaw
+lock audit returned 16 Moderate and zero High or Critical. Both CycloneDX
+dependency inventories were exported from the unpacked archives.
+The exact `ac10d5a1` Linux ARM64 host certification passed both native
+journeys in 232.22 seconds. The wheel digest and all host archive member
+digests matched the installed validation environments before the journeys
+ran. Each used the installed foreground operator console. The approved
+OpenClaw dedicated context engine preserved native history and omitted the
+recall marker after revocation and restart, including after a 17-turn
+sidecar outage. These artifacts are local candidates and carry no release
+signatures or native capacity claims.
+
+## Next action
+
+Repeat the exact installed host and Hermes checks on a single candidate
+digest after host pins, recovery custody and scoped recall are settled.

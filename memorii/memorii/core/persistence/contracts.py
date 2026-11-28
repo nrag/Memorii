@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, model_serializer, model_validator
 
 RUNTIME_PUBLICATION_SIGNATURE_PURPOSE = "memorii.runtime-publication.v1"
 RUNTIME_EVENT_BATCH_SIGNATURE_PURPOSE = "memorii.runtime-event-batch.v1"
@@ -117,6 +117,15 @@ class PartitionRevisionVector(BaseModel):
         )
 
 
+class RuntimeHistoryInterval(BaseModel):
+    """A restored signed prefix ending at an exact batch in its original generation."""
+
+    generation_id: str = Field(min_length=1)
+    through_position: BatchPosition
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
 class RuntimePublicationState(BaseModel):
     """Finalized signed tuple binding one verified data generation."""
 
@@ -129,12 +138,36 @@ class RuntimePublicationState(BaseModel):
     trust_registry_digest: str = Field(pattern=_HEX_64)
     eligibility_epoch: int = Field(ge=1)
     vector: PartitionRevisionVector
+    runtime_history_ancestry: tuple[RuntimeHistoryInterval, ...] = ()
     signature: str = Field(pattern=_HEX_SIGNATURE)
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    @model_validator(mode="after")
+    def exact_history_intervals(self) -> RuntimePublicationState:
+        previous = 0
+        generation_ids = {self.data_generation_id}
+        head = self.vector.runtime_position
+        for interval in self.runtime_history_ancestry:
+            if (
+                not isinstance(head, BatchPosition) or not previous < interval.through_position.sequence <= head.sequence
+                or interval.generation_id in generation_ids
+                or (interval.through_position.sequence == head.sequence and interval.through_position != head)
+            ):
+                raise ValueError("runtime history ancestry does not fit the signed head")
+            previous = interval.through_position.sequence
+            generation_ids.add(interval.generation_id)
+        return self
+
+    @model_serializer(mode="wrap")
+    def preserve_unrestored_encoding(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
+        payload = handler(self)
+        if not self.runtime_history_ancestry:
+            payload.pop("runtime_history_ancestry", None)
+        return payload
+
     def signed_payload(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "installation_id": self.installation_id,
             "repository_id": self.repository_id,
             "data_generation_id": self.data_generation_id,
@@ -145,6 +178,11 @@ class RuntimePublicationState(BaseModel):
             "eligibility_epoch": self.eligibility_epoch,
             "vector": self.vector.model_dump(mode="json"),
         }
+        if self.runtime_history_ancestry:
+            payload["runtime_history_ancestry"] = [
+                interval.model_dump(mode="json") for interval in self.runtime_history_ancestry
+            ]
+        return payload
 
     def payload_digest(self) -> str:
         return canonical_json_digest(self.signed_payload())
@@ -164,6 +202,40 @@ class RuntimePublicationIntent(BaseModel):
     phase: IntentPhase = "prepared"
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class InstallationGenerationChangeIntent(BaseModel):
+    """Immutable coordinates for one recoverable owner-selected data cutover."""
+
+    intent_id: str = Field(pattern=_HEX_64)
+    operation: Literal["restore", "migrate"]
+    old_publication: RuntimePublicationState
+    candidate_publication: RuntimePublicationState
+    old_named_selector: bool
+    expected_control_revision: int = Field(ge=1)
+    preview_digest: str = Field(pattern=_HEX_64)
+    data_loss_acknowledged: bool
+    phase: IntentPhase = "prepared"
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def continuous_authority(self) -> InstallationGenerationChangeIntent:
+        old, new = self.old_publication, self.candidate_publication
+        if (
+            old.installation_id != new.installation_id
+            or old.repository_id != new.repository_id
+            or old.data_generation_id == new.data_generation_id
+            or old.trust_registry_digest != new.trust_registry_digest
+            or old.eligibility_epoch != new.eligibility_epoch
+            or new.vector.partition_ordinal != old.vector.partition_ordinal + 1
+            or (self.operation == "restore" and not self.data_loss_acknowledged)
+        ):
+            raise ValueError("generation change does not preserve current control authority")
+        return self
+
+    def binding_digest(self) -> str:
+        return canonical_json_digest(self.model_dump(mode="json"))
 
 
 class TrustRegistryEntry(BaseModel):
@@ -204,6 +276,20 @@ class InstallationControlState(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class InstalledManagedSpoolBinding(BaseModel):
+    """Signed control participant identity for the separate managed spool."""
+
+    format_version: Literal[1] = 1
+    installation_id: str = Field(min_length=1, max_length=512, pattern=r"^[^\x00]+$")
+    repository_id: str = Field(min_length=1, max_length=1024, pattern=r"^[^\x00]+$")
+    store_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    def digest(self) -> str:
+        return canonical_json_digest(self.model_dump(mode="json"))
+
+
 class InstallationControlJournalEntry(BaseModel):
     revision: int = Field(ge=1)
     prior_digest: str = Field(pattern=_HEX_64)
@@ -214,9 +300,17 @@ class InstallationControlJournalEntry(BaseModel):
         "publication_aborted",
         "publication_quarantined",
         "mode_changed",
+        "mode_recovery_registered",
+        "mode_recovery_applied",
+        "mode_recovery_activated",
         "trust_changed",
         "logical_forget_applied",
         "partition_erasure_applied",
+        "managed_spool_registered",
+        "generation_change_prepared",
+        "generation_change_finalized",
+        "generation_change_aborted",
+        "generation_change_quarantined",
     ]
     before_digest: str | None = Field(default=None, pattern=_HEX_64)
     after_digest: str | None = Field(default=None, pattern=_HEX_64)
@@ -240,8 +334,10 @@ class InstallationControlJournalEntry(BaseModel):
 __all__ = [
     "BatchPosition",
     "GenesisPosition",
+    "InstallationGenerationChangeIntent",
     "InstallationControlJournalEntry",
     "InstallationControlState",
+    "InstalledManagedSpoolBinding",
     "MaterializationCatalogEntry",
     "PartitionRevisionVector",
     "PublicationPosition",
@@ -249,6 +345,7 @@ __all__ = [
     "RUNTIME_EVENT_BATCH_SIGNATURE_PURPOSE",
     "RUNTIME_PUBLICATION_SIGNATURE_PURPOSE",
     "RuntimeMaterializationManifest",
+    "RuntimeHistoryInterval",
     "RuntimePublicationIntent",
     "RuntimePublicationState",
     "TrustRegistryEntry",

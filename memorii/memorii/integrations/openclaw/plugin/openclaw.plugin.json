@@ -1,5 +1,6 @@
 {
   "id": "memorii",
+  "kind": "context-engine",
   "name": "Memorii",
   "description": "Memorii durable runtime state for OpenClaw sessions.",
   "version": "1.0.0",

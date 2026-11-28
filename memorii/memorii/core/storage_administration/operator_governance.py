@@ -15,6 +15,8 @@ from __future__ import annotations
 import json
 import os
 import time
+from collections.abc import Callable
+from types import TracebackType
 from typing import Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -25,6 +27,12 @@ from memorii.core.storage_administration.operator import (
     StorageAdministrationOperator,
     require_owner_capability,
 )
+from memorii.core.storage_administration.suppression_journal import (
+    SuppressionCoordinate,
+    SuppressionRecord,
+    suppression_identifier,
+)
+from memorii.stores.sqlite.private_storage import require_private_directory, require_private_sqlite
 
 
 class ForgetTargetSelector(BaseModel):
@@ -164,6 +172,12 @@ class GovernanceOperator:
     def __init__(self, operator: StorageAdministrationOperator) -> None:
         self._operator = operator
 
+    def _require_unselected_suppression_owner(self) -> None:
+        """Legacy mutations cannot change a registered maintenance snapshot."""
+        service = self._operator._administration
+        if any(entry.operation == "mode_recovery_registered" for entry in service._control.read_journal()):
+            raise OperatorError("unavailable: registered suppression mutations require independent custody")
+
     def plan_forget(
         self,
         *,
@@ -200,11 +214,8 @@ class GovernanceOperator:
     ) -> ForgetReceipt:
         from memorii.core.persistence.contracts import canonical_json_digest
         from memorii.core.storage_administration.suppression_journal import (
-            SuppressionCoordinate,
-            SuppressionRecord,
             find_record_by_plan_digest,
             suppressed_coordinates,
-            suppression_identifier,
             write_suppression_record,
         )
 
@@ -212,6 +223,8 @@ class GovernanceOperator:
         require_owner_capability(service, capability)
 
         control_root = service.installation_root / "control"
+        with service._publication_fence():
+            self._require_unselected_suppression_owner()
 
         # Retry of the same plan reuses the existing suppression identity and
         # performs no second journal or epoch write.
@@ -247,57 +260,19 @@ class GovernanceOperator:
                 " barrier (change mode to read_only first)"
             )
         state = service._control_state()
-        suppression_id = suppression_identifier(
-            installation_id=state.installation_id,
-            plan_digest=plan.plan_digest,
-            closure_digest=plan.closure_digest,
+        record = self._make_suppression_record(
+            plan, capability=capability, installation_id=state.installation_id,
+            already_revoked=already_revoked, journal_position=state.control_revision + 1,
         )
-        newly = tuple(
-            coordinate
-            for coordinate in plan.closure
-            if coordinate not in already_revoked
-        )
-        if not newly:
-            raise OperatorError(
-                "conflict: every plan target is already revoked; nothing to apply"
-            )
-        applied_at_unix = int(time.time())
-        # Journal first: forget is durably complete here. The enforcement
-        # publication (semantic revocation directive + tombstones) follows
-        # barrier release; serving gates consult the journal view meanwhile.
-        write_suppression_record(
-            control_root,
-            SuppressionRecord(
-                suppression_id=suppression_id,
-                plan_digest=plan.plan_digest,
-                closure_digest=plan.closure_digest,
-                authority_capability_digest=capability.capability_digest,
-                scope_note=plan.scope_note,
-                suppressed=tuple(
-                    SuppressionCoordinate(
-                        coordinate_kind=cast(
-                            Literal[
-                                "entity", "claim", "source", "record", "task",
-                                "justification",
-                            ],
-                            kind,
-                        ),
-                        coordinate_id=identifier,
-                        record_kind=record_kind or None,
-                    )
-                    for kind, identifier, record_kind in (
-                        _split_coordinate(coordinate) for coordinate in newly
-                    )
-                ),
-                applied_at_unix=applied_at_unix,
-                control_journal_position=state.control_revision + 1,
-            ),
-        )
-        # Control revision and a PENDING epoch increment advance under the
-        # fence; eligibility_epoch itself is untouched so Tier A keeps
-        # passing. The increment becomes the signed tuple's epoch with the
-        # enforcement (or next) publication.
+        newly = len(record.suppressed)
         with service._publication_fence():
+            require_owner_capability(service, capability)
+            self._require_unselected_suppression_owner()
+            if service._require_operational() != state or state.mode != "read_only":
+                raise OperatorError("conflict: control changed before forget could be applied")
+            # Record revocation first, while serializing both steps with
+            # archive publication and leaving enforcement to barrier release.
+            write_suppression_record(control_root, record)
             service._control.write_control_state(
                 state.model_copy(
                     update={
@@ -319,19 +294,49 @@ class GovernanceOperator:
                     after_digest=canonical_json_digest(
                         {
                             "revision": state.control_revision + 1,
-                            "suppressed": len(newly),
+                            "suppressed": newly,
                             "pending": state.pending_epoch_increments + 1,
                         }
                     ),
                 ),
             )
         return ForgetReceipt(
-            suppression_id=suppression_id,
-            newly_revoked_count=len(newly),
-            already_revoked_count=len(plan.closure) - len(newly),
+            suppression_id=record.suppression_id,
+            newly_revoked_count=newly,
+            already_revoked_count=len(plan.closure) - newly,
             historical_bytes_retained=True,
             enforcement_publication_pending=True,
-            applied_at_unix=applied_at_unix,
+            applied_at_unix=record.applied_at_unix,
+        )
+
+    @staticmethod
+    def _make_suppression_record(
+        plan: ForgetPlan, *, capability: OwnerCapability, installation_id: str,
+        already_revoked: set[str], journal_position: int,
+    ) -> SuppressionRecord:
+        newly = tuple(coordinate for coordinate in plan.closure if coordinate not in already_revoked)
+        if not newly:
+            raise OperatorError("conflict: every plan target is already revoked; nothing to apply")
+        return SuppressionRecord(
+            suppression_id=suppression_identifier(
+                installation_id=installation_id, plan_digest=plan.plan_digest, closure_digest=plan.closure_digest,
+            ),
+            plan_digest=plan.plan_digest,
+            closure_digest=plan.closure_digest,
+            authority_capability_digest=capability.capability_digest,
+            scope_note=plan.scope_note,
+            suppressed=tuple(
+                SuppressionCoordinate(
+                    coordinate_kind=cast(
+                        Literal["entity", "claim", "source", "record", "task", "justification"], kind,
+                    ),
+                    coordinate_id=identifier,
+                    record_kind=record_kind or None,
+                )
+                for kind, identifier, record_kind in (_split_coordinate(coordinate) for coordinate in newly)
+            ),
+            applied_at_unix=int(time.time()),
+            control_journal_position=journal_position,
         )
 
     def enforce_forget(
@@ -540,15 +545,8 @@ class GovernanceOperator:
         entries: list[RetainedLineageEntry] = []
         repository = service.partition()
         with repository.transaction(write=False) as connection:
-            version_rows = connection.execute(
-                "SELECT memory_id, batch_revision, record_json"
-                " FROM memory_record_versions"
-                " ORDER BY memory_id, batch_revision"
-            ).fetchall()
-            current_ids = {
-                row["memory_id"]
-                for row in repository.read_current_record_rows(connection)
-            }
+            version_rows = list(repository.read_memory_version_rows(connection))
+            current_ids = {row[0] for row in connection.execute("SELECT memory_id FROM memory_current_records")}
         for row in version_rows:
             try:
                 record = _json.loads(row["record_json"])
@@ -922,25 +920,36 @@ class GovernanceOperator:
         if erase:
             import shutil
 
-            # The isolated partition and the signing keys are destroyed; the
-            # control database survives as the independent authority that
-            # retains the content-free receipt and the journal.
-            for name in ("partition", os.path.join("control", "keys")):
-                target = service.installation_root / name
-                if target.exists():
-                    shutil.rmtree(target)
-            partition_database = service.partition_path()
-            if partition_database.exists():
-                partition_database.unlink()
-        from memorii.core.persistence.contracts import canonical_json_digest
+            from memorii.core.persistence.contracts import canonical_json_digest
+            from memorii.core.storage_administration.generation_selection import PARTITION_GENERATION_SELECTOR
+            from memorii.core.storage_administration.operator_backup import backup_lifetime_guard
 
-        if erase:
-            # Only actual destruction advances control state; the dry plan is
-            # inert. The epoch rides with the destruction because every
-            # subsequent verified read of the erased installation is refused
-            # by the missing partition anyway.
-            state = service._control_state()
-            with service._publication_fence():
+            def remove_error(
+                _operation: Callable[..., object], _path: str,
+                failure: tuple[type[BaseException], BaseException, TracebackType],
+            ) -> None:
+                # A closing SQLite connection can remove a WAL or SHM file
+                # after rmtree enumerates it. The file is already erased.
+                if not isinstance(failure[1], FileNotFoundError):
+                    raise failure[1]
+
+            with backup_lifetime_guard(service, exclusive=True), service._publication_fence():
+                require_owner_capability(service, capability)
+                state = service._control_state()
+                journal_entry = service._journal_entry(
+                    operation="partition_erasure_applied",
+                    before_digest=canonical_json_digest({"epoch": state.eligibility_epoch}),
+                    after_digest=canonical_json_digest(
+                        {"epoch": state.eligibility_epoch + 1, "incomplete": incomplete}
+                    ),
+                )
+                # Remove the entire isolated tree, including every named data
+                # generation. Once it is gone the selector cannot resolve.
+                control_root = service.installation_root / "control"
+                for target in (service.installation_root / "partition", control_root / "keys"):
+                    if target.exists():
+                        shutil.rmtree(target, onerror=remove_error)
+                (control_root / PARTITION_GENERATION_SELECTOR).unlink(missing_ok=True)
                 service._control.write_control_state(
                     state.model_copy(
                         update={
@@ -948,18 +957,7 @@ class GovernanceOperator:
                             "eligibility_epoch": state.eligibility_epoch + 1,
                         }
                     ),
-                    service._journal_entry(
-                        operation="partition_erasure_applied",
-                        before_digest=canonical_json_digest(
-                            {"epoch": state.eligibility_epoch}
-                        ),
-                        after_digest=canonical_json_digest(
-                            {
-                                "epoch": state.eligibility_epoch + 1,
-                                "incomplete": incomplete,
-                            }
-                        ),
-                    ),
+                    journal_entry,
                 )
         receipt = ErasureReceipt(
             installation_id=plan.installation_id,
@@ -1020,17 +1018,20 @@ class GovernanceOperator:
         )
         cutoff = time.time() - plan.older_than_days * 86400
         archived = 0
-        for name in plan.eligible_suppression_journals:
-            path = suppression / name
-            if not path.is_file():
-                continue
-            if path.stat().st_mtime >= cutoff:
-                raise OperatorError(
-                    "conflict: journal became eligible-recent; replan"
-                )
-            archive.mkdir(parents=True, exist_ok=True)
-            os.replace(path, archive / name)
-            archived += 1
+        with service._publication_fence():
+            require_owner_capability(service, capability)
+            self._require_unselected_suppression_owner()
+            for name in plan.eligible_suppression_journals:
+                path = suppression / name
+                if not path.is_file():
+                    continue
+                if path.stat().st_mtime >= cutoff:
+                    raise OperatorError(
+                        "conflict: journal became eligible-recent; replan"
+                    )
+                archive.mkdir(parents=True, exist_ok=True)
+                os.replace(path, archive / name)
+                archived += 1
         return archived
 
     def doctor(self) -> tuple[DoctorFinding, ...]:
@@ -1042,7 +1043,7 @@ class GovernanceOperator:
             DoctorFinding(
                 check="control_state",
                 status="error" if state.quarantined_reason else "ok",
-                detail=state.quarantined_reason,
+                detail="installation quarantined" if state.quarantined_reason else None,
             )
         )
         if state.pending_epoch_increments:
@@ -1077,12 +1078,12 @@ class GovernanceOperator:
                     ),
                 )
             )
-        except ValueError as exc:
+        except (OSError, ValueError):
             findings.append(
                 DoctorFinding(
                     check="suppression_journal",
                     status="error",
-                    detail=str(exc)[:200],
+                    detail="suppression records could not be verified",
                 )
             )
         try:
@@ -1094,49 +1095,45 @@ class GovernanceOperator:
                     detail=f"ordinal={snapshot.ordinal}",
                 )
             )
-        except Exception as exc:  # noqa: BLE001 - doctor reports, never raises
+        except Exception:  # noqa: BLE001 - doctor reports, never raises
             findings.append(
                 DoctorFinding(
                     check="partition_verification",
                     status="error",
-                    detail=str(exc)[:200],
+                    detail="signed partition could not be verified",
                 )
             )
         for label, path in (
             ("control_database", service.control_path()),
             ("partition_database", service.partition_path()),
         ):
-            findings.append(
-                DoctorFinding(
-                    check=f"{label}_permissions",
-                    status=(
-                        "ok"
-                        if path.exists() and (path.stat().st_mode & 0o077) == 0
-                        else "error"
-                    ),
-                    detail=str(path),
-                )
-            )
+            try:
+                require_private_directory(path.parent)
+                require_private_sqlite(path)
+            except OSError:
+                findings.append(DoctorFinding(
+                    check=f"{label}_permissions", status="error", detail="SQLite storage must be owner-only",
+                ))
+            else:
+                findings.append(DoctorFinding(check=f"{label}_permissions", status="ok"))
         keys = service.installation_root / "control" / "keys"
-        findings.append(
-            DoctorFinding(
-                check="signing_keys_permissions",
-                status=(
-                    "ok"
-                    if keys.is_dir() and (keys.stat().st_mode & 0o077) == 0
-                    else "error"
-                ),
-                detail=str(keys),
-            )
-        )
+        try:
+            require_private_directory(keys)
+        except OSError:
+            findings.append(DoctorFinding(
+                check="signing_keys_permissions", status="error", detail="key directory must be owner-only",
+            ))
+        else:
+            findings.append(DoctorFinding(check="signing_keys_permissions", status="ok"))
         # Checkpoint reachability: the latest signed checkpoint for any task
         # must decode from the durable catalog.
         try:
             import sqlite3 as _sqlite3
 
-            connection = _sqlite3.connect(
-                f"file:{service.partition_path()}?mode=ro", uri=True
-            )
+            partition_path = service.partition_path()
+            require_private_directory(partition_path.parent)
+            require_private_sqlite(partition_path)
+            connection = _sqlite3.connect(partition_path.absolute().as_uri() + "?mode=ro", uri=True)
             try:
                 checkpoint_rows = connection.execute(
                     "SELECT COUNT(*) FROM runtime_checkpoints"
@@ -1150,12 +1147,12 @@ class GovernanceOperator:
                     detail=f"rows={checkpoint_rows}",
                 )
             )
-        except Exception as exc:  # noqa: BLE001 - doctor reports, never raises
+        except Exception:  # noqa: BLE001 - doctor reports, never raises
             findings.append(
                 DoctorFinding(
                     check="checkpoint_catalog",
                     status="warning",
-                    detail=str(exc)[:200],
+                    detail="checkpoint catalog could not be verified",
                 )
             )
         # Outbox health: pending deliveries are surfaced for the operator;
@@ -1178,12 +1175,12 @@ class GovernanceOperator:
                     detail=f"pending={pending}",
                 )
             )
-        except Exception as exc:  # noqa: BLE001 - doctor reports, never raises
+        except Exception:  # noqa: BLE001 - doctor reports, never raises
             findings.append(
                 DoctorFinding(
                     check="outbox_pending",
                     status="warning",
-                    detail=str(exc)[:200],
+                    detail="outbox inventory could not be verified",
                 )
             )
         # Grant registry health: the revocation journal loads and its files
@@ -1204,12 +1201,12 @@ class GovernanceOperator:
                     detail=f"revocations={len(registry.revocations())}",
                 )
             )
-        except Exception as exc:  # noqa: BLE001 - doctor reports, never raises
+        except Exception:  # noqa: BLE001 - doctor reports, never raises
             findings.append(
                 DoctorFinding(
                     check="grant_registry",
                     status="warning",
-                    detail=str(exc)[:200],
+                    detail="grant registry could not be verified",
                 )
             )
         return tuple(findings)

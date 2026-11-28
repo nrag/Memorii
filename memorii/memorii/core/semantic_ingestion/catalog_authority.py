@@ -818,8 +818,9 @@ class CatalogSelectionPointer(BaseModel):
         )
 
 
-def catalog_version_memory_id(version: CatalogVersion | CatalogChildVersionV2) -> str:
-    return "semantic_ingestion:catalog-version:" + version.version_digest
+def catalog_version_memory_id(version: CatalogVersion | CatalogChildVersionV2 | str) -> str:
+    digest = version if isinstance(version, str) else version.version_digest
+    return "semantic_ingestion:catalog-version:" + digest
 
 
 def catalog_selection_pointer_memory_id(scope: CatalogAuthorityCoordinate) -> str:
@@ -910,6 +911,15 @@ class StructuredGrantState(BaseModel):
         if type(self.grant) is not expected_type:
             raise ValueError("structured grant state kind does not match its grant")
         return self
+
+
+def structured_grant_state_record_id(grant_kind: str, grant_id: str) -> str:
+    """Return the canonical keyed control coordinate for a durable grant."""
+    if grant_kind not in {"source", "fact", "catalog_visibility"} or not grant_id:
+        raise CatalogAuthorityError("structured grant state coordinate is invalid")
+    return "semantic_ingestion:structured-grant:" + hashlib.sha256(
+        (grant_kind + "\0" + grant_id).encode("utf-8")
+    ).hexdigest()
 
 
 class StructuredClaimCatalogBinding(BaseModel):

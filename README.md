@@ -128,6 +128,59 @@ For provider configuration and live execution, see
 consume credentials and are meaningful only when intentionally bound to an
 exact clean revision.
 
+For an initialized managed installation, use the operator CLI to inspect its
+mode and revisions and check its health. Pass the installation root that
+contains `control/`, rather than the SQLite file or the legacy JSONL directory.
+
+```bash
+memorii-operator --installation-root /path/to/installation status
+memorii-operator --installation-root /path/to/installation doctor
+```
+
+Review the `status` of each finding in the `doctor` output. The command can
+print warnings or errors and still exit successfully. Pending outbox entries
+indicate that the runtime has queued work; check for a target receipt before
+treating the work as delivered.
+
+Managed storage is private to the account that runs Memorii. Create new roots
+under an operator-controlled path whose ancestors other accounts cannot
+replace. Keep host credentials separate from the installation. On macOS, use
+a location without inherited extended ACLs on the managed directories or
+files. Memorii refuses those ACLs because they can grant access beyond the
+POSIX mode.
+If an existing installation reports unsafe permissions, stop its sidecar and
+other writers. As the storage owner, run
+`memorii-operator --installation-root /path/to/installation repair-permissions`,
+then run `status` before restarting. Repair checks ownership and file types.
+It does not follow links or repair backups stored outside the installation.
+Use permission repair for a mode error in a root that has stayed under the
+owner's control. Another account can retain an already-open file descriptor
+after a mode change. For a root exposed to other accounts, recover to a fresh
+private root before resuming writes.
+
+Owner-authorized commands take `--owner-principal` and `--capability-file`
+before the subcommand. Store the issued capability as exactly 64 lowercase hex
+characters in a regular file readable only by the operator. Use
+`--recovery-key-file` on both `backup create` and `backup restore-stage`.
+It accepts exactly 32 raw bytes in a regular owner-only file. Keep that key
+independently from the backup archive.
+
+For a restore on the same installation, switch to `read_only` and run
+`backup restore-plan` against the archive. Use `backup restore-stage` with
+that plan and an owner-only recovery key file. Then use
+`backup restore-preview-stage` to review inventory changes and obtain the
+preview digest. All three steps leave the live SQLite data in place.
+
+- Use `backup restore-activate-current` for a staged backup at the exact live watermark.
+- For an older backup, acknowledge data loss in the plan and pass the reviewed preview digest to `backup restore-activate-older`. The installation stays in `read_only`, with prior-generation deliveries held.
+- Use `backup upgrade-runtime` with an exact-current preview to upgrade a signed v4, v5, or v6 runtime to v7. The upgrade retains the original batches and holds prior-generation deliveries. Host authorization must be renewed for the selected generation.
+
+After selection, reopen the installation and inspect its status before
+changing its mode. Owners can use `reconcile-delivery plan-reject` and
+`reconcile-delivery reject` to decline a specific held delivery with a
+reviewed plan. The decision leaves the original delivery and any historical
+receipt in the signed history.
+
 ## Provider Integration Surface
 
 `ProviderMemoryService` is the production-facing composition boundary.
@@ -200,6 +253,118 @@ The semantic-ingestion component is ready for early real-world Hermes testing.
 This does not certify full agent behavior or a production release. See the
 [Agent Integration Readiness Plan](docs/plans/agent_integration_readiness.md)
 for the remaining evaluation and operational requirements.
+
+### Managed Task Resume And Memory In Pi And OpenClaw
+
+The installed operator can create a task and enroll one native source from a
+new private installation. These commands assume the operator and local host
+can securely access their respective private credential files.
+
+```bash
+mkdir -m 700 "$HOME/memorii-local"
+root="$HOME/memorii-local"
+memorii-operator --installation-root "$root/installation" --owner-principal owner:local \
+  init --capability-output "$root/owner.cap"
+
+# Choose a future ISO-8601 time and the exact native session in your host.
+expires_at="2030-01-01T00:00:00+00:00"
+memorii-operator --installation-root "$root/installation" --owner-principal owner:local \
+  --capability-file "$root/owner.cap" runtime-grant enroll-native \
+  --operation-id provision-personal-pi --principal local:pi \
+  --native-source '{"kind":"pi","session_id":"personal-pi"}' \
+  --expires-at "$expires_at" --goal "Retain context for this task" \
+  --credential-output "$root/pi.credential"
+
+memorii-operator --installation-root "$root/installation" --owner-principal owner:local \
+  --capability-file "$root/owner.cap" serve
+```
+
+Use a short expiry appropriate for the session. The enrollment receipt gives
+the task ID and command grant ID. Set the host's credential path to the private
+file and use the task ID in the host environment. For OpenClaw, enroll a
+separate exact gateway session with `"kind":"openclaw"` and its own credential
+output. Use the ready loopback URL printed by `serve`. Run the foreground
+command under a local supervisor for restart.
+
+Repeat the same enrollment arguments after an interrupted setup. The stored
+operation ID rejects changed arguments. If an active credential file is
+lost or needs rotation, issue a new operation with the same task and source
+and `--replaces-grant-id`, using a new private file. The prior namespace stays
+revoked, and its native recall and pending proofs require separate owner
+reconciliation. The task itself remains the same. Stop and restart the local
+sidecar without recreating its grant or task state.
+
+The installed initializer registers a private SQLite intake spool on a new
+installation. For an existing installation using the old intake files, stop
+all sidecars, drains and older readers, enter `read_only` mode, and run
+`memorii-operator runtime-spool register` with the same owner credentials.
+Verify the registration before resuming. The supported backup command
+includes the registered spool and its exact admitted sequence.
+
+Use `memorii-operator status` to inspect readiness, effective mode, verified
+generation and queue counts. Add `--backup-archive PATH` to verify the selected
+archive and see its age. A root awaiting publication recovery reports offline.
+
+If a development v8 installation predates the bounded native and catalog
+selectors, take an exact-current backup in `read_only` mode. Stage it and use
+`backup restore-preview-stage --raw-payloads` to review the backfill, then
+`backup upgrade-runtime --raw-payloads` with the reviewed preview digest.
+Reopen the installation and re-enroll eligible clients against the new
+generation. The selected generation remains v8 and retains the signed history.
+Exact ontology recall verifies the full snapshot and its latency can grow with
+the retained graph.
+
+The v8 distribution pairs the Python wheel with separate Pi and OpenClaw
+asset archives. Verify the wheel and archive digests in the release manifest,
+unpack each archive in its own directory, and run
+`npm ci --omit=dev --ignore-scripts` there with Node 24.22.3 and npm 12.2.3.
+Use the pinned host executable
+from that directory's `node_modules/.bin`. Load `memorii-extension.ts` for
+Pi or add the unpacked plugin directory to `plugins.load.paths` for OpenClaw.
+The repository Docker recipes are validation targets.
+
+For embedded deployments using the Python composition root:
+
+Provision a task, an installation-issued host credential, a task-scoped read
+grant, and a finite `resume_task` grant for that credential. Run
+`RuntimeSidecar.for_managed_installation` on loopback under the storage owner.
+Set `MEMORII_SIDECAR_URL`, `MEMORII_CREDENTIAL_PATH`, and `MEMORII_TASK_ID` in the
+host process. The credential file belongs to the host account and requires
+owner-only permissions.
+
+- For Pi 1.7.0, select the session with `pi --session-id <id>` and set
+  `MEMORII_PI_SESSION_ID` to that exact ID before loading the extension. The
+  extension checks the native session ID again after a restart or fork.
+  For headless Pi diagnostics, set `NODE_DEBUG=memorii`.
+- For OpenClaw 2026.11.10, set `MEMORII_OPENCLAW_SESSION_KEY` in the gateway
+  environment and target that same key with `openclaw agent --session-key
+  agent:<agent-id>:<session-key>`. Restart the gateway after changing the pin.
+
+The host submits a signed resume to the managed spool. Run
+`memorii-consume --installation-root <root> --managed --drain` as the storage
+owner to commit pending commands. The task can be read from the authenticated
+state endpoint after a restart.
+
+To enable user-message capture and recall, issue a finite
+`memorii-operator runtime-grant issue` grant with `--kind resume_task`,
+`--kind record_observation`, exactly one `--task-id`, and
+`--native-source '{"kind":"pi","session_id":"<native-id>"}'`. For OpenClaw,
+use `"kind":"openclaw"` and the exact gateway session key, then set
+`plugins.entries.memorii.hooks.allowConversationAccess` and select `memorii`
+in `plugins.slots.contextEngine` in that gateway. Use a dedicated
+operator-controlled local profile for this exclusive context-engine slot.
+Recall is assembled as quoted user data for the current request. Forwarded
+or shared-channel sender identity is outside this binding.
+
+Capture retains user text through governed admission, then commits a signed
+observation. The owner drain can recover a staged observation after a sidecar
+interruption. The enrolled session can recall up to four committed messages
+after restart. `memorii-operator runtime-grant revoke --grant-id <id>`
+withdraws future capture and recall under that enrollment.
+Source-level suppression uses the existing forget controls. To include a
+captured message in a task lifecycle archive, the owner explicitly issues its
+exact runtime source release with
+`memorii-operator runtime-source-grant issue-native --entry-file <committed-spool-entry>`.
 
 ## Correctness And Safety Contracts
 

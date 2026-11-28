@@ -22,7 +22,9 @@ Workflow file: `.github/workflows/pr-gates.yml`
 - Trigger on `pull_request` to `main`.
 - Trigger on `merge_group` to support GitHub merge queue usage.
 - Use Python 3.11.
-- Install local development dependencies via `pip install -e '.[local,dev]'`.
+- Install development and checkout-only linguistic test dependencies via
+  `pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt` from
+  `memorii/`.
 - Run Ruff, Pyright, and installed-wheel smoke checks in independent jobs.
 - Run the complete unit inventory through four deterministic,
   duration-balanced pytest shards.

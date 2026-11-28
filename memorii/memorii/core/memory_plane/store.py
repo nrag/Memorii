@@ -7,7 +7,7 @@ import hmac
 import json
 import os
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -25,6 +25,8 @@ from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibil
 SEMANTIC_CHECKPOINT_SECRET_PURPOSE = "semantic-ingestion-replay-checkpoint-signing"
 _SEMANTIC_CHECKPOINT_KEY_ID = "semantic-ingestion-checkpoint-key"
 _SEMANTIC_CHECKPOINT_SIGNATURE_DOMAIN = b"memorii.semantic-replay-checkpoint-signature.v1\0"
+RUNTIME_WRITEBACK_CANDIDATE_SOURCE_KIND = "runtime_writeback_candidate"
+RUNTIME_WRITEBACK_CANDIDATE_ID_PREFIX = "cand:runtime:"
 
 
 @runtime_checkable
@@ -44,6 +46,21 @@ class CheckpointSignatureAuthority(Protocol):
         checkpoint_digest: str,
         signature: str,
     ) -> bool: ...
+
+
+class CatalogMetadataSnapshot(Protocol):
+    """Transaction-local canonical rows for protected catalog selection."""
+
+    def record(self, memory_id: str) -> CanonicalMemoryRecord | None: ...
+
+    def activation_attempts(self, *, principal_id: str, agent_id: str) -> Iterable[CanonicalMemoryRecord]: ...
+
+
+@runtime_checkable
+class ManagedCatalogMetadataStore(Protocol):
+    def read_catalog_metadata_linearized(
+        self, callback: Callable[[int, CatalogMetadataSnapshot], object],
+    ) -> object: ...
 
 
 class BackendCheckpointSignatureAuthority:
@@ -95,6 +112,21 @@ class MemoryPlaneWriteAuthorization:
 
 
 @dataclass(frozen=True)
+class RuntimeCandidateWriteAuthorization(MemoryPlaneWriteAuthorization):
+    """In-process authorization for one exact immutable candidate effect."""
+
+    memory_id: str
+    digest: str
+
+
+def is_runtime_writeback_candidate(record: CanonicalMemoryRecord) -> bool:
+    return (
+        record.source_kind == RUNTIME_WRITEBACK_CANDIDATE_SOURCE_KIND
+        or record.memory_id.startswith(RUNTIME_WRITEBACK_CANDIDATE_ID_PREFIX)
+    )
+
+
+@dataclass(frozen=True)
 class MemoryPlaneTimedWriteSnapshot:
     """One detached full-write snapshot with backend-atomic UTC creation time."""
 
@@ -117,6 +149,19 @@ class GovernedWritePolicy(Protocol):
         current: tuple[CanonicalMemoryRecord, ...],
         authorization: MemoryPlaneWriteAuthorization | None,
     ) -> None: ...
+
+
+@runtime_checkable
+class IndexedGovernedWritePolicy(GovernedWritePolicy, Protocol):
+    """A policy that can identify its complete read set for a closed write shape."""
+
+    def required_current_record_ids(
+        self,
+        records: tuple[CanonicalMemoryRecord, ...],
+        authorization: MemoryPlaneWriteAuthorization | None,
+    ) -> frozenset[str] | None:
+        """Name every record used by validate, or require the full snapshot."""
+        ...
 
 
 class RecordAbsentPrecondition(BaseModel):
@@ -833,6 +878,24 @@ def validate_governed_write(
     current: tuple[CanonicalMemoryRecord, ...],
     authorization: MemoryPlaneWriteAuthorization | None,
 ) -> None:
+    reserved = tuple(record for record in records if is_runtime_writeback_candidate(record))
+    if reserved:
+        record = reserved[0]
+        if (
+            len(records) != 1
+            or not isinstance(authorization, RuntimeCandidateWriteAuthorization)
+            or record.source_kind != RUNTIME_WRITEBACK_CANDIDATE_SOURCE_KIND
+            or not record.memory_id.startswith(RUNTIME_WRITEBACK_CANDIDATE_ID_PREFIX)
+            or record.status != CommitStatus.CANDIDATE
+            or record.visibility != MemoryRecordVisibility.INTERNAL_CONTROL
+            or record.is_raw_event
+            or authorization.memory_id != record.memory_id
+            or authorization.digest != record_digest(record)
+            or any(existing.memory_id == record.memory_id for existing in current)
+        ):
+            raise MemoryPlaneGovernedWritePolicyRequiredError(
+                "runtime writeback staging requires exact candidate owner authorization"
+            )
     if policy is not None:
         policy.validate(records, current, authorization)
         return

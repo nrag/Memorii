@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -13,6 +14,11 @@ from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.models import ProviderOperation, ProviderSyncResult
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.semantic_ingestion.catalog_inspection import (
+    CatalogBrowseResponse,
+    CatalogRelationInspectionResponse,
+    StructuredRecallDiagnosisResponse,
+)
 from memorii.core.semantic_ingestion.production_authority import (
     VerifiedCapabilityMonitoringAuthority,
     VerifiedProductionHostAuthority,
@@ -25,6 +31,14 @@ from memorii.core.storage_administration.revoked_identity_view import (
     RevokedIdentityServingGate,
 )
 from memorii.domain.enums import SourceModality
+from memorii.integrations.catalog_read_binding import (
+    CatalogReadBinding,
+    catalog_read_tool_schemas,
+    dispatch_catalog_read,
+)
+
+if TYPE_CHECKING:
+    from memorii.core.semantic_ingestion.learned_relation import OntologyCandidateReceipt, OntologyCandidateReview
 
 
 class AuthenticatedSourceSubmission(BaseModel):
@@ -79,15 +93,19 @@ class AuthenticatedSourceAdapter:
 class AuthenticatedSourceLearnedOntologyBinding:
     """Host-issued operations for the core-owned learned ontology journey.
 
-    The source adapter receives no scope, proposal, catalog, or evaluator
-    coordinate.  Those values stay behind the verified composition boundary.
+    The source adapter never supplies the owner scope, parent or evaluator.
     """
 
     activate_candidate: Callable[[str], object]
-    approve_candidate: Callable[[str], object]
+    approve_candidate: Callable[[str], OntologyCandidateReceipt]
     status: Callable[[], object]
     read_structured_facts: Callable[[StructuredFactReadRequest], StructuredFactReadResponse]
     close: Callable[[], None] | None = None
+    review_candidate: Callable[[str], OntologyCandidateReview] | None = None
+    reject_candidate: Callable[[str], Literal["rejected"]] | None = None
+    select_prior_version: Callable[[str], object] | None = None
+    prepare_rebase: Callable[[], OntologyCandidateReceipt] | None = None
+    retry_refresh: Callable[[], bool] | None = None
 
 
 class AuthenticatedSourceRuntime:
@@ -99,10 +117,12 @@ class AuthenticatedSourceRuntime:
         adapter: AuthenticatedSourceAdapter,
         issue_ingress: Callable[[AuthenticatedSourceSubmission], AuthenticatedHostIngress],
         learned_ontology: AuthenticatedSourceLearnedOntologyBinding | None = None,
+        catalog_read: CatalogReadBinding | None = None,
     ) -> None:
         self._adapter = adapter
         self._issue_ingress = issue_ingress
         self._learned_ontology = learned_ontology
+        self._catalog_read = catalog_read
 
     def submit(self, submission: AuthenticatedSourceSubmission) -> ProviderSyncResult:
         ingress = self._issue_ingress(submission)
@@ -119,17 +139,65 @@ class AuthenticatedSourceRuntime:
             raise RuntimeError("learned ontology activation is unavailable")
         return self._learned_ontology.activate_candidate(proposal_id)
 
-    def approve_learned_candidate(self, proposal_id: str) -> object:
+    def approve_learned_candidate(self, proposal_id: str) -> OntologyCandidateReceipt:
         """Record the signed-in owner's decision before activation."""
         if self._learned_ontology is None:
             raise RuntimeError("learned ontology approval is unavailable")
         return self._learned_ontology.approve_candidate(proposal_id)
+
+    def review_learned_candidate(self, proposal_id: str) -> OntologyCandidateReview:
+        if self._learned_ontology is None or self._learned_ontology.review_candidate is None:
+            raise RuntimeError("learned ontology review is unavailable")
+        return self._learned_ontology.review_candidate(proposal_id)
+
+    def reject_learned_candidate(self, proposal_id: str) -> Literal["rejected"]:
+        if self._learned_ontology is None or self._learned_ontology.reject_candidate is None:
+            raise RuntimeError("learned ontology rejection is unavailable")
+        return self._learned_ontology.reject_candidate(proposal_id)
+
+    def select_prior_learned_version(self, target_version_digest: str) -> object:
+        if self._learned_ontology is None or self._learned_ontology.select_prior_version is None:
+            raise RuntimeError("learned ontology rollback is unavailable")
+        return self._learned_ontology.select_prior_version(target_version_digest)
+
+    def prepare_learned_rebase(self) -> OntologyCandidateReceipt:
+        if self._learned_ontology is None or self._learned_ontology.prepare_rebase is None:
+            raise RuntimeError("learned ontology rebase is unavailable")
+        return self._learned_ontology.prepare_rebase()
+
+    def retry_learned_catalog_refresh(self) -> bool:
+        if self._learned_ontology is None or self._learned_ontology.retry_refresh is None:
+            raise RuntimeError("learned ontology refresh is unavailable")
+        return self._learned_ontology.retry_refresh()
 
     def lookup_learned_ontology_status(self) -> object:
         """Return source-text-free learner status from the installed root."""
         if self._learned_ontology is None:
             return {"status": "unavailable"}
         return self._learned_ontology.status()
+
+    def get_read_tool_schemas(self) -> list[dict[str, object]]:
+        return catalog_read_tool_schemas() if self._catalog_read is not None and self._catalog_read.configured else []
+
+    def handle_read_tool_call(self, tool_name: str, arguments: object) -> dict[str, object]:
+        if self._catalog_read is None:
+            raise ValueError("Memorii catalog read tools are unavailable")
+        return dispatch_catalog_read(self._catalog_read, tool_name, arguments)
+
+    def browse_catalog(self, request: object) -> CatalogBrowseResponse:
+        if self._catalog_read is None:
+            return CatalogBrowseResponse.model_validate({"status": "unavailable"})
+        return self._catalog_read.browse_catalog(request)
+
+    def inspect_catalog_relation(self, request: object) -> CatalogRelationInspectionResponse:
+        if self._catalog_read is None:
+            return CatalogRelationInspectionResponse.model_validate({"status": "unavailable"})
+        return self._catalog_read.inspect_catalog_relation(request)
+
+    def diagnose_structured_recall(self, request: object) -> StructuredRecallDiagnosisResponse:
+        if self._catalog_read is None:
+            return StructuredRecallDiagnosisResponse.model_validate({"status": "unavailable"})
+        return self._catalog_read.diagnose_structured_recall(request)
 
     def read_structured_facts(
         self, request: StructuredFactReadRequest,
@@ -141,8 +209,11 @@ class AuthenticatedSourceRuntime:
 
     def close(self) -> None:
         """Release resources owned by the installed learned runtime."""
-        if self._learned_ontology is not None and self._learned_ontology.close is not None:
-            self._learned_ontology.close()
+        learned = self._learned_ontology
+        self._learned_ontology = None
+        self._catalog_read = None
+        if learned is not None and learned.close is not None:
+            learned.close()
 
 
 def build_authenticated_source_runtime(
@@ -159,6 +230,7 @@ def build_authenticated_source_runtime(
         VerifiedCapabilityMonitoringAuthority, ...
     ] = (),
     learned_ontology: AuthenticatedSourceLearnedOntologyBinding | None = None,
+    catalog_read: CatalogReadBinding | None = None,
 ) -> AuthenticatedSourceRuntime:
     """Build the public non-Hermes source root from verified host authority."""
 
@@ -188,6 +260,7 @@ def build_authenticated_source_runtime(
         adapter=AuthenticatedSourceAdapter(service),
         issue_ingress=issue_ingress,
         learned_ontology=learned_ontology,
+        catalog_read=catalog_read,
     )
 
 

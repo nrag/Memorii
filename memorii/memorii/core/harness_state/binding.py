@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -19,13 +20,24 @@ from memorii.core.harness_state.envelope import (
     HarnessStateEnvelope,
     render_harness_state,
 )
+from memorii.core.harness_state.paging import HarnessCursorError
 from memorii.core.harness_state.service import (
     HarnessStateError,
     HarnessStateService,
     RuntimeReadGrant,
 )
+from memorii.core.persistence.runtime_journal import RuntimeJournalError, verify_runtime_history
 from memorii.core.persistence.runtime_repository import RuntimeStateRepository
-from memorii.core.storage_administration.service import StorageAdministrationService
+from memorii.core.storage_administration.revoked_identity_view import RefreshingRevokedIdentityView
+from memorii.core.storage_administration.service import (
+    InstallationIntegrityError,
+    StorageAdministrationError,
+    StorageAdministrationService,
+)
+
+if TYPE_CHECKING:
+    from memorii.core.harness_state.writeback_decision import WritebackDecisionService
+    from memorii.core.work_state.runtime_projection_read import ManagedWorkProjectionReader
 
 
 class RuntimeTaskBinding(BaseModel):
@@ -50,12 +62,33 @@ class HermesRuntimeStatePorts:
         self._administration = administration
         self._grant_ttl = grant_ttl
         self._service = HarnessStateService(
-            RuntimeStateRepository(administration.partition())
+            RuntimeStateRepository(administration.partition()),
+            revoked_view=RefreshingRevokedIdentityView(administration.installation_root / "control"),
         )
         self._bindings: dict[str, RuntimeTaskBinding] = {}
 
     def bind_task(self, binding: RuntimeTaskBinding) -> None:
         self._bindings[binding.granted_to_principal] = binding
+
+    def host_writeback(self, *, credential: str) -> WritebackDecisionService:
+        """Return the embedded host-only port using the installed credential owner."""
+        from memorii.core.harness_state.credentials import SidecarCredentialStore
+        from memorii.core.harness_state.writeback_decision import WritebackDecisionService
+
+        credentials = SidecarCredentialStore(self._administration.installation_root / "control" / "credentials")
+        return WritebackDecisionService(self._administration, credentials, credential)
+
+    def host_work_projection(
+        self, *, credential: str, grant: RuntimeReadGrant,
+    ) -> ManagedWorkProjectionReader:
+        """Bind the host-only managed recall port to a provisioned finite grant."""
+        from memorii.core.harness_state.credentials import SidecarCredentialStore
+        from memorii.core.work_state.runtime_projection_read import ManagedWorkProjectionReader
+
+        credentials = SidecarCredentialStore(self._administration.installation_root / "control" / "credentials")
+        return ManagedWorkProjectionReader(
+            self._administration, credentials=credentials, secret=credential, grant=grant,
+        )
 
     def runtime_prefetch_text(
         self,
@@ -75,6 +108,21 @@ class HermesRuntimeStatePorts:
         *,
         principal: str,
         now: Callable[[], datetime] | None = None,
+        cursor: str | None = None,
+    ) -> HarnessStateEnvelope:
+        return self._read_bound_state(principal=principal, now=now, cursor=cursor, require_checkpoint=False)
+
+    def resume_bound_state(self, *, principal: str) -> HarnessStateEnvelope:
+        """Verify the sealed replay boundary and return current bounded task state."""
+        return self._read_bound_state(principal=principal, now=None, cursor=None, require_checkpoint=True)
+
+    def _read_bound_state(
+        self,
+        *,
+        principal: str,
+        now: Callable[[], datetime] | None,
+        cursor: str | None,
+        require_checkpoint: bool,
     ) -> HarnessStateEnvelope:
         binding = self._bindings.get(principal)
         if binding is None:
@@ -87,9 +135,37 @@ class HermesRuntimeStatePorts:
             epoch=1,
             expires_at=moment + self._grant_ttl,
         )
-        return self._service.read_state(
-            task_id=binding.installation_task_id, grant=grant, now=moment
-        )
+        try:
+            administration = self._administration
+            with administration.verified_operation_context() as (state, finalized):
+                if state.mode == "bypass":
+                    raise HarnessStateError("unavailable: installation is in bypass mode")
+                if require_checkpoint:
+                    if finalized.checkpoint_digest is None:
+                        raise HarnessStateError("unavailable: a signed runtime checkpoint has not been published")
+                    with administration.partition().transaction(write=False) as connection:
+                        signer = administration._signer_key_id
+                        verify_runtime_history(
+                            connection, finalized=finalized,
+                            verify=lambda purpose, digest, signature: administration._verify_journal_signature(
+                                signer, purpose, digest, signature,
+                            ),
+                            checkpoint_signer_key_id=signer,
+                            checkpoint_signer_fingerprint=administration._signing.public_key_fingerprint(signer),
+                        )
+                return self._service.read_state(
+                    task_id=binding.installation_task_id, grant=grant, now=moment,
+                    cursor=cursor, checkpoint_ref=finalized.checkpoint_digest,
+                    installation_binding=(
+                        finalized.data_generation_id, state.eligibility_epoch + state.pending_epoch_increments,
+                    ),
+                )
+        except HarnessCursorError as exc:
+            raise HarnessStateError(str(exc)) from exc
+        except (InstallationIntegrityError, RuntimeJournalError) as exc:
+            raise HarnessStateError("integrity_error: managed runtime state could not be verified") from exc
+        except StorageAdministrationError as exc:
+            raise HarnessStateError("unavailable: reopen the managed runtime state port") from exc
 
     def tool_state_summary(self, *, principal: str) -> dict[str, object]:
         """Model-tool state view: durable when bound, plainly otherwise."""

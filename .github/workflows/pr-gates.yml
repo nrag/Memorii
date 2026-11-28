@@ -166,11 +166,13 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
 
       - name: Install package + test deps
         working-directory: memorii
-        run: pip install -e '.[local,dev]'
+        run: pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
 
       - name: Run Ruff
         working-directory: memorii
@@ -200,17 +202,33 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
 
       - name: Install package + test deps
         working-directory: memorii
-        run: pip install -e '.[local,dev]'
+        run: pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
 
       - name: Build and smoke-test wheel
         working-directory: memorii
         run: |
           python -W error -m pytest tests/integration/test_observation_activation_bootstrap.py tests/integration/test_observation_activation_release_tools.py -p no:cacheprovider -q
           python -m pip wheel . --no-deps --wheel-dir "${RUNNER_TEMP}/memorii-wheel"
+          python - <<'PY'
+          import os
+          from email import message_from_bytes
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          [wheel] = (Path(os.environ["RUNNER_TEMP"]) / "memorii-wheel").glob("memorii-*.whl")
+          with ZipFile(wheel) as archive:
+              [entry] = [name for name in archive.namelist() if name.endswith(".dist-info/METADATA")]
+              metadata = message_from_bytes(archive.read(entry))
+          assert "local" not in metadata.get_all("Provides-Extra", [])
+          for requirement in metadata.get_all("Requires-Dist", []):
+              assert not requirement.lower().startswith(("torch", "stanza", "spacy", "en-core-web-trf")), requirement
+          PY
           python ../docs/work/semantic_ingestion/observation-ledger/release-preparation/prepare_candidate.py "${RUNNER_TEMP}/memorii-wheel" "${RUNNER_TEMP}/memorii-prepared" --acquire
           python ../docs/work/semantic_ingestion/observation-ledger/release-preparation/run_installed_proof.py "${RUNNER_TEMP}/memorii-prepared" "${RUNNER_TEMP}/memorii-preparation-proof"
           python ../docs/work/semantic_ingestion/observation-ledger/release-preparation/check_installed_rejections.py "${RUNNER_TEMP}/memorii-prepared" "${RUNNER_TEMP}/memorii-preparation-proof"
@@ -253,7 +271,7 @@ jobs:
 
       - name: Install test dependencies
         working-directory: memorii
-        run: pip install -e '.[local,dev]'
+        run: pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
 
       - name: Build default Docker image and exercise installed Hermes lifecycle
         working-directory: memorii
@@ -277,16 +295,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Python for the isolated CTV reference compiler
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
 
       - name: Install package + test deps
         working-directory: memorii
-        run: pip install -e '.[local,dev]'
+        run: pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
 
       - name: Verify complete deterministic shard plan
         working-directory: memorii
@@ -368,10 +393,12 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
       - name: Install package + test deps
         working-directory: memorii
-        run: pip install -e '.[local,dev]'
+        run: pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
       - name: Verify durable activation and recovery
         working-directory: memorii
         run: python -W error -m pytest tests/integration/test_activated_provider_ledger.py tests/integration/test_observation_ledger_activation.py tests/integration/test_observation_ledger_artifacts.py tests/integration/test_observation_terminal_intent.py tests/integration/test_observation_ledger_replay.py tests/integration/test_bootstrap_group_observation.py tests/integration/test_registered_observation_cursor.py tests/integration/test_native_projection_evidence.py tests/integration/test_graph_observation_paging.py tests/integration/test_ingestion_time_paging.py tests/unit/core/memory_evolution/test_graph_observation_cohort.py tests/unit/core/memory_evolution/test_graph_observation_ingestion_projection.py tests/integration/test_graph_observation_access.py tests/unit/core/memory_evolution/test_graph_observation_materialization.py tests/integration/test_composed_graph_observation_service.py -p no:cacheprovider -q --durations=10 --junitxml=observation-ledger-activation.xml
@@ -385,7 +412,7 @@ jobs:
   scoped-context-integration:
     name: Scoped Context Integration
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -396,11 +423,13 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
 
       - name: Install package and test dependencies
         working-directory: memorii
-        run: pip install -e '.[local,dev]'
+        run: pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
 
       - name: Run scoped-context composition roots
         working-directory: memorii
@@ -423,17 +452,26 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
 
       - name: Install package and test dependencies
         working-directory: memorii
-        run: pip install -e '.[local,dev]'
+        run: pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
 
       - name: Run durable storage and migration integration journeys
         working-directory: memorii
         run: >-
           pytest -W error
           tests/integration/test_partition_storage_recovery.py
+          tests/integration/test_incremental_materialization.py
+          tests/integration/test_indexed_governed_source_admission.py
+          tests/integration/test_partition_generation_selection.py
+          tests/integration/test_older_restore_generation.py
+          tests/integration/test_managed_replacement_restore.py
+          tests/integration/test_installation_mode_recovery.py
+          tests/integration/test_suppression_recovery.py
           tests/integration/test_shared_sqlite_provider_paths.py
           tests/integration/test_shared_sqlite_semantic_owners.py
           tests/integration/test_memory_plane_migration_recovery.py
@@ -469,11 +507,13 @@ jobs:
         with:
           python-version: '3.12'
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
 
       - name: Install package for the schema generator
         working-directory: memorii
-        run: pip install -e '.[local]'
+        run: pip install -e .
 
       - name: Check generated schema parity
         working-directory: sdk/typescript
@@ -523,12 +563,14 @@ jobs:
         with:
           python-version: '3.12'
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
 
       - name: Install package, test dependencies and pinned host frameworks
         working-directory: memorii
         run: |
-          pip install -e '.[local,dev]'
+          pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
           pip install -r tests/integration/hostcompat/requirements.txt
 
       - name: Run runtime certification against pinned frameworks
@@ -545,6 +587,8 @@ jobs:
     name: Host Container Certification
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    env:
+      MEMORII_RUN_DOCKER_TESTS: '1'
 
     steps:
       - name: Checkout
@@ -555,18 +599,33 @@ jobs:
         with:
           python-version: '3.12'
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
 
       - name: Install package + test dependencies
         working-directory: memorii
-        run: pip install -e '.[local,dev]'
+        run: pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
+
+      - name: Pin the candidate wheel builder
+        working-directory: memorii
+        run: python -m pip install --require-hashes -r tests/support/reference_capacity_dependencies/build.lock
 
       - name: Run the container-driven certification journeys
         working-directory: memorii
+        env:
+          MEMORII_NATIVE_ASSET_OUTPUT: ${{ runner.temp }}/memorii-native-candidate
         run: >-
           python -W error -m pytest
           tests/integration/hostcompat/test_container_certification_journeys.py
           -p no:cacheprovider -v
+
+      - name: Retain tested wheel and host asset archives
+        uses: actions/upload-artifact@v4
+        with:
+          name: memorii-native-candidate
+          path: ${{ runner.temp }}/memorii-native-candidate
+          if-no-files-found: error
 
   macos-platform-conformance:
     name: macOS Platform Conformance
@@ -588,7 +647,7 @@ jobs:
         shell: bash -el {0}
         run: |
           conda install -y -c conda-forge "pyicu>=2.13,<3"
-          pip install -e '.[local,dev]'
+          pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
 
       - name: Run platform-divergent suites (credentials, permissions, capacity)
         working-directory: memorii
@@ -614,11 +673,13 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
 
       - name: Install package and test dependencies
         working-directory: memorii
-        run: pip install -e '.[local,dev]'
+        run: pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
 
       - name: Run durable runtime, sidecar and consumer journeys
         working-directory: memorii
@@ -626,7 +687,19 @@ jobs:
           pytest -W error
           tests/integration/test_runtime_process_recovery.py
           tests/integration/test_runtime_resume_checkpoint.py
+          tests/integration/test_runtime_checkpoint_tail.py
+          tests/integration/test_managed_status_proposal.py
           tests/integration/test_runtime_sidecar.py
+          tests/integration/test_sidecar_socket_release.py
+          tests/integration/test_installed_native_operator.py
+          tests/integration/test_operator_operational_status.py
+          tests/integration/test_consolidation_read_sidecar.py
+          tests/integration/test_managed_candidate_delivery.py
+          tests/integration/test_legacy_outbox_reconciliation.py
+          tests/integration/test_runtime_source_authority.py
+          tests/integration/test_native_source_capture.py
+          tests/integration/test_managed_work_projection_recall.py
+          tests/unit/core/test_runtime_journal.py
           tests/integration/test_forget_enforcement_publication.py
           tests/integration/test_forget_serving_parity.py
           tests/integration/test_forget_forensic_lineage.py
@@ -654,11 +727,13 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
 
       - name: Install package + test deps
         working-directory: memorii
-        run: pip install -e '.[local,dev]'
+        run: pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
 
       - name: Verify exact terminal-persistence collection count
         working-directory: memorii
@@ -705,11 +780,13 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
 
       - name: Install package + test deps
         working-directory: memorii
-        run: pip install -e '.[local,dev]'
+        run: pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
 
       - name: Download terminal-persistence timing evidence
         uses: actions/download-artifact@v4
@@ -748,11 +825,13 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
 
       - name: Install package + test deps
         working-directory: memorii
-        run: pip install -e '.[local,dev]'
+        run: pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
 
       - name: Download shard timing evidence
         uses: actions/download-artifact@v4
@@ -790,11 +869,13 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
 
       - name: Install package + test deps
         working-directory: memorii
-        run: pip install -e '.[local,dev]'
+        run: pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
 
       - name: Fetch pinned provider compatibility baseline
         working-directory: memorii
@@ -825,11 +906,13 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
 
       - name: Install package + test deps
         working-directory: memorii
-        run: pip install -e '.[local,dev]'
+        run: pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
 
       - name: Run generation closure acceptance
         working-directory: memorii
@@ -871,11 +954,13 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
 
       - name: Install package + test deps
         working-directory: memorii
-        run: pip install -e '.[local,dev]'
+        run: pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
 
       - name: Verify exact projection-history collection count
         working-directory: memorii
@@ -916,11 +1001,13 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
 
       - name: Install package + test deps
         working-directory: memorii
-        run: pip install -e '.[local,dev]'
+        run: pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
 
       - name: Run scenario authority acceptance
         working-directory: memorii
@@ -943,11 +1030,13 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
 
       - name: Install package + test deps
         working-directory: memorii
-        run: pip install -e '.[local,dev]'
+        run: pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
 
       - name: Run semantic ingestion public acceptance
         working-directory: memorii
@@ -970,11 +1059,13 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
 
       - name: Install package + test deps
         working-directory: memorii
-        run: pip install -e '.[local,dev]'
+        run: pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
 
       - name: Verify exact Hermes product collection count
         working-directory: memorii
@@ -1010,11 +1101,13 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
 
       - name: Install package + test deps
         working-directory: memorii
-        run: pip install -e '.[local,dev]'
+        run: pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
 
       - name: Validate exact 384-tuple selector manifest
         working-directory: memorii
@@ -1057,7 +1150,9 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
 
       - name: Install package
         working-directory: memorii
@@ -1089,7 +1184,9 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
       - name: Build and install isolated wheel
         working-directory: memorii
         run: >-
@@ -1158,11 +1255,13 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
 
       - name: Install package + test deps
         working-directory: memorii
-        run: pip install -e '.[local,dev]'
+        run: pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
 
       - name: Run benchmark contract tests
         working-directory: memorii
@@ -1250,11 +1349,13 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: memorii/pyproject.toml
+          cache-dependency-path: |
+            memorii/pyproject.toml
+            memorii/tests/support/linguistic_dependencies.txt
 
       - name: Install package + test deps
         working-directory: memorii
-        run: pip install -e '.[local,dev]'
+        run: pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
 
       - name: Build deterministic benchmark artifact
         working-directory: memorii

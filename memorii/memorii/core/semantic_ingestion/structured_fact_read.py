@@ -2,18 +2,33 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from memorii.core.memory_evolution.admission import source_admission_source_digest
 from memorii.core.memory_evolution.claim_queries import ClaimStateQueryService
 from memorii.core.memory_evolution.models import ClaimLifecycleState, ClaimState, RetrievalView
+from memorii.core.memory_evolution.semantic_state import AcceptedClaimIdentity
 from memorii.core.memory_evolution.state_repository import EvolutionStateRepository
+from memorii.core.memory_evolution.writer_admission import CatalogBundleLocator
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
-from memorii.core.scoped_context.service import verify_structured_catalog_projection_for_read
+from memorii.core.scoped_context.authority import ResolvedScopedReadGrant
+from memorii.core.scoped_context.service import (
+    LegacyBootstrapV3ProjectionReadVerifier,
+    claim_state_scope_agrees,
+    is_structured_claim_projection,
+    record_is_current,
+    record_is_in_scoped_read_grant,
+    source_closure_ids,
+    verify_structured_catalog_projection_for_read,
+)
 from memorii.core.semantic_ingestion.catalog_authority import (
+    CatalogAuthorityCoordinate,
     StructuredClaimCatalogBinding,
     StructuredFactReadAuthority,
     StructuredGrantState,
@@ -21,8 +36,12 @@ from memorii.core.semantic_ingestion.catalog_authority import (
 from memorii.core.semantic_ingestion.catalog_capture_pin import (
     CatalogCapturedTurnPin,
     PackageIndexedCatalogBundleLocator,
+    SeedCatalogBundleLocator,
 )
+from memorii.core.semantic_ingestion.contracts import SourceAuthorityEvidence
 from memorii.core.semantic_ingestion.default_catalog_corpus import load_default_catalog_acceptance_corpus
+from memorii.core.storage_administration.revoked_identity_view import RevokedIdentityView
+from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility, TemporalValidityStatus
 
 
 @dataclass(frozen=True)
@@ -725,6 +744,382 @@ def _projection_matches_state(
     if not isinstance(subject, dict):
         return False
     return subject.get("logical_entity_id_at_assertion") == state.claim_key.subject_entity_id
+
+
+@dataclass(frozen=True)
+class _CurrentFactCandidate:
+    record_ids: frozenset[str]
+    claim_ids: frozenset[str]
+    entity_ids: frozenset[str]
+    source_ids: frozenset[str]
+    item: StructuredFactReadItem | None
+
+    def suppressed(self, view: RevokedIdentityView) -> bool:
+        identities = view.identities
+        return bool(
+            self.record_ids & identities.records
+            or self.claim_ids & identities.claims
+            or self.entity_ids & identities.entities
+            or self.source_ids & (identities.sources | identities.records)
+        )
+
+
+@dataclass(frozen=True)
+class PendingCurrentCatalogRead:
+    subject_id: str
+    candidates: tuple[_CurrentFactCandidate, ...]
+
+    def release(self, view: RevokedIdentityView) -> tuple[StructuredFactReadItem, ...] | None:
+        if view.is_revoked_entity(self.subject_id):
+            return ()
+        items: dict[tuple[str, str], StructuredFactReadItem] = {}
+        for candidate in self.candidates:
+            if candidate.suppressed(view):
+                continue
+            item = candidate.item
+            if item is None:
+                return None
+            # Native and claim-state carriers may describe the same assertion.
+            items.setdefault((item.source_claim_id, item.derived_direction), item)
+        return tuple(sorted(items.values(), key=lambda item: (item.system_time, item.claim_id, item.derived_direction)))
+
+
+class CatalogBoundProjectionReadVerifier(LegacyBootstrapV3ProjectionReadVerifier, Protocol):
+    def verify_catalog_bound_bootstrap_v3_runtime_projection(
+        self,
+        projection: CanonicalMemoryRecord,
+        *,
+        records: tuple[CanonicalMemoryRecord, ...],
+        endpoints: tuple[tuple[str, str], ...],
+        required_ids: set[str],
+    ) -> bool: ...
+
+
+def _native_selectors(record: CanonicalMemoryRecord) -> tuple[object, object, object, bool]:
+    identity = record.content.get("claim_identity")
+    key = identity.get("assertion_key_at_recording") if isinstance(identity, dict) else None
+    slot = key.get("slot") if isinstance(key, dict) else None
+    value = key.get("value") if isinstance(key, dict) else None
+    if not isinstance(slot, dict) or not isinstance(value, dict):
+        return None, None, None, False
+    is_entity = value.get("object_kind") == "entity"
+    return (
+        slot.get("predicate_id"), slot.get("subject_logical_entity_id"),
+        value.get("object_logical_entity_id" if is_entity else "canonical_literal_value"), is_entity,
+    )
+
+
+def _control_record(
+    record: CanonicalMemoryRecord | None, *, domain: MemoryDomain, source_kind: str,
+) -> bool:
+    return (
+        record is not None and record.domain is domain and record.source_kind == source_kind
+        and record.visibility is MemoryRecordVisibility.INTERNAL_CONTROL and record.status is CommitStatus.COMMITTED
+    )
+
+
+def _current_bounds(start: datetime | None, end: datetime | None, now: datetime) -> bool:
+    return (start is None or start <= now) and (end is None or now < end)
+
+
+def _native_source_verified(
+    projection: CanonicalMemoryRecord, source: CanonicalMemoryRecord, *, now: datetime,
+) -> bool:
+    try:
+        evidence = SourceAuthorityEvidence.model_validate(projection.content.get("source_authority_evidence"))
+        return (
+            source.status is CommitStatus.COMMITTED
+            and record_is_current(source, now)
+            and source.memory_id == evidence.source_id == projection.content.get("source_id")
+            and source_admission_source_digest(source) == evidence.source_digest == projection.content.get("source_digest")
+            and source.user_id == projection.user_id
+            and source.agent_id == projection.agent_id
+            and source.task_id == projection.task_id
+        )
+    except (TypeError, ValueError):
+        return False
+
+
+def read_current_catalog_bound_facts(
+    *,
+    records: tuple[CanonicalMemoryRecord, ...],
+    revision: int,
+    grant: ResolvedScopedReadGrant,
+    current_authorities: Mapping[CatalogAuthorityCoordinate, StructuredFactReadAuthority],
+    grant_states: Mapping[tuple[str, str], StructuredGrantState],
+    locator: CatalogBundleLocator,
+    legacy_verifier: CatalogBoundProjectionReadVerifier,
+    predicate_id: str,
+    subject_id: str,
+    symmetric: bool,
+    now: datetime,
+) -> PendingCurrentCatalogRead:
+    """Assemble currently eligible exact claims before the final serving sample."""
+    by_id = {record.memory_id: record for record in records}
+    projections: dict[str, list[CanonicalMemoryRecord]] = {}
+    state_records: dict[str, list[CanonicalMemoryRecord]] = {}
+    for record in records:
+        if record.domain is not MemoryDomain.SEMANTIC or not record_is_in_scoped_read_grant(record, grant):
+            continue
+        if is_structured_claim_projection(record):
+            predicate, subject, value, is_entity = _native_selectors(record)
+            claim_id = record.content.get("claim_assertion_id")
+            if isinstance(claim_id, str) and predicate == predicate_id and (
+                subject == subject_id or (symmetric and is_entity and value == subject_id)
+            ):
+                projections.setdefault(claim_id, []).append(record)
+        elif record.content.get("memory_evolution_kind") == "claim_state":
+            raw = record.content.get("claim_state")
+            if not isinstance(raw, dict):
+                continue
+            key = raw.get("claim_key")
+            if not isinstance(key, dict) or key.get("predicate_id") != predicate_id or not (
+                key.get("subject_entity_id") == subject_id or (symmetric and raw.get("object_value") == subject_id)
+            ):
+                continue
+            ids = [value for value in (raw.get("claim_id"), raw.get("source_claim_id")) if isinstance(value, str)]
+            bound_id = next((value for value in ids if "semantic_ingestion:structured-claim-catalog:" + value in by_id), None)
+            if bound_id is None:
+                # This carrier also stores pre-catalog claim states.
+                continue
+            state_records.setdefault(bound_id, []).append(record)
+
+    pending: list[_CurrentFactCandidate] = []
+    live_projections = {
+        claim_id: candidates for claim_id, candidates in projections.items()
+        if any(
+            row.validity_status not in {TemporalValidityStatus.EXPIRED, TemporalValidityStatus.INVALIDATED}
+            and _current_bounds(row.valid_from, row.valid_to, now)
+            for row in candidates
+        )
+    }
+    backing_projections: dict[str, list[CanonicalMemoryRecord]] = {}
+    # A claim-state row is the serving carrier under its own committed scope.
+    # Its exact assertion projection can be retained solely as proof.
+    for record in records:
+        if (
+            record.domain is MemoryDomain.SEMANTIC
+            and record.visibility is MemoryRecordVisibility.RUNTIME_CONTEXT
+            and record.status is CommitStatus.COMMITTED
+            and is_structured_claim_projection(record)
+            and isinstance(claim_id := record.content.get("claim_assertion_id"), str)
+            and claim_id in state_records
+            and claim_id not in live_projections
+            and any(
+                state.user_id == record.user_id and state.task_id == record.task_id
+                and record.session_id in (None, state.session_id)
+                for state in state_records[claim_id]
+            )
+        ):
+            backing_projections.setdefault(claim_id, []).append(record)
+    visible_bindings: dict[str, StructuredClaimCatalogBinding | None] = {}
+    for claim_id in live_projections.keys() | state_records.keys():
+        binding_record = by_id.get("semantic_ingestion:structured-claim-catalog:" + claim_id)
+        binding = None
+        if binding_record is not None and _control_record(
+            binding_record, domain=MemoryDomain.SEMANTIC, source_kind="semantic_ingestion_structured_claim_catalog_binding",
+        ):
+            try:
+                binding = StructuredClaimCatalogBinding.model_validate(binding_record.content.get("binding"))
+            except ValidationError:
+                binding = None
+        if binding is not None:
+            authority = current_authorities.get(binding.catalog_scope)
+            if authority is None or (
+                authority.authenticated != binding.authenticated
+                or authority.fact_grant.fact_scope != binding.fact_scope
+            ):
+                continue
+        visible_bindings[claim_id] = binding
+    live_projections = {claim_id: items for claim_id, items in live_projections.items() if claim_id in visible_bindings}
+    state_records = {claim_id: items for claim_id, items in state_records.items() if claim_id in visible_bindings}
+    if not live_projections and not state_records:
+        return PendingCurrentCatalogRead(subject_id, ())
+
+    # Fanout indexes identify the immutable native groups that produced the
+    # claim and any native correction or retraction targeting that claim.
+    relevant_ids = {claim_id.encode("utf-8").hex() for claim_id in live_projections.keys() | state_records.keys()}
+    group_ids = {
+        row.content.get("transaction_group_id")
+        for matching in live_projections.values() for row in matching
+        if isinstance(row.content.get("transaction_group_id"), str)
+    }
+    primary_ids = {
+        row.content.get("primary_id") for row in records
+        if row.source_kind == "semantic_ingestion_bootstrap_graph_v3_group_commit_fanout"
+        and isinstance(row.content.get("primary_id"), str)
+        and isinstance(row.content.get("transaction_group_id"), str)
+        and row.content["transaction_group_id"] in group_ids
+    }
+    transition_records = tuple(
+        record for record in records
+        if record.source_kind == "semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+        and (
+            record.memory_id in primary_ids
+            or (
+                isinstance(payload := record.content.get("request_hex"), str)
+                and any(value in payload for value in relevant_ids)
+            )
+        )
+    )
+    transitions = verified_lifecycle_transitions(transition_records)
+    retired: set[str] = set()
+    replacement_times: dict[str, datetime] = {}
+    for transition in transitions or ():
+        if transition.recorded_at <= now:
+            retired.update(transition.compared_claim_ids)
+            retired.difference_update(transition.next_claim_ids)
+            for claim_id in transition.next_claim_ids:
+                replacement_times[claim_id] = transition.recorded_at
+
+    for claim_id in sorted(live_projections.keys() | state_records.keys()):
+        if claim_id in retired:
+            continue
+        native = live_projections.get(claim_id) or backing_projections.get(claim_id, [])
+        states: list[tuple[CanonicalMemoryRecord, ClaimState | None]] = []
+        for record in state_records.get(claim_id, ()):
+            try:
+                state = ClaimState.model_validate(record.content.get("claim_state"))
+            except ValidationError:
+                state = None
+            states.append((record, state))
+        if states and all(
+            state is not None
+            and (
+                state.lifecycle_state is not ClaimLifecycleState.ACTIVE
+                or not _current_bounds(state.valid_from, state.valid_to, now)
+            )
+            for _, state in states
+        ):
+            continue
+        projection = native[0] if native else None
+        binding_id = "semantic_ingestion:structured-claim-catalog:" + claim_id
+        binding_record = by_id.get(binding_id)
+        binding = visible_bindings[claim_id]
+        authority = current_authorities.get(binding.catalog_scope) if binding is not None else None
+        if binding_record is None and projection is not None and (
+            legacy_verifier.verify_legacy_bootstrap_v3_runtime_projection(
+                projection, revision=revision, records=records, grant=grant,
+            ) == "verified"
+        ):
+            continue
+
+        state_record, state = states[0] if states else (None, None)
+        record_ids = {binding_id, *[row.memory_id for row in native], *[row.memory_id for row, _ in states]}
+        claim_ids = {claim_id}
+        source_ids: set[str] = set()
+        entities = {subject_id}
+        item = None
+        if state is not None:
+            claim_ids.update((state.claim_id, state.source_claim_id))
+        if state_record is not None:
+            source_ids.update(source_closure_ids(state_record, by_id))
+        if projection is not None:
+            predicate, subject, value, is_entity = _native_selectors(projection)
+            if isinstance(subject, str):
+                entities.add(subject)
+            if is_entity and isinstance(value, str):
+                entities.add(value)
+            source = projection.content.get("source_id")
+            retained_source = by_id.get(source) if isinstance(source, str) else None
+            if isinstance(source, str):
+                source_ids.add(source)
+                if retained_source is not None:
+                    source_ids.update(source_closure_ids(retained_source, by_id))
+            source_ids.update(source_closure_ids(projection, by_id))
+            try:
+                identity = AcceptedClaimIdentity.model_validate_json(json.dumps(projection.content.get("claim_identity")))
+            except (TypeError, ValueError):
+                identity = None
+            if identity is not None:
+                endpoints = tuple(
+                    (ref.entity_revision_id, ref.logical_entity_id_at_assertion)
+                    for ref in (identity.subject_assertion_ref, identity.object_assertion_ref)
+                    if ref is not None
+                )
+                record_ids.update(revision_id for revision_id, _ in endpoints)
+            else:
+                endpoints = ()
+            pins: dict[str, CatalogCapturedTurnPin] = {}
+            if binding is not None and binding.pin_memory_id is not None:
+                record_ids.add(binding.pin_memory_id)
+                pin_record = by_id.get(binding.pin_memory_id)
+                if pin_record is not None and _control_record(
+                    pin_record, domain=MemoryDomain.EXECUTION, source_kind="semantic_ingestion_catalog_capture_pin",
+                ):
+                    try:
+                        pin = CatalogCapturedTurnPin.model_validate(pin_record.content.get("catalog_capture_pin"))
+                    except ValidationError:
+                        pin = None
+                    if pin is not None and pin.memory_id == pin_record.memory_id:
+                        pins[pin.memory_id] = pin
+
+            state_verified = not states or (
+                len(states) == 1 and state_record is not None and state is not None
+                and claim_state_scope_agrees(state_record) and state.claim_key.subject_entity_id == subject
+                and state.claim_key.predicate_id == predicate_id and state.object_value == value
+                and bool(source_closure_ids(state_record, by_id))
+            )
+            provenance_verified = all(
+                (dependency := by_id.get(source_id)) is not None
+                and (
+                    source_id == source
+                    or (record_is_in_scoped_read_grant(dependency, grant) and record_is_current(dependency, now))
+                )
+                for source_id in source_ids
+            )
+            if (
+                len(native) == 1 and state_verified and transitions is not None
+                and binding_record is not None and binding is not None and authority is not None
+                and binding.claim_assertion_id == claim_id and identity is not None
+                and isinstance(subject, str) and isinstance(value, str) and isinstance(source, str)
+                and retained_source is not None and _native_source_verified(projection, retained_source, now=now)
+                and provenance_verified
+                and verify_structured_catalog_projection_for_read(
+                    projection, bindings={claim_id: binding}, grant_states=grant_states, pins=pins,
+                    records=records, authority=authority, catalog_bundle_locator=locator,
+                    required_predicate_id=predicate_id,
+                )
+                and legacy_verifier.verify_catalog_bound_bootstrap_v3_runtime_projection(
+                    projection, records=records, endpoints=endpoints, required_ids=record_ids,
+                )
+            ):
+                version = SeedCatalogBundleLocator().locate().version if binding.schema_version == 1 else None
+                version_id = version.version_id if version is not None else binding.selected_version_id
+                version_digest = version.version_digest if version is not None else binding.selected_version_digest
+                if version_id is not None and version_digest is not None:
+                    directions: list[Literal["forward", "reverse"]] = []
+                    if subject == subject_id:
+                        directions.append("forward")
+                    if symmetric and is_entity and value == subject_id:
+                        directions.append("reverse")
+                    for direction in directions:
+                        item = StructuredFactReadItem(
+                            claim_id=state.claim_id if state is not None else claim_id,
+                            source_claim_id=state.source_claim_id if state is not None else claim_id,
+                            predicate_id=predicate_id,
+                            subject_entity_id=value if direction == "reverse" else subject,
+                            object_value=subject if direction == "reverse" else value,
+                            lifecycle_state="active",
+                            valid_from=state.valid_from if state is not None else projection.valid_from,
+                            valid_to=state.valid_to if state is not None else projection.valid_to,
+                            system_time=(
+                                state.updated_at if state is not None else
+                                max(binding_record.timestamp, replacement_times.get(claim_id, binding_record.timestamp))
+                            ),
+                            provenance=state.source_claim_id if state is not None else source,
+                            catalog_version_id=version_id,
+                            catalog_version_digest=version_digest,
+                            derived_direction=direction,
+                        )
+                        pending.append(_CurrentFactCandidate(
+                            frozenset(record_ids), frozenset(claim_ids), frozenset(entities), frozenset(source_ids), item,
+                        ))
+                    continue
+        pending.append(_CurrentFactCandidate(
+            frozenset(record_ids), frozenset(claim_ids), frozenset(entities), frozenset(source_ids), item,
+        ))
+    return PendingCurrentCatalogRead(subject_id, tuple(pending))
 
 
 __all__ = [

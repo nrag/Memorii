@@ -73,7 +73,7 @@ def test_record_versions_retain_every_batch(tmp_path: Path) -> None:
     connection = sqlite3.connect(partition_dir / "partition.sqlite3")
     try:
         versions = connection.execute(
-            "SELECT batch_revision, record_json FROM memory_record_versions"
+            "SELECT batch_revision, CAST(body AS TEXT) FROM memory_record_versions JOIN memory_payloads USING (payload_digest)"
             " WHERE memory_id = ? ORDER BY batch_revision",
             ("mem:one",),
         ).fetchall()
@@ -106,7 +106,8 @@ def test_first_insertion_order_survives_updates(tmp_path: Path) -> None:
     store.stage_record(_record("mem:a", marker="updated"))
     store.stage_record(_record("mem:b", marker="updated"))
     assert [record.memory_id for record in store.list_records()] == ["mem:a", "mem:b", "mem:c"]
-    assert store.get_record("mem:a") is not None and store.get_record("mem:a").text == "updated"
+    updated = store.get_record("mem:a")
+    assert updated is not None and updated.text == "updated"
 
 
 def test_list_records_filters_match_the_in_memory_reference(tmp_path: Path) -> None:
@@ -151,7 +152,7 @@ def test_tampered_batch_bytes_fail_closed_on_read_and_write(tmp_path: Path) -> N
 
     connection = sqlite3.connect(partition_dir / "partition.sqlite3")
     try:
-        connection.execute("UPDATE memory_batches SET batch_json = '{\"tampered\": true}' WHERE revision = 1")
+        connection.execute("UPDATE memory_payloads SET body = zeroblob(length(body))")
         connection.commit()
     finally:
         connection.close()
@@ -170,7 +171,7 @@ def test_tampered_checksum_column_fails_closed(tmp_path: Path) -> None:
 
     connection = sqlite3.connect(partition_dir / "partition.sqlite3")
     try:
-        connection.execute("UPDATE memory_batches SET checksum = '0' * 64 WHERE revision = 1")
+        connection.execute("UPDATE memory_batches SET checksum = printf('%064d', 0) WHERE revision = 1")
         connection.commit()
     finally:
         connection.close()
@@ -197,6 +198,36 @@ def test_revision_state_desync_fails_closed(tmp_path: Path) -> None:
         reopened.revision()
 
 
+def test_first_point_read_streams_every_batch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    partition_dir = tmp_path / "store"
+    store = SqliteMemoryPlaneStore(partition_dir)
+    store.stage_record(_record("mem:first"))
+    store.stage_record(_record("mem:last"))
+    store.partition.close()
+
+    def forbid_materialized_history(*_args: object) -> None:
+        pytest.fail("point read fetched all batch bodies at once")
+
+    monkeypatch.setattr(PartitionDataRepository, "read_batch_rows", forbid_materialized_history)
+    clean = SqliteMemoryPlaneStore(partition_dir)
+    assert clean.get_record("mem:first") is not None
+    clean.partition.close()
+
+    connection = sqlite3.connect(partition_dir / "partition.sqlite3")
+    try:
+        connection.execute("UPDATE memory_batches SET checksum = ? WHERE revision = 2", ("0" * 64,))
+        connection.commit()
+    finally:
+        connection.close()
+
+    reopened = SqliteMemoryPlaneStore(partition_dir)
+    try:
+        with pytest.raises(MemoryPlaneCorruptionError, match="batch checksum mismatch"):
+            reopened.get_record("mem:first")
+    finally:
+        reopened.partition.close()
+
+
 def test_partition_rejects_unknown_future_schema(tmp_path: Path) -> None:
     partition_dir = tmp_path / "store"
     store = SqliteMemoryPlaneStore(partition_dir)
@@ -210,7 +241,7 @@ def test_partition_rejects_unknown_future_schema(tmp_path: Path) -> None:
     finally:
         connection.close()
 
-    with pytest.raises(sqlite3.DatabaseError, match="unsupported partition schema"):
+    with pytest.raises(sqlite3.DatabaseError, match="unsupported or missing partition schema version"):
         SqliteMemoryPlaneStore(partition_dir)
 
 
@@ -235,7 +266,7 @@ def test_batches_are_appended_without_rewriting_history(tmp_path: Path) -> None:
     connection = sqlite3.connect(partition_dir / "partition.sqlite3")
     try:
         first_row = connection.execute(
-            "SELECT rowid, batch_json FROM memory_batches WHERE revision = 1"
+            "SELECT rowid, * FROM memory_batches WHERE revision = 1"
         ).fetchone()
     finally:
         connection.close()
@@ -244,7 +275,7 @@ def test_batches_are_appended_without_rewriting_history(tmp_path: Path) -> None:
     connection = sqlite3.connect(partition_dir / "partition.sqlite3")
     try:
         first_row_after = connection.execute(
-            "SELECT rowid, batch_json FROM memory_batches WHERE revision = 1"
+            "SELECT rowid, * FROM memory_batches WHERE revision = 1"
         ).fetchone()
         count = connection.execute("SELECT COUNT(*) FROM memory_batches").fetchone()[0]
     finally:

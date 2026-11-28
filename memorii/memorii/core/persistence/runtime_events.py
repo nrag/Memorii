@@ -14,15 +14,15 @@ encoded fixtures are its only common input.
 
 from __future__ import annotations
 
-import hashlib
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from memorii.core.persistence.runtime_contracts import canonical_runtime_digest
+
 _HEX_64 = r"^[0-9a-f]{64}$"
-_EVENT_DIGEST_DOMAIN = b"memorii.runtime-event-envelope.v1\x00"
-_EVENT_BATCH_DIGEST_DOMAIN = b"memorii.runtime-event-batch.v1\x00"
-_RUNTIME_BATCH_ENVELOPE = "memorii.runtime-event-envelope.v1"
+_EVENT_DIGEST_DOMAIN = "memorii.runtime-event-envelope.v1"
+_EVENT_BATCH_DIGEST_DOMAIN = "memorii.runtime-event-batch.v1"
 
 GraphType = Literal["execution", "solver", "system"]
 EntityType = Literal["node", "edge", "overlay", "directory", "checkpoint", "routing"]
@@ -101,28 +101,7 @@ class RuntimeEventEnvelope(BaseModel):
         return self
 
     def _compute_digest(self) -> str:
-        import json
-
-        payload = json.dumps(
-            {
-                "envelope": _RUNTIME_BATCH_ENVELOPE,
-                "event_id": self.event_id,
-                "dedupe_key": self.dedupe_key,
-                "graph_type": self.graph_type,
-                "entity_type": self.entity_type,
-                "operation": self.operation,
-                "entity_id": self.entity_id,
-                "entity": self.entity,
-                "metadata_version": self.metadata_version,
-                "is_candidate": self.is_candidate,
-                "task_id": self.task_id,
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        return hashlib.sha256(
-            _EVENT_DIGEST_DOMAIN + payload.encode("utf-8")
-        ).hexdigest()
+        return canonical_runtime_digest((_EVENT_DIGEST_DOMAIN, self.model_dump(exclude={"event_digest"})))
 
 
 class RuntimeEventBatch(BaseModel):
@@ -144,20 +123,7 @@ class RuntimeEventBatch(BaseModel):
         return self
 
     def _compute_digest(self) -> str:
-        import json
-
-        payload = json.dumps(
-            {
-                "repository_id": self.repository_id,
-                "sequence": self.sequence,
-                "event_digests": [event.event_digest for event in self.events],
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        return hashlib.sha256(
-            _EVENT_BATCH_DIGEST_DOMAIN + payload.encode("utf-8")
-        ).hexdigest()
+        return _batch_digest(self.repository_id, self.sequence, self.events)
 
 
 class RuntimeReplayState(BaseModel):
@@ -169,6 +135,8 @@ class RuntimeReplayState(BaseModel):
     directory: dict[str, dict[str, object]] = Field(default_factory=dict)
     processed_event_digests: dict[str, str] = Field(default_factory=dict)
     applied_dedupe_keys: frozenset[str] = frozenset()
+    record_version_digests: dict[str, str] = Field(default_factory=dict)
+    record_versions: dict[str, int] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -192,68 +160,41 @@ def create_runtime_event(
     is_candidate: bool = False,
 ) -> RuntimeEventEnvelope:
     """Build one envelope, computing its digest over the closed fields."""
-    import json
+    payload = {
+        "event_id": event_id,
+        "dedupe_key": dedupe_key,
+        "graph_type": graph_type,
+        "entity_type": entity_type,
+        "operation": operation,
+        "entity_id": entity_id,
+        "record_id": entity_id,
+        "entity": entity,
+        "metadata_version": metadata_version,
+        "is_candidate": is_candidate,
+        "is_committed": not is_candidate,
+        "task_id": task_id,
+        "solver_run_id": solver_run_id,
+    }
+    return RuntimeEventEnvelope.model_validate(
+        {**payload, "event_digest": canonical_runtime_digest((_EVENT_DIGEST_DOMAIN, payload))}
+    )
 
-    payload = json.dumps(
-        {
-            "envelope": _RUNTIME_BATCH_ENVELOPE,
-            "event_id": event_id,
-            "dedupe_key": dedupe_key,
-            "graph_type": graph_type,
-            "entity_type": entity_type,
-            "operation": operation,
-            "entity_id": entity_id,
-            "entity": entity,
-            "metadata_version": metadata_version,
-            "is_candidate": is_candidate,
-            "task_id": task_id,
-        },
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return RuntimeEventEnvelope(
-        event_id=event_id,
-        dedupe_key=dedupe_key,
-        graph_type=graph_type,  # type: ignore[arg-type]
-        entity_type=entity_type,  # type: ignore[arg-type]
-        operation=operation,  # type: ignore[arg-type]
-        entity_id=entity_id,
-        record_id=entity_id,
-        entity=entity,
-        metadata_version=metadata_version,
-        is_candidate=is_candidate,
-        is_committed=not is_candidate,
-        task_id=task_id,
-        solver_run_id=solver_run_id,
-        event_digest=hashlib.sha256(
-            _EVENT_DIGEST_DOMAIN + payload.encode("utf-8")
-        ).hexdigest(),
-    )
+
+def _batch_digest(repository_id: str, sequence: int, events: tuple[RuntimeEventEnvelope, ...]) -> str:
+    return canonical_runtime_digest((
+        _EVENT_BATCH_DIGEST_DOMAIN, repository_id, sequence, tuple(event.event_digest for event in events),
+    ))
 
 
 def create_runtime_batch(
     *, repository_id: str, sequence: int, events: tuple[RuntimeEventEnvelope, ...]
 ) -> RuntimeEventBatch:
     """Build one batch with its canonical digest over the event digests."""
-    import hashlib
-    import json
-
-    payload = json.dumps(
-        {
-            "repository_id": repository_id,
-            "sequence": sequence,
-            "event_digests": [event.event_digest for event in events],
-        },
-        sort_keys=True,
-        separators=(",", ":"),
-    )
     return RuntimeEventBatch(
         repository_id=repository_id,
         sequence=sequence,
         events=events,
-        event_batch_digest=hashlib.sha256(
-            _EVENT_BATCH_DIGEST_DOMAIN + payload.encode("utf-8")
-        ).hexdigest(),
+        event_batch_digest=_batch_digest(repository_id, sequence, events),
     )
 
 
@@ -267,11 +208,6 @@ def reduce_runtime_batch(
     and version is a storage-integrity conflict that fails closed before
     either event is selected.
     """
-    staged: dict[str, RuntimeReplayState] = {}
-
-    def commit(next_state: RuntimeReplayState) -> None:
-        staged["state"] = next_state
-
     current = state
     for event in batch.events:
         seen_digest = current.processed_event_digests.get(event.event_id)
@@ -289,38 +225,35 @@ def reduce_runtime_batch(
             )
         target = _target_view(event)
         index = _index_key(event)
-        view = dict(getattr(current, target))
-        existing = view.get(index)
         record_version = int(event.entity.get("version", event.metadata_version))  # type: ignore[arg-type]
-        if existing is not None:
-            existing_version = int(existing.get("version", 0))  # type: ignore[arg-type]
-            if existing_version == record_version and existing != event.entity:
-                raise RuntimeReplayError(
-                    "memory_integrity_conflict: non-identical equal-version"
-                    f" envelopes for {index}"
-                )
-            if existing_version > record_version:
-                continue  # stale: replay ignores older versions
-        if event.operation == "delete":
-            base_state = dict(view[index]) if index in view else dict(event.entity)
-            base_state["deleted"] = True  # logical retirement, never removal
-            view[index] = base_state
-        else:
-            view[index] = dict(event.entity)
-        next_state = current.model_copy(
-            update={
-                target: view,
-                "processed_event_digests": {
-                    **current.processed_event_digests,
-                    event.event_id: event.event_digest,
-                },
-                "applied_dedupe_keys": current.applied_dedupe_keys
-                | {event.dedupe_key},
-            }
-        )
-        current = next_state
-    commit(current)
-    return staged["state"]
+        record_key = canonical_runtime_digest((
+            event.graph_type, event.entity_type, event.task_id, event.solver_run_id, event.record_id,
+        ))
+        version_key = canonical_runtime_digest((record_key, record_version))
+        reserved_digest = current.record_version_digests.get(version_key)
+        if reserved_digest is not None and reserved_digest != event.event_digest:
+            raise RuntimeReplayError(
+                f"memory_integrity_conflict: non-identical equal-version envelopes for {index}"
+            )
+        updates: dict[str, object] = {
+            "processed_event_digests": {
+                **current.processed_event_digests, event.event_id: event.event_digest,
+            },
+            "applied_dedupe_keys": current.applied_dedupe_keys | {event.dedupe_key},
+            "record_version_digests": {
+                **current.record_version_digests, version_key: event.event_digest,
+            },
+        }
+        if record_version > current.record_versions.get(record_key, 0):
+            view = dict(getattr(current, target))
+            if event.operation == "delete":
+                view[index] = {**view.get(index, event.entity), "deleted": True}
+            else:
+                view[index] = dict(event.entity)
+            updates[target] = view
+            updates["record_versions"] = current.record_versions | {record_key: record_version}
+        current = current.model_copy(update=updates)
+    return current
 
 
 def replay_runtime_batches(
@@ -328,8 +261,13 @@ def replay_runtime_batches(
 ) -> RuntimeReplayState:
     """Genesis replay: contiguous batches, complete history only."""
     state = RuntimeReplayState()
+    if not batches:
+        return state
+    repository_id = batches[0].repository_id
     expected_sequence = 1
     for batch in batches:
+        if batch.repository_id != repository_id:
+            raise RuntimeReplayError("memory_integrity_conflict: replay spans distinct repositories")
         if batch.sequence != expected_sequence:
             raise RuntimeReplayError(
                 f"batch position gap: expected {expected_sequence},"

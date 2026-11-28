@@ -58,6 +58,7 @@ class HarnessStateEnvelope(BaseModel):
     protocol_version: Literal[1] = 1
     task_id: str = Field(min_length=1)
     revision: int = Field(ge=0)
+    task_version: int | None = Field(default=None, ge=1)
     checkpoint_ref: str | None = None
     status: Literal[
         "ready", "revalidation_required", "reconcile_required", "pending", "unavailable"

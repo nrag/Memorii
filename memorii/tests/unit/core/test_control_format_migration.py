@@ -1,6 +1,8 @@
 """Control-format migration journeys: plan/apply, crash cuts, downgrade rules."""
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -12,6 +14,7 @@ from memorii.core.storage_administration.control_migration import (
     require_control_format,
 )
 from memorii.core.storage_administration.service import (
+    InstallationPermissionsError,
     StorageAdministrationService,
 )
 from memorii.stores.sqlite.control import ControlStateError
@@ -22,6 +25,27 @@ def _installation(tmp_path: Path) -> Path:
     service.initialize()
     service.close()
     return tmp_path / "installation"
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="Darwin extended ACLs")
+def test_initialize_refuses_inherited_access_rules_despite_private_mode(tmp_path: Path) -> None:
+    parent = tmp_path / "acl-parent"
+    parent.mkdir(mode=0o700)
+    subprocess.run(
+        ["/bin/chmod", "+a", "everyone allow list,search,readattr,file_inherit,directory_inherit", str(parent)],
+        check=True,
+    )
+    root = parent / "installation"
+    with pytest.raises(InstallationPermissionsError):
+        StorageAdministrationService(root)
+    assert root.stat().st_mode & 0o777 == 0o700
+    assert not list(root.iterdir())
+
+    for directory in (parent, root):
+        subprocess.run(["/bin/chmod", "-N", str(directory)], check=True)
+    with StorageAdministrationService(root) as service:
+        service.initialize()
+        service.acquire_verified_snapshot()
 
 
 def test_plan_and_apply_migrate_one_version_with_pointer(tmp_path: Path) -> None:
@@ -67,6 +91,30 @@ def test_unknown_and_multi_step_formats_reject_before_writes(tmp_path: Path) -> 
     staged = root / "control" / "control-generations" / "control.v2.sqlite3"
     with pytest.raises(ControlMigrationError, match="unknown control format"):
         plan_control_format_migration(staged, target_version=3)
+
+
+@pytest.mark.parametrize("linked_directory", [True, False])
+def test_control_migration_rejects_linked_generation_paths(tmp_path: Path, linked_directory: bool) -> None:
+    root = _installation(tmp_path)
+    control = root / "control" / "control.sqlite3"
+    keys = control.parent / "keys"
+    generations = control.parent / "control-generations"
+    outside = tmp_path / "outside"
+    outside.mkdir(mode=0o700)
+    target = outside / "control.v2.sqlite3"
+    target.write_bytes(b"leave this file alone")
+    if linked_directory:
+        generations.symlink_to(outside, target_is_directory=True)
+    else:
+        generations.mkdir(mode=0o700)
+        (generations / target.name).symlink_to(target)
+
+    with pytest.raises(ControlMigrationError, match="control generation must be owner-only"):
+        migrate_control_format(control, target_version=2, keys_directory=keys)
+
+    assert target.read_bytes() == b"leave this file alone"
+    assert list(outside.iterdir()) == [target]
+    assert read_control_schema_version(control) == 1
 
 
 def test_downgrade_refuses_after_newer_generation(tmp_path: Path) -> None:

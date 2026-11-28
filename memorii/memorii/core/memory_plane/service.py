@@ -18,9 +18,11 @@ from memorii.core.memory_plane.models import (
 )
 from memorii.core.memory_plane.store import (
     SEMANTIC_CHECKPOINT_SECRET_PURPOSE,
+    CatalogMetadataSnapshot,
     CheckpointSignatureAuthority,
     GovernedWritePolicy,
     InMemoryMemoryPlaneStore,
+    ManagedCatalogMetadataStore,
     MemoryPlanePrecondition,
     MemoryPlaneStore,
     MemoryPlaneTimedWriteSnapshot,
@@ -226,6 +228,19 @@ class MemoryPlaneService:
         if self._active_unit_of_work.get() is not None:
             raise RuntimeError("linearized reads require the root memory-plane store")
         return self._records.read_snapshot_linearized(callback)
+
+    def read_catalog_metadata_linearized(
+        self,
+        callback: Callable[[int, CatalogMetadataSnapshot], object],
+        *,
+        compatibility: Callable[[int, tuple[CanonicalMemoryRecord, ...]], object],
+    ) -> object:
+        """Use the managed scoped reader when the store owns verified publication."""
+        if self._active_unit_of_work.get() is not None:
+            raise RuntimeError("linearized catalog reads require the root memory-plane store")
+        if isinstance(self._records, ManagedCatalogMetadataStore):
+            return self._records.read_catalog_metadata_linearized(callback)
+        return self.read_snapshot_linearized(compatibility)
 
     def read_write_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
         """Return one detached full-write snapshot for a conditional writer."""

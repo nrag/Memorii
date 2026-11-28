@@ -1,0 +1,11 @@
+# Checkout-only dependencies for the existing linguistic and benchmark gates.
+# Release wheels and native host images do not install this profile.
+numpy>=1.26,<2
+stanza==1.14.0
+spacy==3.8.14
+# The patched version for GHSA-v32g-mr63-3j83 also clears the earlier loader advisories.
+torch==2.15.0
+spacy-curated-transformers==0.3.1
+curated-transformers==0.1.1
+curated-tokenizers==0.0.9
+en-core-web-trf @ https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.8.0/en_core_web_trf-3.8.0-py3-none-any.whl#sha256=272a31e9d8530d1e075351d30a462d7e80e31da23574f1b274e200f3fff35bf5

@@ -1,0 +1,2 @@
+{"distribution": "balanced", "image_bytes": 5655961600, "cold_pages": 0, "total_pages": 345213, "block_bytes": 65536, "digest_table_bytes": 2761728, "root": "a13a5cfa0747f999d4279a85c8991f0548178ce0f1ca30695367e58ec66a5b6b", "elapsed_ns": 2898969792}
+{"distribution": "concentrated", "image_bytes": 5660487680, "cold_pages": 0, "total_pages": 345489, "block_bytes": 65536, "digest_table_bytes": 2763936, "root": "829ddd92804b208c398db168d10756886976efad347b2c93e63d380d1b0fa165", "elapsed_ns": 2483380708}

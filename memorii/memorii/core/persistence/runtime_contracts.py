@@ -12,9 +12,20 @@ the only ordering authority.
 from __future__ import annotations
 
 from datetime import datetime
+from hashlib import sha256
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
+
+from memorii.domain.enums import SolverNodeStatus, SourceModality
 
 _HEX_64 = r"^[0-9a-f]{64}$"
 _EPISTEMIC = ("candidate", "committed", "weakened", "suspended", "retired")
@@ -23,6 +34,13 @@ EpistemicStatus = Literal["candidate", "committed", "weakened", "suspended", "re
 TaskLifecycle = Literal["active", "paused", "completed", "aborted"]
 SolverRunLifecycle = Literal["active", "resolved", "archived"]
 JustificationRole = Literal["supporting", "contradicting", "assumption"]
+
+
+def canonical_runtime_digest(value: object) -> str:
+    """Hash a closed runtime record using Memorii's canonical typed encoding."""
+    from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
+
+    return sha256(encode_typed_value(value)).hexdigest()
 
 
 class NodeEvidenceReference(BaseModel):
@@ -234,8 +252,16 @@ class OverlayJustificationBinding(BaseModel):
     frontier: bool = False
     reopenable: bool = False
     unexplained: bool = False
+    candidate_status: SolverNodeStatus | None = None
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_serializer(mode="wrap")
+    def omit_unset_candidate_status(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
+        payload = handler(self)
+        if self.candidate_status is None:
+            payload.pop("candidate_status", None)
+        return payload
 
 
 class RuntimeOverlayVersion(BaseModel):
@@ -249,6 +275,15 @@ class RuntimeOverlayVersion(BaseModel):
     committed: bool = False
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def candidate_status_requires_provenance(self) -> RuntimeOverlayVersion:
+        if any(
+            binding.candidate_status is not None and (self.committed or not binding.active_justification_ids)
+            for binding in self.node_bindings
+        ):
+            raise ValueError("a proposed status requires an uncommitted overlay and a justification")
+        return self
 
 
 class ActionAttemptRecord(BaseModel):
@@ -268,6 +303,68 @@ class ActionAttemptRecord(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class OperationOriginCoordinate(BaseModel):
+    """Immutable identity of an intent prepared under a managed host binding."""
+
+    installation_id: str = Field(min_length=1, max_length=512)
+    repository_id: str = Field(min_length=1, max_length=1024)
+    generation_id: str = Field(min_length=1, max_length=512)
+    principal: str = Field(min_length=1, max_length=512)
+    client_namespace: str = Field(min_length=1, max_length=512)
+    operation_id: str = Field(min_length=1, max_length=512)
+    request_digest: str = Field(pattern=_HEX_64)
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @field_validator("installation_id", "repository_id", "generation_id", "principal", "client_namespace", "operation_id")
+    @classmethod
+    def coordinate_has_no_separator(cls, value: str) -> str:
+        if "\0" in value:
+            raise ValueError("operation origin coordinates cannot contain NUL")
+        return value
+
+    def signing_digest(self) -> str:
+        return canonical_runtime_digest(self.model_dump(mode="json"))
+
+
+class OperationOrigin(BaseModel):
+    """Purpose-signed operation origin, never permission to execute it."""
+
+    coordinate: OperationOriginCoordinate
+    signature: str = Field(pattern=r"^[0-9a-f]{128}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    def proof_digest(self) -> str:
+        return canonical_runtime_digest(self.model_dump(mode="json"))
+
+
+class RuntimeSourceAdmissionReceipt(BaseModel):
+    """Metadata-only runtime binding to an exact provider-owned admission."""
+
+    task_id: str = Field(min_length=1, max_length=512)
+    source_id: str = Field(min_length=1, max_length=512)
+    source_record_digest: str = Field(pattern=_HEX_64)
+    provider_source_digest: str = Field(pattern=_HEX_64)
+    admission_index_digest: str = Field(pattern=_HEX_64)
+    delivery_key_digest: str = Field(pattern=_HEX_64)
+    source_write_revision: int = Field(ge=1, strict=True)
+    source_type: Literal["user"]
+    modalities: tuple[SourceModality, ...] = Field(min_length=1)
+    retained_at: datetime
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def valid_provenance(self) -> RuntimeSourceAdmissionReceipt:
+        if self.retained_at.utcoffset() is None or len(set(self.modalities)) != len(self.modalities):
+            raise ValueError("runtime source provenance has invalid time or modality")
+        return self
+
+    def digest(self) -> str:
+        return canonical_runtime_digest(("memorii.runtime-source-admission.v1", self.model_dump(mode="json")))
+
+
 class RuntimeCommandReceipt(BaseModel):
     operation_id: str = Field(min_length=1)
     client_namespace: str = Field(min_length=1)
@@ -276,8 +373,36 @@ class RuntimeCommandReceipt(BaseModel):
     base_revision: int = Field(ge=0)
     current_revision: int = Field(ge=0)
     result_digest: str | None = Field(default=None, pattern=_HEX_64)
+    consolidation_result_id: str | None = Field(default=None, pattern=_HEX_64)
+    operation_origin: OperationOriginCoordinate | None = None
+    origin_proof_digest: str | None = Field(default=None, pattern=_HEX_64)
+    source_admission: RuntimeSourceAdmissionReceipt | None = None
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def origin_matches_receipt(self) -> RuntimeCommandReceipt:
+        if self.source_admission is not None and (
+            self.status != "committed" or self.operation_origin is None
+            or self.consolidation_result_id is not None or self.result_digest != self.source_admission.digest()
+        ):
+            raise ValueError("runtime source admission requires an exact managed operation receipt")
+        if self.consolidation_result_id is not None and (
+            self.result_digest is None or self.operation_origin is None or self.status != "committed"
+        ):
+            raise ValueError("a consolidation result requires a committed managed receipt and digest")
+        coordinate = self.operation_origin
+        if coordinate is None:
+            if self.origin_proof_digest is not None:
+                raise ValueError("an origin proof digest requires an origin coordinate")
+        elif (
+            self.origin_proof_digest is None
+            or self.operation_id != coordinate.operation_id
+            or self.client_namespace != coordinate.client_namespace
+            or self.request_digest != coordinate.request_digest
+        ):
+            raise ValueError("managed receipt does not match its origin")
+        return self
 
 
 class BeliefUpdateProposal(BaseModel):
@@ -374,6 +499,10 @@ class RuntimeCommandRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    def managed_intent_digest(self) -> str:
+        """Bind the complete prepared intent, including its expected revision."""
+        return canonical_runtime_digest(self.model_dump(mode="json"))
+
     @model_validator(mode="after")
     def payload_matches_kind(self) -> RuntimeCommandRequest:
         if self.kind == "start_task":
@@ -419,9 +548,12 @@ __all__ = [
     "NodeMergeProposal",
     "NodeReopenProposal",
     "ObservationContent",
+    "OperationOrigin",
+    "OperationOriginCoordinate",
     "OverlayJustificationBinding",
     "QuestionContent",
     "RuntimeCommandReceipt",
+    "RuntimeSourceAdmissionReceipt",
     "RuntimeCommandRequest",
     "RuntimeOverlayVersion",
     "ScenarioContent",
