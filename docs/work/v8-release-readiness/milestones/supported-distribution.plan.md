@@ -59,3 +59,25 @@ Python setuptools findings on the Bookworm Pi image. The raw JSON digest is
 The exact Pi image CycloneDX inventory digest is
 `bdd14402a904a022cef3d628a904a618f1e5be9a10b2b751ee5cd203613f3b77`.
 The newer slim multi-stage runtime is a separate image qualification attempt.
+
+The promoted Debian 13 slim multi-stage recipes install the same hash-locked
+Python runtime closure, remove build tooling, and install the common wheel
+with `--no-deps` and `pip check`. Pi's real journey passed with Linux ARM64
+manifest `00a8f39adb549e96dd4a244b1bc59b77e7b1498c7b66f4904e4f05ceb91c665d`.
+OpenClaw's final journey used manifest
+`c127fdd4d936035dde34508b50194e46c18348c44b6db356775b7eff63d36650` and recovered
+capture and model recall after 17 unavailable turns without a gateway
+restart. It then verified revocation, restart and persisted-history isolation.
+Both used the same `4a07d3a6` runtime wheel.
+
+The slim scans each reported zero Critical and zero Node or Python High
+findings. They each reported 88 High Debian package findings across 27 unique
+advisories and 32 packages. Trivy listed no Debian fixed versions. The
+findings include the SQLite runtime. The OS image approval gate is open.
+Scope decision requested on 2026-11-27 for validating with Docker and
+shipping host assets separately, or holding for full Docker image approval.
+
+| Evidence | Pi SHA-256 | OpenClaw SHA-256 |
+| --- | --- | --- |
+| Trivy vulnerability JSON | `982d39b285a2ba6dec52e1e254cf887800c7bb5aeebcd85e611447e15bdecad9` | `ef145cfa199ef02e491f58403069dbd8abcf210059c846776921be4e06d3e40e` |
+| CycloneDX SBOM | `949c0c83b5ac460a67ccb0d021d28d36a8cee806760c1b4e7ffeff9ffdf3c4ec` | `57c39ad8468d2d418a5a2d0996d10054ea8ba7171a6f6a7c2b4b1b7709652234` |

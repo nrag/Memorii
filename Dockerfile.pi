@@ -1,7 +1,7 @@
 # Pi coding-agent validation profile (additional-harnesses Docker validation).
 # Pinned host: @earendil-works/pi-coding-agent 1.7.0.
-ARG NODE_IMAGE=node:24.22.3-bookworm@sha256:49f7adaf9f1574bc45c20ea317139b39a59d7e758d0e93745e112fd85cb42623
-FROM ${NODE_IMAGE}
+ARG NODE_IMAGE=node:24.22.3-trixie-slim@sha256:4d00acb4bcc42c454c4eb801526f7ad7f772ea3bd4fd168c5cc2e384abcbb9d4
+FROM ${NODE_IMAGE} AS build
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential python3 python3-dev python3-venv pkg-config libicu-dev git \
@@ -10,12 +10,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Supply the approved candidate directory as the memorii-wheel BuildKit context.
 ARG MEMORII_WHEEL_SHA256
 RUN --mount=from=memorii-wheel,target=/opt/memorii-wheel,ro \
+    --mount=type=bind,source=memorii/tests/support/reference_capacity_dependencies,target=/opt/memorii-dependencies,ro \
     set -eu; \
     set -- /opt/memorii-wheel/memorii-*.whl; \
     test "$#" -eq 1; \
     printf '%s  %s\n' "$MEMORII_WHEEL_SHA256" "$1" | sha256sum --check --strict; \
     python3 -m venv /opt/memorii-venv; \
-    /opt/memorii-venv/bin/python -m pip install "$1"
+    /opt/memorii-venv/bin/python -m pip install --require-hashes -r /opt/memorii-dependencies/build.lock; \
+    /opt/memorii-venv/bin/python -m pip install --no-build-isolation --require-hashes -r /opt/memorii-dependencies/runtime.lock; \
+    /opt/memorii-venv/bin/python -m pip install --no-deps "$1"; \
+    /opt/memorii-venv/bin/python -m pip uninstall --yes packaging setuptools wheel; \
+    /opt/memorii-venv/bin/python -m pip check
 
 # The Node base's bundled npm contains older Undici and brace-expansion.
 RUN npm install --global --ignore-scripts --no-audit --no-fund npm@12.2.3
@@ -25,6 +30,15 @@ COPY memorii/memorii/integrations/pi/extension/package.json memorii/memorii/inte
 RUN cd /opt/memorii-pi/.pi/extensions \
     && npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 COPY memorii/memorii/integrations/pi/extension/ /opt/memorii-pi/.pi/extensions/
+
+FROM ${NODE_IMAGE}
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
+    ca-certificates git libicu76 procps python3 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /opt/memorii-venv /opt/memorii-venv
+RUN rm -rf /usr/local/lib/node_modules/npm
+COPY --from=build /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
+COPY --from=build /opt/memorii-pi/.pi/extensions/ /opt/memorii-pi/.pi/extensions/
 
 ENV PATH="/opt/memorii-pi/.pi/extensions/node_modules/.bin:${PATH}"
 ENV MEMORII_SIDECAR_URL=http://127.0.0.1:8762
