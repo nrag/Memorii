@@ -1435,7 +1435,7 @@ def test_installed_no_key_paired_evaluator_executes_all_cases_without_control_mu
             principal_id=binding.absent_author_id,
             agent_id=runtime._authenticated_agent_id,
         ),
-        parent_catalog_digest="a" * 64,
+        parent_catalog_digest=load_packaged_default_catalog_release().child_version.version_digest,
         relation=RelationDeclaration(description="A person mentors another person."),
         evidence=(OntologyEvidenceReference(
             source_id="evaluator:evidence", source_digest="1" * 64,
@@ -1492,6 +1492,7 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
     bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The replay control must retain the binding selected for the replay."""
+    from memorii.core.semantic_ingestion.coverage_observation import CoverageObservationRepository
     from memorii.core.semantic_ingestion.learned_relation import (
         AgentLocalCatalogScope,
         LearnedRelationError,
@@ -1534,13 +1535,17 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
         agent_identity="profile:primary", platform="cli", agent_context="primary",
         agent_workspace="hermes",
     )
+    local_catalog_management(hermes_home=tmp_path, state="enabled")
     provider.on_turn_start(1, "Atlas mentors Ada.")
     runtime = provider._completed_turn_runtime
     learned = provider._learned_ontology_runtime
     assert runtime is not None and learned is not None
-    local_catalog_management(hermes_home=tmp_path, state="enabled")
     active = runtime._active_turn
     assert active is not None
+    observation = next(
+        item for item in CoverageObservationRepository(provider._provider._service._memory_plane).all()
+        if item.source_id == active.ledger.source_id
+    )
     scope = AgentLocalCatalogScope(
         principal_id=provider._absent_author_id,
         agent_id=runtime._authenticated_agent_id,
@@ -1551,7 +1556,8 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
         relation=RelationDeclaration(description="Private evidence prose must stay out of inspection."),
         evidence=(OntologyEvidenceReference(
             source_id=active.ledger.source_id, source_digest=active.ledger.source_digest,
-            origin_lineage_digest="2" * 64, source_scope_digest="3" * 64,
+            origin_lineage_digest=observation.origin_lineage_digest,
+            source_scope_digest=observation.source_scope_digest,
         ),),
     ))
     candidate = learned.record_evaluation(
@@ -3529,6 +3535,7 @@ def test_generic_authenticated_source_reaches_the_local_candidate_and_owner_path
     from memorii.core.semantic_ingestion.catalog_management import CatalogManagementRepository
     from memorii.core.semantic_ingestion.learned_relation import AgentLocalCatalogScope, LearnedRelationError
     from memorii.core.semantic_ingestion.structured_fact_read import StructuredFactReadRequest
+    from memorii.integrations import hermes_factory
     from memorii.integrations.authenticated_source import AuthenticatedSourceSubmission
     from memorii.integrations.hermes_factory import (
         _canonical_agent_id,
@@ -3549,6 +3556,16 @@ def test_generic_authenticated_source_reaches_the_local_candidate_and_owner_path
     monkeypatch.setattr(socket.socket, "connect_ex", forbid_network)
     authorize_local_level2(hermes_home=tmp_path)
     authorize_local_structured_tool(hermes_home=tmp_path)
+    exact_executor = hermes_factory._isolated_mentors_evaluation_cases
+    execution_ids = []
+
+    def transient_executor(proposal, *args):
+        execution_ids.append(proposal.proposal_id)
+        if len(execution_ids) == 1:
+            raise OSError("isolated evaluation temporarily unavailable")
+        return exact_executor(proposal, *args)
+
+    monkeypatch.setattr(hermes_factory, "_isolated_mentors_evaluation_cases", transient_executor)
     context = SimpleNamespace(
         storage_root=tmp_path / "generic", hermes_home=tmp_path,
         session_id="generic:one", user_id="raw:user:one",
@@ -3581,6 +3598,24 @@ def test_generic_authenticated_source_reaches_the_local_candidate_and_owner_path
             timestamp=datetime(2026, 9, 27, ordinal, tzinfo=UTC),
         )
         results.append(runtime.submit(submission))
+        if ordinal == 3:
+            service = runtime._adapter._service
+            first, = service._memory_plane.list_records(source_kind="learned_ontology_evaluation_result_v1")
+            assert first.content["attempt"]["generation"] == 1
+            assert first.content["evaluation"]["available"] is False
+            first_proposal, = service._memory_plane.list_records(source_kind="learned_ontology_change_proposal_v1")
+            assert first_proposal.content["proposal"]["lifecycle"] == "evaluation_unavailable"
+            runtime.close()
+            runtime = build_local_level2_authenticated_source_runtime(context)
+            service = runtime._adapter._service
+            assert service._memory_plane.get_record(first.memory_id) == first
+            receipts = service._memory_plane.list_records(source_kind="learned_ontology_evaluation_result_v1")
+            assert sorted((r.content["attempt"]["generation"], r.content["evaluation"]["available"]) for r in receipts) == [
+                (1, False), (2, True),
+            ]
+            assert execution_ids == [first_proposal.memory_id] * 2
+            assert runtime.lookup_learned_ontology_status()["active_version_digest"] is None
+            assert not service._memory_plane.list_records(source_kind="learned_ontology_replay_operation_v1")
         if ordinal == 4:
             results.append(runtime.submit(submission))
     status = runtime.lookup_learned_ontology_status()
@@ -3591,7 +3626,13 @@ def test_generic_authenticated_source_reaches_the_local_candidate_and_owner_path
     )
     assert len(proposal_records) == 1
     assert proposal_records[0].content["proposal"]["lifecycle"] == "awaiting_decision"
+    assert proposal_records[0].content["proposal"]["evidence"] == first_proposal.content["proposal"]["evidence"]
+    assert execution_ids == [first_proposal.memory_id] * 2
     proposal_id = status["candidate_ids"][0]
+    review = runtime.review_learned_candidate(proposal_id)
+    assert [reference.model_dump(mode="json") for reference in review.evidence] == (
+        first_proposal.content["proposal"]["evidence"]
+    )
     runtime.approve_learned_candidate(proposal_id)
     activation = runtime.activate_learned_candidate(proposal_id)
     assert activation.status == "selected"

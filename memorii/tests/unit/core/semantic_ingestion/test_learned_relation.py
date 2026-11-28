@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -9,14 +9,17 @@ from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import JsonlMemoryPlaneStore
 from memorii.core.persistence.factory import open_managed_partition
+from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.semantic_ingestion.catalog_authority import (
     AuthenticatedPrincipalAgent,
     CatalogAuthorityError,
     CatalogAuthorityScope,
+    CatalogSelectionPointer,
 )
 from memorii.core.semantic_ingestion.catalog_capture_pin import (
     CatalogCapturedTurnPin,
     PackageIndexedCatalogBundleLocator,
+    SeedCatalogBundleLocator,
 )
 from memorii.core.semantic_ingestion.catalog_management import (
     CatalogManagementRepository,
@@ -52,6 +55,7 @@ from memorii.core.semantic_ingestion.learned_relation import (
     ActivationPolicy,
     AgentLocalCatalogScope,  # noqa: I001
     CatalogManagementUnavailable,
+    EvaluationRetryUnavailable,
     FrozenMentorsPairedEvaluator,
     IsolatedMentorsEvaluationExecutor,
     LearnedRelationCandidateService,
@@ -374,6 +378,176 @@ def test_registered_evaluator_is_unavailable_before_root_is_bound_or_when_vetoed
     assert vetoed.available
     assert vetoed.scope_or_provenance_failures == 1
     assert vetoed.passes is False
+
+
+@pytest.fixture
+def registered_evaluation(tmp_path):
+    path = tmp_path / "evaluations"
+    plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path))
+    plane.write_records((CanonicalMemoryRecord(
+        memory_id="source:exact", domain=MemoryDomain.TRANSCRIPT, text="Ada mentors Bea.",
+        source_kind="semantic_ingestion_source", status=CommitStatus.COMMITTED,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    ),))
+    provider = ProviderMemoryService(memory_plane=plane)
+    provider.ensure_catalog_seed_genesis()
+    provider.ensure_default_catalog_release()
+    selected = provider._catalog_selection_repository.resolve_selected_bundle()
+    proposal = _proposal_from_parent(
+        parent_catalog_digest=selected.version.version_digest, source_id="source:exact", source_digit="1",
+    )
+    writer = _ReplayWriter()
+    now = datetime(2026, 11, 27, tzinfo=UTC)
+    authorized = True
+
+    def clock():
+        return now
+
+    def advance_clock():
+        nonlocal now
+        now += timedelta(minutes=11)
+
+    def revoke():
+        nonlocal authorized
+        authorized = False
+
+    def open_runtime():
+        reopened = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path))
+        return LearnedRelationRuntime(
+            memory_plane=reopened, replay_writer=writer,
+            policy_for_scope=lambda scope: ActivationPolicy(
+                owner_principal_id=scope.principal_id, owner_agent_id=scope.agent_id,
+            ),
+            base_parent_locator=PackageIndexedCatalogBundleLocator(),
+            current_evaluation_sources=lambda proposal, _records: proposal.evidence if authorized else (),
+            evaluation_now=clock,
+        )
+
+    return proposal, open_runtime, revoke, advance_clock, writer
+
+
+def test_registered_evaluation_retry_preserves_unavailable_generation(registered_evaluation, monkeypatch):
+    proposal, open_runtime, revoke, _advance_clock, writer = registered_evaluation
+    failed = FrozenMentorsPairedEvaluator()
+    passing = FrozenMentorsPairedEvaluator()
+    passing.bind_executor(_isolated_case_executor(), artifact_digest="a" * 64)
+    unavailable = failed.evaluate(proposal)
+    monkeypatch.setattr(passing, "evaluate", lambda _proposal: unavailable)
+    runtime = open_runtime()
+    before = runtime._run_registered_evaluation(proposal, passing, ())
+    assert before.lifecycle == "evaluation_unavailable"
+    original_result, = runtime._plane.list_records(source_kind="learned_ontology_evaluation_result_v1")
+    assert original_result.content["attempt"]["generation"] == 1
+
+    substitute = FrozenMentorsPairedEvaluator()
+    substitute.bind_executor(_isolated_case_executor(), artifact_digest="b" * 64)
+    assert substitute.binding_digest == passing.binding_digest
+    before_denial = runtime._plane.read_snapshot()
+    with pytest.raises(EvaluationRetryUnavailable, match="binding"):
+        open_runtime()._run_registered_evaluation(proposal, substitute, ())
+    for attribute in ("corpus_digest", "budget_digest"):
+        with monkeypatch.context() as changed:
+            changed.setattr(FrozenMentorsPairedEvaluator, attribute, property(lambda _self: "c" * 64))
+            changed.setattr(passing, "evaluate", lambda _proposal: pytest.fail("substituted inputs ran"))
+            with pytest.raises(EvaluationRetryUnavailable, match="binding"):
+                open_runtime()._run_registered_evaluation(proposal, passing, ())
+    assert runtime._plane.read_snapshot() == before_denial
+
+    base = CatalogAuthorityScope(schema_version=1, kind="base")
+    locator = PackageIndexedCatalogBundleLocator()
+    records = runtime._plane.read_snapshot()[1]
+    selected, _ = locator.locate_selected(records, scope=base)
+    seed = SeedCatalogBundleLocator().locate()
+    assert seed.catalog.catalog_digest == selected.catalog.catalog_digest
+    assert seed.version.version_digest != proposal.parent_catalog_digest
+    substitute_pointer = CatalogSelectionPointer.genesis(version=seed.version)
+    substitute_bundle = locator.locate_historical(
+        records, version_id=seed.version.version_id, version_digest=seed.version.version_digest, scope=base,
+    )
+    before_denial = runtime._plane.read_snapshot()
+    substituted = open_runtime()
+    with monkeypatch.context() as changed:
+        changed.setattr(substituted, "_base_parent_locator", locator)
+        changed.setattr(locator, "locate_selected", lambda *_args, **_kwargs: (substitute_bundle, substitute_pointer))
+        changed.setattr(passing, "evaluate", lambda _proposal: pytest.fail("substituted parent ran"))
+        with pytest.raises(EvaluationRetryUnavailable, match="exact original parent"):
+            substituted._run_registered_evaluation(proposal, passing, ())
+    assert runtime._plane.read_snapshot() == before_denial
+
+    monkeypatch.undo()
+    reopened = open_runtime()
+    after = reopened._run_registered_evaluation(proposal, passing, ())
+    assert after.proposal_id == before.proposal_id
+    assert after.evidence == before.evidence
+    assert after.lifecycle == "awaiting_decision"
+    assert reopened._plane.get_record(original_result.memory_id) == original_result
+    assert {record.content["attempt"]["generation"] for record in reopened._plane.list_records(
+        source_kind="learned_ontology_evaluation_result_v1",
+    )} == {1, 2}
+    snapshot = reopened._plane.read_snapshot()
+    revoke()
+    assert open_runtime()._run_registered_evaluation(proposal, passing, ()) == after
+    assert reopened._plane.read_snapshot() == snapshot
+    assert reopened.status(_SCOPE)["active_version_digest"] is None
+    assert writer.calls == []
+
+
+def test_registered_evaluation_rejects_stale_result_after_claim_recovery(registered_evaluation, monkeypatch):
+    proposal, open_runtime, _revoke, advance_clock, writer = registered_evaluation
+    first = FrozenMentorsPairedEvaluator()
+    second = FrozenMentorsPairedEvaluator()
+    for evaluator in (first, second):
+        evaluator.bind_executor(_isolated_case_executor(), artifact_digest="a" * 64)
+    original = first.evaluate
+    completed = []
+
+    def interrupt_and_resume(prepared):
+        competing = open_runtime()
+        assert competing._run_registered_evaluation(proposal, second, ()).lifecycle == "validated"
+        advance_clock()
+        completed.append(competing._run_registered_evaluation(proposal, second, ()))
+        return original(prepared)
+
+    monkeypatch.setattr(first, "evaluate", interrupt_and_resume)
+    with pytest.raises(EvaluationRetryUnavailable, match="claim changed before publication"):
+        open_runtime()._run_registered_evaluation(proposal, first, ())
+    winner, = completed
+    assert winner.lifecycle == "awaiting_decision"
+    reopened = open_runtime()
+    assert reopened._require_proposal(proposal.proposal_id) == winner
+    result, = reopened._plane.list_records(source_kind="learned_ontology_evaluation_result_v1")
+    assert result.content["attempt"]["generation"] == 2
+    assert writer.calls == []
+
+
+def test_registered_retry_refuses_revoked_original_evidence(registered_evaluation, monkeypatch):
+    proposal, open_runtime, revoke, _advance_clock, _writer = registered_evaluation
+    evaluator = FrozenMentorsPairedEvaluator()
+    evaluator.bind_executor(_isolated_case_executor(), artifact_digest="a" * 64)
+    unavailable = FrozenMentorsPairedEvaluator().evaluate(proposal)
+    monkeypatch.setattr(evaluator, "evaluate", lambda _proposal: unavailable)
+    runtime = open_runtime()
+    assert runtime._run_registered_evaluation(proposal, evaluator, ()).lifecycle == "evaluation_unavailable"
+    revoke()
+    before = runtime._plane.read_snapshot()
+    with pytest.raises(EvaluationRetryUnavailable, match="original evidence"):
+        open_runtime()._run_registered_evaluation(proposal, evaluator, ())
+    assert runtime._plane.read_snapshot() == before
+
+
+def test_legacy_unavailable_evaluation_without_anchor_stays_inert(registered_evaluation, monkeypatch):
+    proposal, open_runtime, _revoke, _advance_clock, _writer = registered_evaluation
+    evaluator = FrozenMentorsPairedEvaluator()
+    evaluator.bind_executor(_isolated_case_executor(), artifact_digest="a" * 64)
+    runtime = open_runtime()
+    runtime.prepare_candidate(proposal)
+    result = FrozenMentorsPairedEvaluator().evaluate(proposal)
+    previous = runtime.record_evaluation(proposal_id=proposal.proposal_id, evaluation=result)
+    assert previous.lifecycle == "evaluation_unavailable"
+    before = runtime._plane.read_snapshot()
+    monkeypatch.setattr(evaluator, "evaluate", lambda _proposal: pytest.fail("unanchored evaluation ran"))
+    assert open_runtime()._run_registered_evaluation(proposal, evaluator, ()) == previous
+    assert runtime._plane.read_snapshot() == before
 
 
 @pytest.mark.parametrize(

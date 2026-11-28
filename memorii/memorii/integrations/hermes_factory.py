@@ -22,6 +22,7 @@ from threading import RLock
 from types import SimpleNamespace
 from typing import Literal
 
+from memorii.core.memory_evolution.admission import source_admission_index_record_id
 from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedHostIngress,
     AuthenticatedIngressContext,
@@ -30,11 +31,14 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedSemanticSourceAuthority,
     AuthenticatedSemanticSourceInterval,
     DeliveryPrincipalBinding,
+    OperationFenceBinding,
     RequiredOutcomeScopeSet,
     encode_typed_value,
 )
 from memorii.core.memory_evolution.models import EntityType
+from memorii.core.memory_evolution.observation_activation_configuration import local_level2_package_root_digest
 from memorii.core.memory_plane import MemoryPlaneService
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.store import (
     MemoryPlaneCorruptionError,
     MemoryPlaneRevisionConflictError,
@@ -62,10 +66,12 @@ from memorii.core.semantic_ingestion.catalog_authority import (
 )
 from memorii.core.semantic_ingestion.catalog_capture_pin import PackageIndexedCatalogBundleLocator
 from memorii.core.semantic_ingestion.catalog_management import CatalogManagementRepository
+from memorii.core.semantic_ingestion.contracts import contract_digest
 from memorii.core.semantic_ingestion.coverage_observation import (
     CoverageSemanticOutcome,
     CoverageSourceSpan,
     ObserverBindingIdentity,
+    delivery_origin_lineage_digest,
 )
 from memorii.core.semantic_ingestion.coverage_observer import (
     OntologyObservationRequest,
@@ -83,6 +89,7 @@ from memorii.core.semantic_ingestion.learned_relation import (
     ActivationPolicy,
     AgentLocalCatalogScope,
     CatalogManagementUnavailable,
+    EvaluationRetryUnavailable,
     FrozenMentorsPairedEvaluator,
     IsolatedMentorsEvaluationExecutor,
     LearnedRelationCandidateService,
@@ -92,6 +99,7 @@ from memorii.core.semantic_ingestion.learned_relation import (
     OntologyCandidateReview,
     OntologyCatalogVersion,
     OntologyChangeProposal,
+    OntologyEvidenceReference,
     PairedEvaluationCaseOutcome,
     PairedEvaluationCatalogBundle,
     learned_catalog_pointer_memory_id,
@@ -104,7 +112,7 @@ from memorii.core.user_context.preferences import (
     PreferenceHolderAuthority,
     PreferenceService,
 )
-from memorii.domain.enums import MemoryDomain
+from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 from memorii.integrations.catalog_read_binding import (
     CatalogReadGrantReference,
     CatalogReadOptIn,
@@ -265,14 +273,13 @@ def _isolated_mentors_evaluation_cases(
                 or identity_runtime._authenticated_agent_id != scope.agent_id
             ):
                 raise ValueError("paired evaluation proposal is outside the isolated owner scope")
-            if proposal.rebase is not None:
-                service = identity_root.service
-                parent, _ = service._catalog_bundle_locator.locate_selected(
-                    service._memory_plane.read_snapshot()[1],
-                    scope=CatalogAuthorityScope(schema_version=1, kind="base"),
-                )
-                if parent.version.version_digest != proposal.parent_catalog_digest:
-                    raise ValueError("paired evaluation cannot execute the exact rebase parent")
+            service = identity_root.service
+            parent, _ = service._catalog_bundle_locator.locate_selected(
+                service._memory_plane.read_snapshot()[1],
+                scope=CatalogAuthorityScope(schema_version=1, kind="base"),
+            )
+            if parent.version.version_digest != proposal.parent_catalog_digest:
+                raise ValueError("paired evaluation cannot execute the exact packaged parent")
         except ValueError:
             identity_runtime.close()
             raise
@@ -876,6 +883,73 @@ def _build_local_level2_runtime_binding(
     )
     replay_writer = _InstalledReplayWriter()
 
+    def current_evaluation_sources(
+        proposal: OntologyChangeProposal, records: tuple[CanonicalMemoryRecord, ...],
+    ) -> tuple[OntologyEvidenceReference, ...]:
+        if proposal.catalog_scope != learned_scope or not authority_is_current():
+            return ()
+        by_id = {record.memory_id: record for record in records}
+        suppression = revoked_view.sample_snapshot(records)
+
+        def is_current(reference: OntologyEvidenceReference) -> bool:
+            source = by_id.get(reference.source_id)
+            if (
+                source is None or source.source_kind != "semantic_ingestion_source"
+                or source.domain is not MemoryDomain.TRANSCRIPT or source.status is not CommitStatus.COMMITTED
+                or source.agent_id != agent_id
+                or suppression.is_revoked_source(reference.source_id)
+                or suppression.is_revoked_record(reference.source_id)
+                or (source.task_id is not None and suppression.is_revoked_task(source.task_id))
+            ):
+                return False
+            try:
+                ingress = service._provider_ingestion.retained_authenticated_ingress_from_record(
+                    source=source, source_digest=reference.source_digest,
+                )
+            except ValueError:
+                return False
+            if (
+                ingress is None or ingress.authenticated_agent_id != agent_id
+                or ingress.delivery_principal_binding.principal_subject_id != operator_id
+                or ingress.delivery_principal_binding.tenant_partition_id != f"local:{authorization.installation_id}"
+                or ingress.required_outcome_scopes.required_scope_set_digest != reference.source_scope_digest
+                or not set(ingress.required_outcome_scopes.scopes).issubset(ingress.current_authorized_scopes.scopes)
+            ):
+                return False
+            if ingress.origin_lineage_evidence is not None:
+                lineage = ingress.origin_lineage_evidence.lineage_digest
+            else:
+                admission = source.content.get("source_admission")
+                key = admission.get("delivery_key_digest") if isinstance(admission, dict) else None
+                index = by_id.get(source_admission_index_record_id(key)) if isinstance(key, str) else None
+                if (
+                    index is None or index.source_kind != "semantic_ingestion_admission_index"
+                    or index.domain is not MemoryDomain.TRANSCRIPT or index.status is not CommitStatus.COMMITTED
+                    or index.visibility is not MemoryRecordVisibility.INTERNAL_CONTROL
+                    or suppression.is_revoked_record(index.memory_id)
+                ):
+                    return False
+                try:
+                    binding = OperationFenceBinding.model_validate(index.content.get("operation_fence_binding"))
+                except ValueError:
+                    return False
+                if (
+                    binding.source_id != reference.source_id or binding.source_digest != reference.source_digest
+                    or binding.delivery_key_digest != key
+                    or binding.delivery_principal_binding_digest != ingress.delivery_principal_binding.binding_digest
+                    or index.content.get("required_scope_set_digest") != reference.source_scope_digest
+                ):
+                    return False
+                lineage = delivery_origin_lineage_digest(
+                    principal_binding_digest=binding.delivery_principal_binding_digest,
+                    normalized_delivery_id_digest=(
+                        binding.delivery_identity.normalized_delivery_id.normalized_delivery_id_digest
+                    ),
+                )
+            return lineage == reference.origin_lineage_digest
+
+        return tuple(reference for reference in proposal.evidence if is_current(reference))
+
     learned_runtime = LearnedRelationRuntime(
         memory_plane=memory_plane,
         replay_writer=replay_writer,
@@ -887,6 +961,7 @@ def _build_local_level2_runtime_binding(
         validate_management_host=validate_catalog_management_host,
         bound_scope=learned_scope,
         base_parent_locator=service._catalog_bundle_locator,
+        current_evaluation_sources=current_evaluation_sources if observer is not None else None,
     )
     paired_evaluator = FrozenMentorsPairedEvaluator()
     candidate_service = LearnedRelationCandidateService(
@@ -894,6 +969,8 @@ def _build_local_level2_runtime_binding(
         runtime=learned_runtime,
         evaluator=paired_evaluator,
     )
+
+    recovery_proposals: set[str] | None = None
 
     class _InstalledRecurrenceCandidateAdmitter:
         def admit_recurrence_for_observation(
@@ -907,19 +984,12 @@ def _build_local_level2_runtime_binding(
                     authenticated=AuthenticatedPrincipalAgent(
                         principal_id=principal_id, agent_id=agent_id,
                     ),
+                    recovery_proposals=recovery_proposals,
                 )
-            except CatalogManagementUnavailable:
+            except (CatalogManagementUnavailable, EvaluationRetryUnavailable):
                 return None
 
     agent_id_outer = agent_id
-    # A missing model/API key leaves observation pending by design.  The
-    # candidate admitter belongs to the service-owned observer runner and is
-    # installed only when that runner (and its durable repositories) exists.
-    # The evaluation/replay path itself remains fully local and no-key.
-    if service._coverage_observer_runner is not None:
-        service.install_eligible_recurrence_candidate_admitter(
-            _InstalledRecurrenceCandidateAdmitter()
-        )
     completed_runtime = HermesCompletedTurnRuntime(
         service=service,
         installation_id=authorization.installation_id,
@@ -950,7 +1020,18 @@ def _build_local_level2_runtime_binding(
                 proposal, cases, binding_digest, corpus_digest, budget_digest, context,
             )
         ),
+    ), artifact_digest=(
+        contract_digest(
+            b"memorii.learned-ontology.mentors-executor.v1",
+            {
+                "symbol": "memorii.integrations.hermes_factory._isolated_mentors_evaluation_cases",
+                "package_root_digest": local_level2_package_root_digest(Path(__file__).resolve().parents[1]),
+            },
+        )
+        if observer is not None else None
     ))
+    if service._coverage_observer_runner is not None:
+        service.install_eligible_recurrence_candidate_admitter(_InstalledRecurrenceCandidateAdmitter())
     refreshed_attempt_id: str | None = None
 
     def require_current_catalog_management() -> None:
@@ -997,6 +1078,16 @@ def _build_local_level2_runtime_binding(
     # Startup owns the two selection crash windows. Recovery retries only
     # immutable retained evidence through the same installed writer root.
     learned_runtime.recover(learned_scope)
+    if (
+        _provision_structured_authority and observer is not None
+        and current_catalog_management_fence(learned_scope) is not None
+    ):
+        recovery_proposals = set()
+        try:
+            candidate_service.recover_rebases(scope=learned_scope)
+            service._provider_ingestion.recover_coverage_observations()
+        finally:
+            recovery_proposals = None
     if _provision_structured_authority:
         refresh_learned_catalog()
 

@@ -38,6 +38,8 @@ from tests.unit.integrations.test_hermes_memory_provider_bridge import (
 def test_installed_owner_review_rejection_and_refresh_reopen(
     bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from memorii.core.semantic_ingestion.coverage_observation import CoverageObservationRepository
+
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     def deny_network(*_args: object, **_kwargs: object) -> None:
@@ -65,12 +67,17 @@ def test_installed_owner_review_rejection_and_refresh_reopen(
         runtime = provider._completed_turn_runtime
         learned = provider._learned_ontology_runtime
         ledger = runtime._active_turn.ledger
+        plane = provider._provider._service._memory_plane
+        observation = next(
+            item for item in CoverageObservationRepository(plane).all() if item.source_id == ledger.source_id
+        )
         scope = AgentLocalCatalogScope(
             principal_id=provider._absent_author_id, agent_id=runtime._authenticated_agent_id,
         )
         reference = OntologyEvidenceReference(
             source_id=ledger.source_id, source_digest=ledger.source_digest,
-            origin_lineage_digest="2" * 64, source_scope_digest="3" * 64,
+            origin_lineage_digest=observation.origin_lineage_digest,
+            source_scope_digest=observation.source_scope_digest,
         )
         binding_digest = "4" * 64
         corpus_digest = "5" * 64
@@ -110,7 +117,6 @@ def test_installed_owner_review_rejection_and_refresh_reopen(
         assert review.owner_decision is None
         assert text not in review.model_dump_json()
 
-        plane = provider._provider._service._memory_plane
         original_write = plane.conditionally_write_records
 
         def pause_before_rejection(records, **kwargs):

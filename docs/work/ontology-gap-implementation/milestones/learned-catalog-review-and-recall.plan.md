@@ -1,6 +1,6 @@
 # Review and recall an approved learned catalog
 
-- Order: 2. Status: durable result recovery, standing consent, managed reference-host provisioning, owner review, explicit rebase and installed read scopes locally verified. Unavailable evaluation retry and hosted gates remain open. Recovery checkpoint `74e70d06`. Local consent checkpoint `fecd58d4`.
+- Order: 2. Status: durable result recovery, standing consent, managed reference-host provisioning, owner review, explicit rebase, installed read scopes and exact-binding evaluation retry locally verified. Hosted gates remain open. Recovery checkpoint `74e70d06`. Local consent checkpoint `fecd58d4`.
 - Requirements: partial OLE-02/04/05/06/07/10/13 and selected learned OCI behavior.
 - Dependencies: packaged discovery, plus approved exact-parent, owner-review and recovery design.
 
@@ -214,12 +214,9 @@ against an already active observation ledger is outside this read proof.
 The 19 local Package Smoke bootstrap/release tools, scoped Ruff, Pyright
 and identity hygiene passed. All 1,968 source-manifest hashes match.
 
-A published unavailable evaluation still needs the durable retry path
-planned in the linked design. Recovering a partially published result
-works already. Retrying unavailable isolated execution requires
-persisting and revalidating the exact registered executor, parent,
-corpus and budget. Keep this M2 criterion open and leave calibrated
-automatic promotion deferred as designed.
+The durable retry checkpoint below implements recovery of unavailable
+execution against the original registered executor, parent, corpus and
+budget. Calibrated automatic promotion remains deferred as designed.
 
 Product checkpoint `5f6aae55`. The durable no-key JSONL journey
 reconstructed a provable parentless overlay, recorded eight fresh paired
@@ -253,7 +250,10 @@ To unblock the branch, a disjoint worker made the shared helper and type
 names explicit in their existing owners and updated the callsites.
 An inverse-rename AST comparison established identifier-only changes.
 The 35 architecture tests and 55 recovery/operator tests passed, along
-with scoped Ruff and Pyright. The seven owned release pins were refreshed.
+with scoped Ruff and Pyright. Repair checkpoint `62dec2ce` passed all 312
+tests selected by the Benchmark Contract Tests workflow on local Python
+3.12.16. The combined retry candidate refreshed the seven source pins,
+the affected operator-test pin and the installed factory pin.
 
 The implementation worker owns the retry runtime and focused tests.
 The code mapper traces the exact composition, and the coordinator owns
@@ -273,6 +273,33 @@ The package identity covers executable composition, writer and protected
 reader dependencies shipped in the package. The Level 2 comparison is
 against identical registered package bytes. Deployment compatibility
 across supported platform and interpreter upgrades remains separate.
+
+The persisted identities are `learned_ontology_evaluation_attempt_v1`
+and `learned_ontology_evaluation_result_v1`. The typed attempt records
+the proposal, scope, original version, evidence digest, registered
+artifact/binding/corpus/budget, generation and lease or result digest.
+Claim and publication use the existing memory-plane conditional-write
+transaction. Approval, selection and replay remain separate. The startup
+sweep reenters the original proposal only after the factory attaches the
+evaluator and callback, and permits one attempt per proposal per sweep.
+No earlier proposal or published result receives an inferred binding.
+
+Frozen local evidence so far is 45 learner tests and 48 companion
+context, owner, CLI and Package Smoke tests. Full Ruff, Pyright,
+identity hygiene and all 5,399 unit test collection/shard assignments
+passed. All 1,968 pinned source and test hashes match. The targeted
+review traced both real composition roots and the atomic generation
+fence. The installed authenticated-source restart faults and retries the
+same proposal. The native Hermes section exercises the same installed
+factory through normal admission. A follow-up probe found that generic
+owner review compared the raw display user with the canonical retained
+actor. The remediation verifies the sealed ingress and source authority
+directly from the protected snapshot record. Generic owner review now
+reports the three exact frozen evidence references before approval.
+Separate no-key installed owner review/reopen and native explicit
+rebase/recall passed (2 tests, 214.26 seconds). The final startup guard
+limits automatic retries to ordinary provisioning opens, preserving the
+standalone grant-revocation command boundary.
 
 ## Acceptance and verification
 

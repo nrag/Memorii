@@ -2423,11 +2423,20 @@ class ProviderIngestionCoordinator:
         source_id: str,
         source_digest: str,
     ) -> tuple[SourceAuthorityEvidence, AuthenticatedSourceIntervalEvidence | None] | None:
+        source = self._memory_plane.get_record(source_id)
+        if source is None:
+            return None
+        return self._retained_source_evidence_from_record(source=source, source_digest=source_digest)
+
+    @staticmethod
+    def _retained_source_evidence_from_record(
+        *, source: CanonicalMemoryRecord, source_digest: str,
+    ) -> tuple[SourceAuthorityEvidence, AuthenticatedSourceIntervalEvidence | None] | None:
         """Reload only admission-sealed, digest-valid source authority evidence."""
 
-        source = self._memory_plane.get_record(source_id)
-        if source is None or source.source_kind != "semantic_ingestion_source":
+        if source.source_kind != "semantic_ingestion_source":
             return None
+        source_id = source.memory_id
         admission = source.content.get("source_admission")
         if not isinstance(admission, dict):
             return None
@@ -2460,10 +2469,17 @@ class ProviderIngestionCoordinator:
         source_id: str,
         source_digest: str,
     ) -> AuthenticatedIngressContext | None:
-        """Reload the exact host ingress sealed with a retained Hermes source."""
-
         source = self._memory_plane.get_record(source_id)
-        if source is None or source.source_kind != "semantic_ingestion_source":
+        if source is None:
+            return None
+        return self.retained_authenticated_ingress_from_record(source=source, source_digest=source_digest)
+
+    @classmethod
+    def retained_authenticated_ingress_from_record(
+        cls, *, source: CanonicalMemoryRecord, source_digest: str,
+    ) -> AuthenticatedIngressContext | None:
+        """Verify the exact host ingress sealed on a retained source snapshot."""
+        if source.source_kind != "semantic_ingestion_source":
             return None
         admission = source.content.get("source_admission")
         if not isinstance(admission, dict):
@@ -2472,20 +2488,19 @@ class ProviderIngestionCoordinator:
             ingress = AuthenticatedIngressContext.model_validate(admission["retained_authenticated_ingress"])
         except (KeyError, TypeError, ValueError):
             return None
-        evidence = self._authenticated_source_evidence(
-            source_id=source_id,
+        evidence = cls._authenticated_source_evidence(
+            source_id=source.memory_id,
             source_digest=source_digest,
             authenticated_ingress=ingress,
         )
-        retained_evidence = self._retained_source_evidence(
-            source_id=source_id,
+        retained_evidence = cls._retained_source_evidence_from_record(
+            source=source,
             source_digest=source_digest,
         )
         if (
             evidence is None
             or retained_evidence is None
             or evidence != retained_evidence
-            or source_admission_source_digest(source) != source_digest
         ):
             return None
         return ingress
