@@ -232,6 +232,13 @@ reopen of those same persisted records verified both peer read and owner
 denials and both foreign-account startup refusals. The test now asserts
 the exact scope error.
 
+The full corrected witness passed in 166.83 seconds against the built
+wheel in `memorii-rehearsal-hermes:d62a3abd` with managed SQLite, the
+real Hermes ABI, installed entrypoint discovery, and `--network none`.
+All five changed product files match the wheel's frozen build source.
+The [hosted PR Gates run](https://github.com/nrag/Memorii/actions/runs/46118653960)
+for product/test head `1a5816b0` was queued at verification handoff.
+
 ## Acceptance and verification
 
 - The local owner enables once and reopens or pauses the same agent
