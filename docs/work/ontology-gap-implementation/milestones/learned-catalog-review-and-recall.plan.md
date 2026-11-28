@@ -301,6 +301,24 @@ rebase/recall passed (2 tests, 214.26 seconds). The final startup guard
 limits automatic retries to ordinary provisioning opens, preserving the
 standalone grant-revocation command boundary.
 
+Product and regression head `4d23b90c08f36c5ad0b76997b352d18b8ccfe979`
+passed all 93 focused tests, full Ruff and Pyright, and the 312 tests
+selected by Benchmark Contract Tests from a clean archive. The final
+no-key witness passed on the frozen owner-review delta in 484.23 seconds.
+It exercised the temporary generic evaluator outage, retained attempt
+receipts, exact owner evidence, approval, recall after reopen, and
+independent Hermes parity. A separate final-byte regression verified
+grant revocation before normal provisioning. The focused delta review
+confirmed the owner evidence fix and reported no further Level 2 P1/P2.
+
+The [hosted run for the retry implementation](https://github.com/nrag/Memorii/actions/runs/46120823118)
+passed Package Smoke. The earlier [unit shard 5](https://github.com/nrag/Memorii/actions/runs/46118850736/job/140898639479)
+also exposed a stale test expectation. A local installation without
+catalog consent correctly retained a single unclassified observation.
+The test now verifies pending discovery, no observer binding, and no
+proposal or gap after reopen. This changes the test expectation for the
+standing consent contract and leaves runtime byte-identical to `4d23b90c`.
+
 ## Acceptance and verification
 
 - The local owner enables once and reopens or pauses the same agent

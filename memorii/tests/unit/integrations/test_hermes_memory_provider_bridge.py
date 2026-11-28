@@ -615,8 +615,9 @@ def test_installed_no_observer_persists_one_pending_coverage_observation_after_r
         records[0].memory_id
     )
     assert observation is not None
-    assert observation.processing_state == DiscoveryProcessingState.CLASSIFIED
-    assert observation.semantic_outcome == CoverageSemanticOutcome.UNCERTAIN
+    assert observation.processing_state == DiscoveryProcessingState.PENDING_NO_CAPABILITY
+    assert observation.semantic_outcome == CoverageSemanticOutcome.NOT_EVALUATED
+    assert observation.observer_binding is None
     binding.completed_turn_runtime.close()
 
     reopened_plane = MemoryPlaneService(

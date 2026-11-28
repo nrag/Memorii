@@ -93,10 +93,10 @@ recall boundary.
 | OLE-01 | 3, 4, 5 | Observation, admission, installed host | Disabled observer pending and preselection zero facts | not started |
 | OLE-02 | 2, 3, 4, 5 | Current grants and lineage | Exact child read grant enforced across both installed bindings. Broader lineage and scope evidence remain open. | in progress |
 | OLE-03 | 4, 5 | Closed edits and catalog/type registry | Separate typed edit paths | not started |
-| OLE-04 | 2, 4, 5 | Review, evaluation and selection | Owner review, terminal rejection, exact-parent rebase and rollback verified. Unavailable evaluation retry and broader edits remain open. | in progress |
+| OLE-04 | 2, 4, 5 | Review, evaluation and selection | Owner review, terminal rejection, exact-parent rebase, rollback and exact-binding retry verified locally. Broader edits remain open. | in progress |
 | OLE-05 | 2, 4, 5 | Selected catalog and protected read/write | Both installed bindings verify the historical learned fact after rollback. Generic structured admission separately tracked. | in progress |
 | OLE-06 | 2, 4, 5 | Ordinary replay writer | Replay receipt and fact survive reopen; remaining edit families stay open. | in progress |
-| OLE-07 | 2, 3 | Recovery and scoped status | Durable evaluation publication recovery verified; broader recovery and status acceptance remain open. | in progress |
+| OLE-07 | 2, 3 | Recovery and scoped status | Durable result publication and unavailable evaluation retry verified locally. Broader recovery and status acceptance remain open. | in progress |
 | OLE-08 | 1, 3, 4, 5 | Installed dual adapter bindings | Packaged tools locally verified through both bindings. Learning through both adapters still open. | in progress |
 | OLE-09 | 1, representative regression | Packaged catalog | Work-item and ambiguous project-owner reads passed locally. Full managed persona matrix separately tracked. | in progress |
 | OLE-10 | 1, 2, isolation regression | Protected read and user-context | Signed-in bill recall passed locally. Full home/H8 matrix separately tracked. | in progress |
@@ -104,7 +104,7 @@ recall boundary.
 | OLE-12 | 3, 4 | Local/host capability and semantic owner | Generic standalone fact authoring separately tracked, optional remote profile deferred | not started |
 | OLE-13 | 2, 4, 5 | Paired evaluator and owner review | Owner approval only in scope. Automatic confidence calibration deferred | not started |
 | OLE-14 | 1, 3, 4 | Both installed roots | No-key packaged reads passed locally. Pending discovery and manual learned review still open. Generic fact authoring separately tracked. | in progress |
-| OCI-01–04 | 1, 2 | Catalog and protected recall | Packaged browsing and exact recall locally verified through configured bindings. Stock scope, learned witness and hosted verification pending. | in progress |
+| OCI-01–04 | 1, 2 | Catalog and protected recall | Packaged browse, exact recall and learned inspection locally verified through both installed bindings. Hosted verification pending for M2. | in progress |
 
 ## Change impact and authority
 
@@ -151,13 +151,12 @@ pytest -W error tests/integration/test_scoped_context_production_binding.py -p n
 | Scoped Context Integration, installed host checks | `scoped-context-integration`, affected host jobs and manual bill/work and learner journeys from packet | Pending candidate |
 | Aggregate PR checks | `unit-tests` and other applicable required jobs at the actual hosted checkout, record head separately | Pending candidate |
 
-Known P2 at the pinned baseline: the
+The P2 at the pinned baseline was that the
 [reproduction commands](../learned-ontology/ontology-capability-audit.md#reproduction-commands)
-store `evaluating`, then load fails with `proposal is unavailable`. The
-recovery owner is packet 2. Installed owner-grant withdrawal is a known
-evidence gap, with a separate verify-before-mutation case in that packet.
-Prior CI success applies only to the older delivered read path. No new lint,
-type-check or CI failure is classified by this planning task.
+stored `evaluating`, then loading failed with `proposal is unavailable`.
+Packet 2 records the durable recovery proof and installed owner-grant
+withdrawal checks. Hosted evidence for the retry candidate is tracked on
+[PR Gates run 46120823118](https://github.com/nrag/Memorii/actions/runs/46120823118).
 
 ## Progress and review
 
