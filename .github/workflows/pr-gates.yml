@@ -471,6 +471,7 @@ jobs:
           tests/integration/test_older_restore_generation.py
           tests/integration/test_managed_replacement_restore.py
           tests/integration/test_installation_mode_recovery.py
+          tests/integration/test_suppression_recovery.py
           tests/integration/test_shared_sqlite_provider_paths.py
           tests/integration/test_shared_sqlite_semantic_owners.py
           tests/integration/test_memory_plane_migration_recovery.py
@@ -606,12 +607,25 @@ jobs:
         working-directory: memorii
         run: pip install -e '.[dev]' -r tests/support/linguistic_dependencies.txt
 
+      - name: Pin the candidate wheel builder
+        working-directory: memorii
+        run: python -m pip install --require-hashes -r tests/support/reference_capacity_dependencies/build.lock
+
       - name: Run the container-driven certification journeys
         working-directory: memorii
+        env:
+          MEMORII_NATIVE_ASSET_OUTPUT: ${{ runner.temp }}/memorii-native-candidate
         run: >-
           python -W error -m pytest
           tests/integration/hostcompat/test_container_certification_journeys.py
           -p no:cacheprovider -v
+
+      - name: Retain tested wheel and host asset archives
+        uses: actions/upload-artifact@v4
+        with:
+          name: memorii-native-candidate
+          path: ${{ runner.temp }}/memorii-native-candidate
+          if-no-files-found: error
 
   macos-platform-conformance:
     name: macOS Platform Conformance

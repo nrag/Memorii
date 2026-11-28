@@ -314,6 +314,15 @@ generation. The selected generation remains v8 and retains the signed history.
 Exact ontology recall verifies the full snapshot and its latency can grow with
 the retained graph.
 
+The v8 distribution pairs the Python wheel with separate Pi and OpenClaw
+asset archives. Verify the wheel and archive digests in the release manifest,
+unpack each archive in its own directory, and run
+`npm ci --omit=dev --ignore-scripts` there with Node 24.22.3 and npm 12.2.3.
+Use the pinned host executable
+from that directory's `node_modules/.bin`. Load `memorii-extension.ts` for
+Pi or add the unpacked plugin directory to `plugins.load.paths` for OpenClaw.
+The repository Docker recipes are validation targets.
+
 For embedded deployments using the Python composition root:
 
 Provision a task, an installation-issued host credential, a task-scoped read

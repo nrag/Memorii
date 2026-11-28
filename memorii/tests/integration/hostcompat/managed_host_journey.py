@@ -2,37 +2,76 @@
 
 from __future__ import annotations
 
+import http.client
 import json
+import select
 import subprocess
 import sys
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime, timedelta
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Thread
+from urllib.parse import urlsplit
 
 from memorii.core.harness_state.envelope import HarnessStateEnvelope
-from memorii.core.harness_state.managed_enrollment import ManagedHostEnrollment
 from memorii.core.harness_state.native_sources import NativeSourceCaptureRequest
-from memorii.core.harness_state.sidecar import RuntimeSidecar, serve_loopback
 from memorii.core.harness_state.write_authority import NativeSourceScope
 from memorii.core.persistence.runtime_contracts import RuntimeCommandReceipt
 from memorii.core.storage_administration.managed_spool_selection import open_managed_spool
 from memorii.core.storage_administration.service import StorageAdministrationService
 
 
-class ObservedSidecar(RuntimeSidecar):
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.observations: list[tuple[NativeSourceCaptureRequest, RuntimeCommandReceipt]] = []
+def _observation_handler(
+    port: int, observations: list[tuple[NativeSourceCaptureRequest, RuntimeCommandReceipt]],
+) -> type[BaseHTTPRequestHandler]:
+    """Relay loopback host requests unchanged to the installed sidecar."""
 
-    def handle_native_source_request(self, **kwargs) -> tuple[int, bytes]:
-        status, body = super().handle_native_source_request(**kwargs)
-        if kwargs["capture"] and status == 200:
-            self.observations.append((
-                NativeSourceCaptureRequest.model_validate_json(kwargs["body"]),
-                RuntimeCommandReceipt.model_validate_json(body),
-            ))
-        return status, body
+    class ObserveCapture(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802 - http.server API
+            body = self.rfile.read(int(self.headers["Content-Length"]))
+            headers = {
+                name: self.headers[name]
+                for name in ("Host", "Origin", "Authorization", "Content-Type", "Memorii-Operation-Origin")
+                if name in self.headers
+            }
+            upstream = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+            try:
+                upstream.request("POST", self.path, body=body, headers=headers)
+                response = upstream.getresponse()
+                status, payload = response.status, response.read()
+            finally:
+                upstream.close()
+            if self.path == "/v1/runtime/source/capture" and status == 200:
+                observations.append((
+                    NativeSourceCaptureRequest.model_validate_json(body),
+                    RuntimeCommandReceipt.model_validate_json(payload),
+                ))
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, format: str, *args: object) -> None:
+            return
+
+    return ObserveCapture
+
+
+def _stop_process(process: subprocess.Popen[str]) -> None:
+    try:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=10)
+    finally:
+        if process.stdout is not None:
+            process.stdout.close()
 
 
 class ManagedHostJourney:
@@ -43,8 +82,10 @@ class ManagedHostJourney:
         self.principal = "principal:a"
         self.source = NativeSourceScope(kind=host, session_id=session_id)
         self.model_requests: list[dict] = []
+        self.observations: list[tuple[NativeSourceCaptureRequest, RuntimeCommandReceipt]] = []
+        self._process: subprocess.Popen[str] | None = None
         self._operator = [
-            sys.executable, "-m", "memorii.tools.runtime_operator",
+            str(Path(sys.executable).with_name("memorii-operator")),
             "--installation-root", str(self.installation), "--owner-principal", "owner",
         ]
         capability_path = root / "owner.cap"
@@ -68,24 +109,45 @@ class ManagedHostJourney:
         assert self.secret not in enrolled.stdout and self.secret not in enrolled.stderr
         self.start()
         self.environment = {
-            "MEMORII_SIDECAR_URL": self.url,
+            "MEMORII_SIDECAR_URL": "http://127.0.0.1:8762",
             "MEMORII_TASK_ID": self.task_id,
             "MEMORII_CREDENTIAL_PATH": str(credential_path),
         }
 
     def start(self) -> None:
-        self.administration = StorageAdministrationService(self.installation)
-        enrollment = ManagedHostEnrollment(self.administration)
-        self.sidecar = ObservedSidecar.for_managed_installation(
-            self.administration, credentials=enrollment.credentials, enrollment=enrollment,
-            spool=open_managed_spool(self.administration),
+        assert self._process is None
+        self.observations.clear()
+        process = subprocess.Popen(
+            [*self._operator, "serve", "--port", "0"], stdout=subprocess.PIPE, text=True,
         )
-        self.url, self.server = serve_loopback(self.sidecar, port=8762)
+        try:
+            assert process.stdout is not None
+            assert select.select([process.stdout], [], [], 30)[0], "installed operator did not report readiness"
+            line = process.stdout.readline()
+            assert line, f"installed operator exited before readiness: {process.poll()}"
+            readiness = json.loads(line)
+            assert readiness["status"] == "ready" and readiness["publication_digest"]
+            backend = urlsplit(readiness["url"])
+            assert backend.scheme == "http" and backend.hostname == "127.0.0.1" and backend.port
+            self._server = ThreadingHTTPServer(("127.0.0.1", 8762), _observation_handler(backend.port, self.observations))
+            self._worker = Thread(target=self._server.serve_forever, daemon=True)
+            self._worker.start()
+        except BaseException:
+            _stop_process(process)
+            raise
+        self.url = readiness["url"]
+        self._process = process
 
     def stop(self) -> None:
-        self.server.shutdown()
-        self.server.server_close()
-        self.administration.close()
+        if self._process is None:
+            return
+        try:
+            self._server.shutdown()
+            self._worker.join()
+            self._server.server_close()
+        finally:
+            _stop_process(self._process)
+            self._process = None
 
     def read(self) -> HarnessStateEnvelope:
         request = urllib.request.Request(
@@ -112,16 +174,17 @@ class ManagedHostJourney:
                 return error.code, json.load(error)
 
     def prove_turn(self, prompt: str) -> RuntimeCommandReceipt:
-        [(captured, receipt)] = self.sidecar.observations
+        [(captured, receipt)] = self.observations
         assert captured.text == prompt and captured.source == self.source
         assert receipt.status == "committed" and receipt.operation_origin and receipt.source_admission
         assert receipt.source_admission.task_id == self.task_id
-        spool = open_managed_spool(self.administration)
-        entry = spool.find(receipt.operation_origin)
-        assert entry is not None and entry.state == "committed"
-        assert entry.operation_origin.coordinate == receipt.operation_origin
-        assert prompt not in entry.model_dump_json()
-        assert spool.pending() == ()
+        with StorageAdministrationService(self.installation) as administration:
+            spool = open_managed_spool(administration)
+            entry = spool.find(receipt.operation_origin)
+            assert entry is not None and entry.state == "committed"
+            assert entry.operation_origin.coordinate == receipt.operation_origin
+            assert prompt not in entry.model_dump_json()
+            assert spool.pending() == ()
         retry = self.drain()
         assert retry.returncode == 0 and retry.stdout == ""
         status, payload = self.source_request("capture", delivery_id=captured.delivery_id, text=prompt)
@@ -163,7 +226,7 @@ class ManagedHostJourney:
 
     def drain(self) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [sys.executable, "-m", "memorii.tools.runtime_consume",
+            [str(Path(sys.executable).with_name("memorii-consume")),
              "--installation-root", str(self.installation), "--managed", "--drain"],
             capture_output=True, text=True, timeout=90, check=False,
         )

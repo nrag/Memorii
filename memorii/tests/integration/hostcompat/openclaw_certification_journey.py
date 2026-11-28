@@ -127,10 +127,10 @@ try:
     assert second_receipt.operation_id != first_receipt.operation_id
     assert journey.read().revision > reopened.revision
 
-    observations_before_other_session = list(journey.sidecar.observations)
+    observations_before_other_session = list(journey.observations)
     other = run_agent("--session-key", "agent:main:unbound-session", "-m", "unbound session")
     assert other.returncode == 0, other.stderr
-    assert journey.sidecar.observations == observations_before_other_session
+    assert journey.observations == observations_before_other_session
     retry = journey.drain()
     assert retry.returncode == 0 and retry.stdout == ""
     print("An unbound OpenClaw session could not submit to the Memorii task", flush=True)

@@ -30,8 +30,8 @@ and existing untracked material.
 Original approved design SHA-256 89a80f5af956fa2bf9025ca9f47742b3a98b15f0e73b0a28c73e4cb0c3310671.
 Original verification SHA-256 6b1b61e338eac57a23de7ece64fb1341470b8192663aa9450e75df8127cf4ce2.
 The 2026-11-27 owner-approved scope amendment was pushed as b1571306.
-Amended design SHA-256 d6366070a9a1eb1771ae56d5bea4cf41830cb039b7a94bc6633ee597aaf25aac.
-Amended verification SHA-256 cd1e0460e9da73af60d158d43050a27219d2dd6ccaa9859b49d6422b6e426852.
+Current approved design SHA-256 247e39e570712ec0f6021dd46f3158dfe39aaee9b92ce8069df0a0cfb731ba8c.
+Current verification SHA-256 bd2026ac48f671fb1ee07996c45c59956e23a5eeb9cfc9e5accc31b941d66eee.
 The verified storage and secret handling regression baseline is c0fa889a.
 Keep v8 as default and the 11-second verified acquisition budget.
 
@@ -74,6 +74,8 @@ See the [resume packet](resume.md) for current owners and evidence.
   verification and deferring the performance bound for exact recall only.
   Current checkpoints can exceed the 16 MiB decode cap in one signed record.
   The managed browse and inspection acceptance bounds still apply.
+- REL-03. The owner approved the Python wheel and pinned host archives as
+  the shipped distribution, with Docker reserved for validation.
 
 ## Independent checkpoint review
 

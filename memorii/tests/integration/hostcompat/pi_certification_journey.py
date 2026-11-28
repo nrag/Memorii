@@ -82,10 +82,10 @@ try:
     assert journey.read().revision > reopened.revision
 
     [session_file] = list(session_dir.rglob("*.jsonl"))
-    observations_before_fork = list(journey.sidecar.observations)
+    observations_before_fork = list(journey.observations)
     fork = run_pi("--fork", str(session_file), "fork attempt")
     assert "memorii denied an unbound Pi session" in fork.stderr, fork.stderr
-    assert journey.sidecar.observations == observations_before_fork
+    assert journey.observations == observations_before_fork
     retry = journey.drain()
     assert retry.returncode == 0 and retry.stdout == ""
     print("The actual Pi startup fork could not submit to the bound Memorii task", flush=True)

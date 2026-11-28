@@ -16,8 +16,9 @@ Runtime checkpoint `2a9e140b` is on the same remote branch. Its committed
 wheel passed installed operator and migration proof. Pi 1.7.0 and OpenClaw
 2026.11.10 both passed the application-level journeys on that wheel.
 OpenClaw's dedicated context engine passed persisted-history and revoked
-provider-request checks. Full image scans, installed custody and native
-capacity remain open.
+provider-request checks. The owner approved Docker for validation only and
+distribution of the wheel and pinned host archives. Installed authority
+composition, exact shipped artifact signoff and native capacity remain open.
 
 Evidence maturity starts at specified for new behavior. Docker can prove
 functional behavior. Native capacity and exact-candidate certification need

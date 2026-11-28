@@ -73,9 +73,19 @@ Both used the same `4a07d3a6` runtime wheel.
 The slim scans each reported zero Critical and zero Node or Python High
 findings. They each reported 88 High Debian package findings across 27 unique
 advisories and 32 packages. Trivy listed no Debian fixed versions. The
-findings include the SQLite runtime. The OS image approval gate is open.
-Scope decision requested on 2026-11-27 for validating with Docker and
-shipping host assets separately, or holding for full Docker image approval.
+findings include the SQLite runtime. The owner approved shipping the wheel
+and pinned native host assets with Docker reserved for validation on
+2026-11-27. These images remain unsuitable for an approved v8 release image.
+Shipped-asset scans and exact candidate provenance remain release gates.
+
+The candidate builder now emits separate reproducible Pi and OpenClaw
+tar archives with complete package locks. The manifest binds host versions,
+archive and member digests, source revision and the common base wheel.
+Container verification checks the installed wheel and copied host file
+digests before exercise and retains the candidate archives on a passing job.
+Both host journeys now run the installed foreground operator console.
+A test-only loopback relay observes successful signed captures while the
+operator process retains authorization, persistence and response ownership.
 
 | Evidence | Pi SHA-256 | OpenClaw SHA-256 |
 | --- | --- | --- |

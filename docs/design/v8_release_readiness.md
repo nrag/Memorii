@@ -20,8 +20,8 @@ unbounded multiwriter operation are outside this design.
 
 | Supported host | Required installed path |
 | --- | --- |
-| Pi, version pinned by the release image | Exact session/branch binding, user capture and recall, signed resume, bounded task/solver state and explicit paging, fork/settle and restart behavior. |
-| OpenClaw, version pinned by the release image | Exact local gateway session, user capture and recall, signed resume, bounded task/solver state and explicit paging. Real CLI tests deny forwarded/system or unbound sources. |
+| Pi, version pinned by the host asset | Exact session/branch binding, user capture and recall, signed resume, bounded task/solver state and explicit paging, fork/settle and restart behavior. |
+| OpenClaw, version pinned by the host asset | Exact local gateway session, user capture and recall, signed resume, bounded task/solver state and explicit paging. Real CLI tests deny forwarded/system or unbound sources. |
 | Hermes | Use the pinned installed profile from its release recipe. Prove managed task mapping, typed state and checkpoint/next-step through real callbacks, protected memory/catalog reads, no-key and advertised model bindings, and restart. |
 
 Each release root preserves candidate versus committed state, signed delivery
@@ -94,9 +94,11 @@ content. Already accepted socket bytes are outside recall. Recheck before
 sending any remainder and abort an incomplete response after denial. Apply
 this ordering to every protected advertised route.
 
-First establish the native Pi/OpenClaw journey from the base wheel and separate
-versioned, digest-bound host assets or images. Their release recipes must
-install that wheel, with no editable override. The current `local` profile is
+Ship the base wheel and separate versioned, digest-bound Pi and OpenClaw host
+assets with their exact dependency locks. Docker images are validation
+environments outside the v8 distribution scope, as approved by the owner on
+2026-11-27. The validation recipes must install the same wheel and verify the
+host member digests against the packaged manifests. The current `local` profile is
 excluded from the supported release unless its entire resolution and model
 loading path are qualified. Remove the affected profile from distributed
 artifacts and instructions if retaining it would ship the vulnerable pin.
@@ -106,8 +108,8 @@ support scope explicitly narrowed before freezing artifacts. In a retained NLP
 profile require a safe resolved version, verify trusted model manifests by
 digest before load, and reject unregistered model assets. A single historical
 advisory fix version does not qualify the current dependency set. Scan the
-wheel's resolved closures, SDK tarball, host images and model assets by digest,
-and record SBOM, build provenance, scan and supported platform/profile
+wheel's resolved closures, SDK tarball, shipped host assets and model assets
+by digest, and record SBOM, build provenance, scan and supported platform/profile
 manifest. No unresolved Critical or High finding in the supported closure
 passes release review without a specific documented disposition and owner.
 [PyTorch advisory](https://github.com/pytorch/pytorch/security/advisories/GHSA-53q9-r3pm-6pq6)
