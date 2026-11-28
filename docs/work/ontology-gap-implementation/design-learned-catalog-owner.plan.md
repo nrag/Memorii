@@ -257,8 +257,13 @@ still needs a concrete, reviewed version and artifact rule.
 
 ## Completion and next action
 
-Attach the verified local consent to the runtime. Compare the current
-grant record in the same conditional write as a proposal or pointer
-mutation. Bind any prepared selection to that generation so recovery
-can finalize a proven selected pointer without letting an older attempt
-select after pause and re-enable.
+Local implementation compares the current consent in the same
+conditional write as a proposal or pointer mutation. The prepared
+selection's decision digest commits to the exact grant record. Recovery
+finalizes a proven selected pointer and declines selection from a
+superseded grant. The local host profile is validated at transaction
+admission. The explicit catalog pause operation is the durable revocation
+that serializes with catalog mutations.
+
+Verify the workspace-scoped enrollment authority before wiring managed
+enablement to these same mutation and recovery rules.

@@ -35,6 +35,7 @@ from memorii.core.memory_evolution.ingestion_contracts import (
 )
 from memorii.core.memory_evolution.models import EntityType
 from memorii.core.memory_plane import MemoryPlaneService
+from memorii.core.memory_plane.store import RecordDigestPrecondition
 from memorii.core.persistence.factory import select_persistent_memory_plane
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.learned_replay import LearnedRetainedSourceReplayService
@@ -56,6 +57,7 @@ from memorii.core.semantic_ingestion.catalog_authority import (
     ThreePredicateSeedCatalogAuthorityRepository,
 )
 from memorii.core.semantic_ingestion.catalog_capture_pin import PackageIndexedCatalogBundleLocator
+from memorii.core.semantic_ingestion.catalog_management import CatalogManagementRepository
 from memorii.core.semantic_ingestion.coverage_observation import (
     CoverageSemanticOutcome,
     CoverageSourceSpan,
@@ -76,6 +78,7 @@ from memorii.core.semantic_ingestion.hermes_completed_turn_runtime import (
 from memorii.core.semantic_ingestion.learned_relation import (
     ActivationPolicy,
     AgentLocalCatalogScope,
+    CatalogManagementUnavailable,
     FrozenMentorsPairedEvaluator,
     IsolatedMentorsEvaluationExecutor,
     LearnedRelationCandidateService,
@@ -105,6 +108,7 @@ from memorii.integrations.hermes_local_authority import (
     LocalLevel2AuthorityError,
     load_local_level2_authority,
     load_local_structured_tool_authority,
+    local_operator_id,
 )
 from memorii.integrations.hermes_runtime_binding import (
     HermesAuthenticatedForwardingReceipt,
@@ -528,8 +532,6 @@ def _build_local_level2_runtime_binding(
 
     now = datetime.now(UTC)
     authorization = local_level2_bootstrap_authorization_from_sidecar(sidecar, now=now)
-    from memorii.integrations.hermes_local_authority import local_operator_id
-
     operator_id = local_operator_id(authorization.installation_id)
     agent_id = _canonical_agent_id(getattr(context, "agent_identity", None))
     stock_read = getattr(context, "stock_catalog_read", False) is True and getattr(context, "catalog_read_opt_in", None) is None
@@ -571,6 +573,20 @@ def _build_local_level2_runtime_binding(
         storage_root, allow_legacy_bootstrap=True
     )
     memory_plane = memory_selection.memory_plane
+    learned_scope = AgentLocalCatalogAuthorityScope(principal_id=operator_id, agent_id=agent_id)
+    catalog_management = CatalogManagementRepository(
+        memory_plane, partition_id=f"local:{authorization.installation_id}", scope=learned_scope,
+    )
+
+    def current_catalog_management_fence(scope: AgentLocalCatalogScope) -> RecordDigestPrecondition | None:
+        if context_kind != "primary" or not authority_is_current():
+            return None
+        return catalog_management.enabled_write_fence(scope)
+
+    def validate_catalog_management_host() -> None:
+        if context_kind != "primary" or not authority_is_current():
+            raise CatalogManagementUnavailable("local catalog management host authority is unavailable")
+
     # Fail-closed serving composition: the revoked-identity gate derives
     # from the installation control root and refreshes on journal writes;
     # legacy layouts without control state carry the valid empty view.
@@ -626,6 +642,7 @@ def _build_local_level2_runtime_binding(
             and binding == observer.binding
             and ingress.delivery_principal_binding.principal_subject_id == operator_id
             and ingress.authenticated_agent_id == agent_id
+            and current_catalog_management_fence(learned_scope) is not None
         )) if observer is not None else None,
     )
     if service._composed_semantic_runtime is None:
@@ -845,6 +862,8 @@ def _build_local_level2_runtime_binding(
             owner_principal_id=scope.principal_id,
             owner_agent_id=scope.agent_id,
         ),
+        management_fence_for_scope=current_catalog_management_fence,
+        validate_management_host=validate_catalog_management_host,
     )
     paired_evaluator = FrozenMentorsPairedEvaluator()
     candidate_service = LearnedRelationCandidateService(
@@ -859,12 +878,15 @@ def _build_local_level2_runtime_binding(
         ) -> object:
             if (principal_id, agent_id) != (operator_id, agent_id_outer):
                 raise LocalLevel2AuthorityError("learned recurrence owner is unavailable")
-            return candidate_service.admit_recurrence(
-                group_id=group_id,
-                authenticated=AuthenticatedPrincipalAgent(
-                    principal_id=principal_id, agent_id=agent_id,
-                ),
-            )
+            try:
+                return candidate_service.admit_recurrence(
+                    group_id=group_id,
+                    authenticated=AuthenticatedPrincipalAgent(
+                        principal_id=principal_id, agent_id=agent_id,
+                    ),
+                )
+            except CatalogManagementUnavailable:
+                return None
 
     agent_id_outer = agent_id
     # A missing model/API key leaves observation pending by design.  The
@@ -905,14 +927,6 @@ def _build_local_level2_runtime_binding(
             )
         ),
     ))
-    from memorii.core.semantic_ingestion.catalog_management import CatalogManagementRepository
-
-    learned_scope = AgentLocalCatalogAuthorityScope(
-        principal_id=operator_id, agent_id=agent_id,
-    )
-    catalog_management = CatalogManagementRepository(
-        memory_plane, partition_id=f"local:{authorization.installation_id}", scope=learned_scope,
-    )
     # Startup owns the two selection crash windows.  Recovery only retries
     # immutable retained evidence through the same installed writer root.
     learned_runtime.recover(learned_scope)

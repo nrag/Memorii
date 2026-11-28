@@ -1818,7 +1818,7 @@
     "memorii/memorii/domain/solver_graph/state.py": "370a4a10b114cc8726d4870dc9123ac3552a9183b570f48bcc77a20c69af441a",
     "memorii/memorii/domain/writebacks.py": "10a95937700776d5bd65858a49d92cc44bba44574143ca18b321b3a7f643a7d1",
     "memorii/memorii/integrations/__init__.py": "80c306de49cdc2a1e276c9ad9cea83bd25473d18aec2daa4b0228f7ba6db7d0b",
-    "memorii/memorii/integrations/hermes_factory.py": "11490fbe1ae6559a53035e7b88aa213bb760221feffa475d43b8b915abae5654",
+    "memorii/memorii/integrations/hermes_factory.py": "0ed0f5b65c91ef848348737dd6ab4215705c4271ebfcf68fbdc9ebcd20de3a46",
     "memorii/memorii/integrations/hermes_local_authority.py": "a244a40b92b31be3e5f77fddeb3205fd99f19a570bb9a723f8129005b83d251e",
     "memorii/memorii/integrations/hermes_memory_provider.py": "fa97e3cac0baa7764f62d9fa5657970a9d3bbb3f2d808f4f56ef362e2009b144",
     "memorii/memorii/integrations/hermes_provider.py": "08003f120b57734d8fcabb967204ab1a836d6b6c7a8ebb2d3bc0b0bc1d3ec359",

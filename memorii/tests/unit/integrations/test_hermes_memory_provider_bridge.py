@@ -32,7 +32,10 @@ from memorii.core.semantic_ingestion.default_catalog_corpus import (
 )
 from memorii.domain.enums import MemoryDomain
 from memorii.integrations.catalog_read_binding import CatalogReadGrantReference, CatalogReadOptIn
-from memorii.integrations.hermes_local_authority import load_local_level2_authority
+from memorii.integrations.hermes_local_authority import (
+    load_local_level2_authority,
+    local_catalog_management,
+)
 from tests.fixtures.semantic_ingestion.default_catalog_proposals import (
     DefaultCatalogProposalFixture,
     build_default_catalog_proposal,
@@ -1139,6 +1142,7 @@ def test_installed_no_key_bridge_reaches_learned_mentors_submission_without_mode
     )
     from memorii.core.semantic_ingestion.learned_relation import (
         AgentLocalCatalogScope,
+        CatalogManagementUnavailable,
         OntologyChangeProposal,
         OntologyEvidenceReference,
         PairedEvaluation,
@@ -1153,14 +1157,18 @@ def test_installed_no_key_bridge_reaches_learned_mentors_submission_without_mode
         principal_id=provider._absent_author_id,
         agent_id=active_runtime._authenticated_agent_id,
     )
-    candidate = learned.prepare_candidate(OntologyChangeProposal.create(
+    draft = OntologyChangeProposal.create(
         catalog_scope=scope, parent_catalog_digest="a" * 64,
         relation=RelationDeclaration(description="A person mentors another person."),
         evidence=(OntologyEvidenceReference(
             source_id="activation:evidence", source_digest="1" * 64,
             origin_lineage_digest="2" * 64, source_scope_digest="3" * 64,
         ),),
-    ))
+    )
+    with pytest.raises(CatalogManagementUnavailable):
+        learned.prepare_candidate(draft)
+    local_catalog_management(hermes_home=tmp_path, state="enabled")
+    candidate = learned.prepare_candidate(draft)
     candidate = learned.record_evaluation(
         proposal_id=candidate.proposal_id,
         evaluation=PairedEvaluation.create(
@@ -1471,6 +1479,7 @@ def test_installed_no_key_paired_evaluator_executes_all_cases_without_control_mu
             "activation_sequence": None, "candidate_count": 0,
             "candidate_ids": (),
             "replay_outcomes": {}, "last_error": None,
+            "catalog_management": {"state": "disabled", "generation": 0, "origin": None},
         }
     finally:
         runtime.close()
@@ -1512,6 +1521,7 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
     runtime = provider._completed_turn_runtime
     learned = provider._learned_ontology_runtime
     assert runtime is not None and learned is not None
+    local_catalog_management(hermes_home=tmp_path, state="enabled")
     active = runtime._active_turn
     assert active is not None
     scope = AgentLocalCatalogScope(
@@ -1690,6 +1700,7 @@ def test_installed_learned_replay_skip_receipt_is_durable_and_idempotent(
         runtime = provider._completed_turn_runtime
         learned = provider._learned_ontology_runtime
         assert runtime is not None and learned is not None
+        local_catalog_management(hermes_home=tmp_path, state="enabled")
         scope = AgentLocalCatalogScope(
             principal_id=provider._absent_author_id,
             agent_id=runtime._authenticated_agent_id,
@@ -1806,6 +1817,7 @@ def test_installed_learned_overlay_preserves_default_entity_relation_lifecycle(
     learned = provider._learned_ontology_runtime
     active_runtime = provider._completed_turn_runtime
     assert learned is not None and active_runtime is not None
+    local_catalog_management(hermes_home=tmp_path, state="enabled")
     scope = AgentLocalCatalogScope(
         principal_id=provider._absent_author_id,
         agent_id=active_runtime._authenticated_agent_id,
@@ -3336,15 +3348,18 @@ def test_generic_authenticated_source_reaches_the_local_candidate_and_owner_path
     bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A non-Hermes envelope reaches the same core recurrence/candidate owner."""
-    from memorii.core.semantic_ingestion.learned_relation import LearnedRelationError
+    from memorii.core.semantic_ingestion.catalog_management import CatalogManagementRepository
+    from memorii.core.semantic_ingestion.learned_relation import AgentLocalCatalogScope, LearnedRelationError
     from memorii.core.semantic_ingestion.structured_fact_read import StructuredFactReadRequest
     from memorii.integrations.authenticated_source import AuthenticatedSourceSubmission
     from memorii.integrations.hermes_factory import (
+        _canonical_agent_id,
         build_local_level2_authenticated_source_runtime,
     )
     from memorii.integrations.hermes_local_authority import (
         authorize_local_level2,
         authorize_local_structured_tool,
+        local_operator_id,
     )
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -3363,6 +3378,17 @@ def test_generic_authenticated_source_reaches_the_local_candidate_and_owner_path
         agent_workspace="hermes", parent_session_id=None,
     )
     runtime = build_local_level2_authenticated_source_runtime(context)
+    installation_id = load_local_level2_authority(hermes_home=tmp_path)["installation_id"]
+    assert isinstance(installation_id, str)
+    # The generic fixture uses a separate test partition to compare both adapters.
+    CatalogManagementRepository(
+        runtime._adapter._service._memory_plane,
+        partition_id=f"local:{installation_id}",
+        scope=AgentLocalCatalogScope(
+            principal_id=local_operator_id(installation_id),
+            agent_id=_canonical_agent_id(context.agent_identity),
+        ),
+    ).set_state("enabled")
     results = []
     for ordinal, (session_id, sentence) in enumerate((
         ("generic:one", "Ada mentors Bea."),
@@ -3446,6 +3472,8 @@ def test_generic_authenticated_source_reaches_the_local_candidate_and_owner_path
             agent_identity="profile:primary", platform="cli", agent_context="primary",
             agent_workspace="hermes",
         )
+        if ordinal == 1:
+            local_catalog_management(hermes_home=tmp_path, state="enabled")
         # Coverage observation happens at the public authenticated capture
         # boundary. A fresh host instance per retained turn also proves restart
         # recovery without creating overlapping live tool handles.

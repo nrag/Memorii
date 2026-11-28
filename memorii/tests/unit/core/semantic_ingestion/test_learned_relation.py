@@ -17,6 +17,7 @@ from memorii.core.semantic_ingestion.catalog_capture_pin import (
     CatalogCapturedTurnPin,
     PackageIndexedCatalogBundleLocator,
 )
+from memorii.core.semantic_ingestion.catalog_management import CatalogManagementRepository
 from memorii.core.semantic_ingestion.contracts import (
     ProviderEntityObject,
     ProviderFact,
@@ -44,6 +45,7 @@ from memorii.core.semantic_ingestion.hermes_captured_turn import HermesCapturedT
 from memorii.core.semantic_ingestion.learned_relation import (
     ActivationPolicy,
     AgentLocalCatalogScope,  # noqa: I001
+    CatalogManagementUnavailable,
     FrozenMentorsPairedEvaluator,
     IsolatedMentorsEvaluationExecutor,
     LearnedRelationCandidateService,
@@ -235,23 +237,34 @@ def test_candidate_owner_rejects_missing_recurrence_without_control_or_fact_stat
     assert plane.list_records() == []
 
 
-def test_repeat_recurrence_admission_finishes_the_published_result(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("interruption", ["before_result", "after_result"])
+def test_repeat_recurrence_admission_recovers_interrupted_evaluation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, interruption: str,
 ) -> None:
     plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "plane"))
     writer = _ReplayWriter()
-    runtime = _runtime(writer, plane)
+    policy = CatalogManagementRepository(plane, partition_id="local:test", scope=_SCOPE)
+    policy.set_state("enabled")
+    runtime = LearnedRelationRuntime(
+        memory_plane=plane,
+        replay_writer=writer,
+        policy_for_scope=lambda scope: ActivationPolicy(
+            owner_principal_id=scope.principal_id, owner_agent_id=scope.agent_id,
+        ),
+        management_fence_for_scope=policy.enabled_write_fence,
+    )
     authenticated = _authenticated()
     evaluator = FrozenMentorsPairedEvaluator(_isolated_case_executor())
     result = evaluator.evaluate(_proposal())
     evaluate_calls = []
 
-    def evaluate_once(proposal: OntologyChangeProposal) -> PairedEvaluation:
-        assert not evaluate_calls
+    def evaluate(proposal: OntologyChangeProposal) -> PairedEvaluation:
         evaluate_calls.append(proposal.proposal_id)
+        if interruption == "before_result" and len(evaluate_calls) == 1:
+            policy.set_state("paused")
         return result
 
-    monkeypatch.setattr(evaluator, "evaluate", evaluate_once)
+    monkeypatch.setattr(evaluator, "evaluate", evaluate)
     service = LearnedRelationCandidateService(memory_plane=plane, runtime=runtime, evaluator=evaluator)
     binding = ObserverBindingIdentity(
         binding_version="observer:v1", provider="local", model="test-model",
@@ -296,15 +309,22 @@ def test_repeat_recurrence_admission_finishes_the_published_result(
 
     replace = runtime._replace_proposal
 
-    def interrupt_after_commit(old: OntologyChangeProposal, new: OntologyChangeProposal) -> None:
-        replace(old, new)
+    def interrupt_after_commit(old: OntologyChangeProposal, new: OntologyChangeProposal, *fence) -> None:
+        replace(old, new, *fence)
         if new.lifecycle == "evaluating":
             raise InterruptedError("evaluation result committed")
 
-    with monkeypatch.context() as patch:
-        patch.setattr(runtime, "_replace_proposal", interrupt_after_commit)
-        with pytest.raises(InterruptedError, match="evaluation result committed"):
+    if interruption == "before_result":
+        with pytest.raises(CatalogManagementUnavailable):
             service.admit_recurrence(group_id=group.group_id, authenticated=authenticated)
+        assert runtime._require_proposal(evaluate_calls[0]).lifecycle == "validated"
+        assert runtime._require_proposal(evaluate_calls[0]).evaluation is None
+        policy.set_state("enabled")
+    else:
+        with monkeypatch.context() as patch:
+            patch.setattr(runtime, "_replace_proposal", interrupt_after_commit)
+            with pytest.raises(InterruptedError, match="evaluation result committed"):
+                service.admit_recurrence(group_id=group.group_id, authenticated=authenticated)
 
     before = plane.read_snapshot()
     with pytest.raises(LearnedRelationError, match="outside the authenticated owner"):
@@ -317,7 +337,7 @@ def test_repeat_recurrence_admission_finishes_the_published_result(
     finished = service.admit_recurrence(group_id=group.group_id, authenticated=authenticated)
     assert finished.lifecycle == "awaiting_decision"
     assert finished.evaluation == result
-    assert evaluate_calls == [finished.proposal_id]
+    assert evaluate_calls == [finished.proposal_id] * (2 if interruption == "before_result" else 1)
     assert writer.calls == []
 
 
@@ -657,6 +677,92 @@ def test_recovery_finalizes_both_selection_crash_windows_and_replay_receipts() -
     calls = tuple(writer.calls)
     runtime.recover(_SCOPE)
     assert tuple(writer.calls) == calls
+
+
+def test_pause_at_pointer_commit_blocks_selection_and_old_attempt_on_reopen(tmp_path, monkeypatch) -> None:
+    plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path))
+    policy = CatalogManagementRepository(plane, partition_id="local:test", scope=_SCOPE)
+    policy.set_state("enabled")
+    writer = _ReplayWriter()
+
+    def open_runtime(memory_plane, management):
+        return LearnedRelationRuntime(
+            memory_plane=memory_plane,
+            replay_writer=writer,
+            policy_for_scope=lambda scope: ActivationPolicy(
+                owner_principal_id=scope.principal_id, owner_agent_id=scope.agent_id,
+            ),
+            management_fence_for_scope=management.enabled_write_fence,
+        )
+
+    runtime = open_runtime(plane, policy)
+    proposal = runtime.prepare_candidate(_proposal())
+    runtime.record_evaluation(proposal_id=proposal.proposal_id, evaluation=_passing_evaluation())
+    owner = {"principal_id": _SCOPE.principal_id, "agent_id": _SCOPE.agent_id}
+    decision = runtime.approve_candidate(proposal_id=proposal.proposal_id, **owner)
+    write = plane.conditionally_write_records
+
+    def pause_before_pointer(records, **kwargs):
+        if records[0].memory_id.startswith("learned-catalog-pointer:"):
+            policy.set_state("paused")
+        return write(records, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(plane, "conditionally_write_records", pause_before_pointer)
+        with pytest.raises(CatalogManagementUnavailable):
+            runtime.activate_candidate(proposal_id=proposal.proposal_id, **owner)
+    assert runtime.status(_SCOPE)["active_version_digest"] is None
+    assert writer.calls == []
+
+    reopened_plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path))
+    reopened_policy = CatalogManagementRepository(reopened_plane, partition_id="local:test", scope=_SCOPE)
+    reopened = open_runtime(reopened_plane, reopened_policy)
+    reopened.recover(_SCOPE)
+    reopened_policy.set_state("enabled")
+    reopened.recover(_SCOPE)
+    assert reopened.status(_SCOPE)["active_version_digest"] is None
+    assert reopened._require_proposal(proposal.proposal_id) == decision
+    assert writer.calls == []
+    activation = reopened.activate_candidate(proposal_id=proposal.proposal_id, **owner)
+    assert activation.status == "selected"
+
+
+def test_host_authority_is_checked_inside_the_approval_write(monkeypatch) -> None:
+    plane = MemoryPlaneService()
+    policy = CatalogManagementRepository(plane, partition_id="local:test", scope=_SCOPE)
+    policy.set_state("enabled")
+    host_current = True
+
+    def validate_host():
+        if not host_current:
+            raise CatalogManagementUnavailable("host authority withdrawn")
+
+    runtime = LearnedRelationRuntime(
+        memory_plane=plane,
+        replay_writer=_ReplayWriter(),
+        policy_for_scope=lambda scope: ActivationPolicy(
+            owner_principal_id=scope.principal_id, owner_agent_id=scope.agent_id,
+        ),
+        management_fence_for_scope=policy.enabled_write_fence,
+        validate_management_host=validate_host,
+    )
+    proposal = runtime.prepare_candidate(_proposal())
+    evaluated = runtime.record_evaluation(
+        proposal_id=proposal.proposal_id, evaluation=_passing_evaluation(),
+    )
+    write = plane.conditionally_write_records
+
+    def withdraw_host_before_write(*args, **kwargs):
+        nonlocal host_current
+        host_current = False
+        return write(*args, **kwargs)
+
+    monkeypatch.setattr(plane, "conditionally_write_records", withdraw_host_before_write)
+    with pytest.raises(CatalogManagementUnavailable, match="host authority withdrawn"):
+        runtime.approve_candidate(
+            proposal_id=proposal.proposal_id, principal_id=_SCOPE.principal_id, agent_id=_SCOPE.agent_id,
+        )
+    assert runtime._require_proposal(proposal.proposal_id) == evaluated
 
 
 def test_rollback_only_selects_prior_selected_same_scope_ancestor_without_new_catalog_state() -> None:

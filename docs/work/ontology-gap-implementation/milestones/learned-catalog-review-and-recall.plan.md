@@ -1,6 +1,6 @@
 # Review and recall an approved learned catalog
 
-- Order: 2. Status: durable result recovery and local standing-consent commands locally verified. Runtime enforcement and managed enrollment are open. Recovery checkpoint `74e70d06`.
+- Order: 2. Status: durable result recovery, local standing consent and the local runtime mutation fence verified. Managed enrollment and calibrated promotion remain open. Recovery checkpoint `74e70d06`. Local consent checkpoint `fecd58d4`.
 - Requirements: partial OLE-02/04/05/06/07/10/13 and selected learned OCI behavior.
 - Dependencies: packaged discovery, plus approved exact-parent, owner-review and recovery design.
 
@@ -29,8 +29,26 @@ The local checkpoint adds `enable-local-catalog-management`,
 `memorii-hermes --help`. Each subcommand takes `--hermes-home`. Four
 focused tests cover both persistent layouts, reopen, idempotence,
 installation mismatch and a concurrent pause winning stale enablement.
-Scoped Ruff and Pyright checks pass. These commands persist consent;
-existing learner actions still require the next runtime enforcement slice.
+The local factory consumes live consent for observation and recurrence.
+Management writes compare the same grant digest as part of the proposal
+and pointer write. They verify the host profile prerequisite at
+transaction admission, while the durable pause is synchronized by the
+grant CAS. Recovery finalizes a previously selected pointer. A prepared
+attempt bound to a superseded grant cannot select after re-enable.
+Deterministic tests cover pause before a pointer write, restart and
+re-enable, host authorization withdrawn before the approval write, and
+result retry on both sides of durable publication. Scoped Ruff and
+Pyright passed, along with 44 focused core and CLI checks.
+
+Independent review found that interrupted preparation could strand a
+proposal and that checking host authority only at admission missed
+withdrawal before the write. The implementation makes preparation an
+atomic insert and retries a validated proposal on renewed eligible
+submission. The write callback verifies host authority at transaction
+admission. The reviewer confirmed the remediation. Managed enrollment
+still needs a workspace-scoped issuance and withdrawal witness from
+trusted deployment setup. Existing source and task enrollment
+receipts do not confer this authority.
 
 Represent the exact immutable packaged parent and validate the whole
 effective catalog. Old overlays without sufficient evidence are unavailable

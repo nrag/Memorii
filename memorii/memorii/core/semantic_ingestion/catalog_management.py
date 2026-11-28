@@ -76,6 +76,15 @@ class CatalogManagementRepository:
         _, policy = self._read()
         return self._status(policy)
 
+    def enabled_write_fence(self, scope: AgentLocalCatalogAuthorityScope) -> RecordDigestPrecondition | None:
+        """Pin the live grant for a write in the same memory plane."""
+        if scope != self._scope:
+            return None
+        record, policy = self._read()
+        if record is None or policy is None or policy.state != "enabled":
+            return None
+        return RecordDigestPrecondition(memory_id=self._key, expected_digest=record_digest(record))
+
     def set_state(self, state: Literal["enabled", "paused"]) -> dict[str, object]:
         if state not in ("enabled", "paused"):
             raise ValueError("invalid catalog management state")
