@@ -134,6 +134,21 @@ try:
     retry = journey.drain()
     assert retry.returncode == 0 and retry.stdout == ""
     print("An unbound OpenClaw session could not submit to the Memorii task", flush=True)
+
+    journey.stop()
+    try:
+        for turn in range(17):
+            unavailable = run_agent("--session-key", session_key, "-m", f"sidecar outage turn {turn}")
+            assert unavailable.returncode == 0, unavailable.stderr
+    finally:
+        journey.start()
+    recovered_prompt = "continue when Memorii returns"
+    recovered = run_agent("--session-key", session_key, "-m", recovered_prompt)
+    assert recovered.returncode == 0, recovered.stderr
+    journey.prove_model_recall(second_prompt)
+    journey.prove_turn(recovered_prompt)
+    print("OpenClaw capture and recall recovered without restarting the gateway after 17 unavailable turns", flush=True)
+
     journey.revoke()
     prior_model_requests = len(journey.model_requests)
     revoked_prompt = "continue after revocation"

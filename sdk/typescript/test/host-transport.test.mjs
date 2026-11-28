@@ -162,13 +162,49 @@ test("OpenClaw refuses a forwarded turn even after a matching native write", asy
         operation_id: body.command.operation_id, producer_binding: proof.coordinate.client_namespace,
         request_digest: proof.coordinate.request_digest, state: "pending",
       }); break;
-      case "/v1/runtime/source/recall": reply(response, { messages: [{ text: "synthetic private content" }] }); break;
+      case "/v1/runtime/source/recall":
+        reply(response, { messages: [{ source_id: "source:test", text: "synthetic private content" }] }); break;
       default: reply(response, { status: "denied" });
     }
   });
   const result = await drive("openclaw", home, server, "forwarded");
   assert.equal(result.stdout.trim(), "1");
   assert.deepEqual(seen, ["/v1/runtime/state", "/v1/operations/prepare", "/v1/runtime/intake"]);
+});
+
+test("OpenClaw admits a new native turn after more than one queue of ended failures", async (context) => {
+  const home = await privateHome(context);
+  const captures = [];
+  let proof;
+  const server = await listen(context, async (request, response) => {
+    const body = await requestBody(request);
+    switch (request.url) {
+      case "/v1/runtime/state": reply(response, { task_version: 3 }); break;
+      case "/v1/operations/prepare": proof = operationProof(body); reply(response, proof); break;
+      case "/v1/runtime/intake": reply(response, {
+        operation_id: body.command.operation_id, producer_binding: proof.coordinate.client_namespace,
+        request_digest: proof.coordinate.request_digest, state: "pending",
+      }); break;
+      case "/v1/runtime/source/recall":
+        assert.equal(body.exclude_delivery_id, "recovered:user");
+        reply(response, { messages: [{ source_id: "source:test", text: "Authorized historical data" }] });
+        break;
+      case "/v1/runtime/source/capture":
+        captures.push(body.delivery_id);
+        if (body.delivery_id === "recovered:user") {
+          reply(response, { operation_id: "op:capture", status: "committed", source_admission: { task_id: "task:test" } });
+        } else {
+          response.writeHead(503, { "content-type": "application/json" });
+          response.end('{"code":"unavailable"}');
+        }
+        break;
+    }
+  });
+  const result = await drive("openclaw", home, server, "recover-after-outage");
+  assert.deepEqual(JSON.parse(result.stdout), { assembled: 2, failures: 17 });
+  assert.equal(captures.length, 18);
+  assert.equal(new Set(captures).size, 18);
+  assert.equal(captures.at(-1), "recovered:user");
 });
 
 async function privateHome(context) {

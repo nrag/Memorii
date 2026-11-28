@@ -71,6 +71,24 @@ if (action === "resume") {
   });
   await hooks.get("before_prompt_build")({ prompt: message.content }, context);
   console.log(result.messages.length);
+} else if (host === "openclaw" && action === "recover-after-outage") {
+  await hooks.get("session_start")({}, context);
+  for (let index = 0; index < 17; index++) {
+    const unavailable = { ...context, runId: `unavailable-${index}` };
+    await hooks.get("before_message_write")({
+      message: { ...message, idempotencyKey: `${unavailable.runId}:user` },
+    }, unavailable);
+    await hooks.get("before_prompt_build")({ prompt: message.content }, unavailable);
+    await hooks.get("agent_end")({}, unavailable);
+  }
+  const recovered = { ...context, runId: "recovered" };
+  await hooks.get("before_message_write")({ message: { ...message, idempotencyKey: "recovered:user" } }, recovered);
+  await hooks.get("before_model_resolve")({ prompt: message.content }, recovered);
+  const result = await contextEngine.assemble({
+    messages: [message], prompt: message.content, sessionId: context.sessionId, sessionKey: context.sessionKey,
+  });
+  await hooks.get("before_prompt_build")({ prompt: message.content }, recovered);
+  console.log(JSON.stringify({ assembled: result.messages.length, failures: warnings.length }));
 } else {
   await hooks.get("session_start")({}, context);
   const event = host === "pi" ? "message_end" : "before_message_write";

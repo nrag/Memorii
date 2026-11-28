@@ -171,9 +171,12 @@ export default definePluginEntry({
     });
 
     api.on("agent_end", (_event, context) => {
-      if (context?.sessionKey === SESSION_KEY && recallTurn?.deliveryId === `${context.runId}:user`) {
-        recallTurn = undefined;
-      }
+      if (context?.sessionKey !== SESSION_KEY || typeof context.runId !== "string" || !context.runId) return;
+      const deliveryId = `${context.runId}:user`;
+      if (recallTurn?.deliveryId === deliveryId) recallTurn = undefined;
+      // After the native run ends, only a durably admitted delivery can be
+      // recovered by the sidecar. A later run has its own native identity.
+      pendingMessages.delete(deliveryId);
     });
 
     api.on("before_prompt_build", async (_event, context) => {
