@@ -1,6 +1,6 @@
 # Discover the packaged catalog and recall a fact
 
-- Order: 1. Status: verification pending. Readiness baseline: `c0fa889a`; design commit `326a8b6c`; candidate is the commit introducing this implementation.
+- Order: 1. Status: verification pending. Readiness baseline: `c0fa889a`; design commit `326a8b6c`; pushed candidate `665319c0e44fcedd848c3f6ce8e8a5b2f19b3df1`.
 - Requirements: OCI-01–04 and partial OLE-08/09/10/14. Parent coverage is unchanged until revision-bound evidence is recorded.
 - Dependencies: existing packaged exact read closure, current host read opt-in and verified caller context.
 
@@ -82,6 +82,56 @@ recorded separately from the deterministic installed acceptance.
   code, with no P1/P2 findings. Final installed evidence and hosted gates
   are pending. The initial installed command started before the last
   fixture tripwire edit, so use the final hosted candidate for that check.
+- The candidate was pushed to `origin/codex/durable-delivery-implementation`.
+  [Candidate PR run](https://github.com/nrag/Memorii/actions/runs/46094271168)
+  started after the candidate push. The exact installed witness passed
+  locally from the same candidate (1 passed in 333.67 seconds, Python
+  3.12.16 with warnings as errors). It exercised all 56 descriptors,
+  bill and work recall through both installed tool hooks, absent subject,
+  stale and malformed pagination, scope withdrawal and no browse fact
+  query or durable read-time mutation. The existing optional Hermes ABI
+  stand-in was used for the deterministic test. An isolated archive build using Python
+  3.11 `pip wheel --no-deps --no-build-isolation` and an isolated install
+  successfully loaded all three advertised tool schemas from the wheel
+  under Python 3.12. This is a focused packaging check.
+- The other 145 tests in `test_scoped_context_production_binding.py` passed,
+  giving 146 passed across the two disjoint local commands. The legacy
+  uninitialized bridge and no-key captured-turn tool-list regressions
+  passed (2 tests). All used warnings as errors on Python 3.12.16.
+- The candidate wheel also passed the installed work and bill witness in
+  the local Linux Hermes rehearsal image with `--network none` (1 passed
+  in 277.17 seconds). An ephemeral copy of the test imported the real
+  `agent.memory_provider` instead of installing the optional ABI stand-in.
+  The test verified that Memorii imports came from the extracted candidate
+  wheel, with test provisioning in a disposable container. This verifies
+  the tool hooks through the real ABI. Agent tool-choice quality was not
+  measured.
+- A subsequent probe against the same wheel and Linux image reproduced
+  a stock-host routing defect. Hermes `agent/agent_init.py:1303` calls
+  `MemoryManager.add_provider` before `initialize_all`. The manager
+  populates `_tool_to_provider` from the initial schemas and does not
+  refresh it after initialize. In the probe, the provider emitted the
+  three configured schemas after registration, but
+  `manager.has_tool("memorii_browse_catalog")` was false. Stock init also
+  does not supply `catalog_read_opt_in`. The passing witness exercises
+  configured provider hooks and the real ABI, which do not establish stock
+  agent routing. This is a P2 for stock-host manual testing. Ask whether
+  stock operator setup and routing are required in this milestone.
+
+## Scope decision pending
+
+Stock Hermes support requires both registration through its actual memory
+manager and a trusted local operator opt-in configuration. Define and
+review that provisioning, authorization, and registration boundary if
+stock Hermes is in this milestone. If the trial is limited to configured
+bindings, record the supported registration order and prove a configured
+manager dispatch there. Existing scope, consent, and verified subject-ID
+requirements apply to either decision.
+
+## Package Smoke repair
+
+The [linked debugging WorkPlan](../debug-release-proof-members.plan.md)
+owns the stale release member hashes and their CI verification.
 
 ## Changed surfaces and gate ledger
 

@@ -3,7 +3,7 @@
 - Work ID: ontology-gap-implementation
 - Work type: implementation
 - Delivery fidelity: Level 2 for signed-in local work and household trials
-- Status: active
+- Status: blocked
 - Coordinator: Codex
 - Created: 2026-11-27
 - Last updated: 2026-11-27
@@ -73,7 +73,7 @@ the push range before publication.
 
 | Order | Packet | Observable completion | Status |
 | --- | --- | --- | --- |
-| 1 | [Packaged catalog discovery](milestones/packaged-catalog-discovery.plan.md) | Both installed bindings expose discover/clarify/recall without a key, starting with a bill due date. | Implemented, installed and hosted verification pending |
+| 1 | [Packaged catalog discovery](milestones/packaged-catalog-discovery.plan.md) | Both installed bindings expose discover/clarify/recall without a key, starting with a bill due date. | Configured binding verified locally. Stock Hermes scope decision and hosted gates pending. |
 | 2 | [Learned catalog review and recall](milestones/learned-catalog-review-and-recall.plan.md) | Owner decision and retry work. A selected exact-parent `mentors` version is inspectable and readable. | Queued behind 1 |
 | 3 | [Verified recurring gap](milestones/verified-recurring-gap.plan.md) | Two adapters yield one durable, scoped, explainable gap from independent evidence. | Queued behind 2 |
 | 4 | [Grounded relation creation](milestones/grounded-relation-creation.plan.md) | Observed and manual paths exercise a different relation through paired evaluation, owner selection and protected use. | Queued behind 3 |
@@ -95,14 +95,14 @@ recall boundary.
 | OLE-05 | 2, 4, 5 | Selected catalog and protected read/write | Preserve verified history, generic structured admission separately tracked | not started |
 | OLE-06 | 2, 4, 5 | Ordinary replay writer | Restart, grant withdrawal and idempotent retry | not started |
 | OLE-07 | 2, 3 | Recovery and scoped status | Reproduced publication defect, authority probe pending | not started |
-| OLE-08 | 1, 3, 4, 5 | Installed dual adapter bindings | Exact packaged reads already verified separately | not started |
-| OLE-09 | 1, representative regression | Packaged catalog | Full managed persona matrix separately tracked | not started |
-| OLE-10 | 1, 2, isolation regression | Protected read and user-context | Full home/H8 matrix separately tracked | not started |
+| OLE-08 | 1, 3, 4, 5 | Installed dual adapter bindings | Packaged tools locally verified through both bindings. Learning through both adapters still open. | in progress |
+| OLE-09 | 1, representative regression | Packaged catalog | Work-item and ambiguous project-owner reads passed locally. Full managed persona matrix separately tracked. | in progress |
+| OLE-10 | 1, 2, isolation regression | Protected read and user-context | Signed-in bill recall passed locally. Full home/H8 matrix separately tracked. | in progress |
 | OLE-11 | 3, 4, 5 | Observation and recurrence | Three lineages, two sessions, duplicate and rejection suppression | not started |
 | OLE-12 | 3, 4 | Local/host capability and semantic owner | Generic standalone fact authoring separately tracked, optional remote profile deferred | not started |
 | OLE-13 | 2, 4, 5 | Paired evaluator and owner review | Owner approval only in scope. Automatic confidence calibration deferred | not started |
-| OLE-14 | 1, 3, 4 | Both installed roots | Pending, manual review and no-key recall. Generic fact authoring separately tracked | not started |
-| OCI-01–04 | 1, 2 | Catalog and protected recall | Preserve exact packaged semantics and add selected learned witness | not started |
+| OLE-14 | 1, 3, 4 | Both installed roots | No-key packaged reads passed locally. Pending discovery and manual learned review still open. Generic fact authoring separately tracked. | in progress |
+| OCI-01–04 | 1, 2 | Catalog and protected recall | Packaged browsing and exact recall locally verified through configured bindings. Stock scope, learned witness and hosted verification pending. | in progress |
 
 ## Change impact and authority
 
@@ -182,5 +182,5 @@ type-check or CI failure is classified by this planning task.
 
 ## Next action
 
-Verify installed catalog discovery and recall on the packet 1 candidate
-with PR #126's current revision gates.
+Record whether stock Hermes operator setup and tool routing are in scope
+for packet 1, then close the corresponding installed path and its gates.
