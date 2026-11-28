@@ -35,6 +35,15 @@ actual postarchive suppression and grant denial. Reusable bearer material
 and owner capability are absent from the bundle. The 56 focused recovery,
 operator and backup tests passed.
 
+The next maintenance slice registers an exact signed mode owner. It retains
+pending custody before writing the local quarantined mode effect, seals the
+exact successor, and releases the root only after local activation. Tests
+interrupt both after local effect and after sealing, prove idempotent retry,
+and verify that ordinary mode changes and held partition openers deny.
+The 57-test focused suite passed. This slice requires the exact retained
+publication and has an internal entrypoint. Ordinary data-head drift and
+other production authority writers still need closed composition.
+
 Installed replacement recovery still needs the complete authoritative live
 deny-state writers and codecs, independently configured custody and isolation,
 historical signer rotation, a bounded streaming journal reader, and process

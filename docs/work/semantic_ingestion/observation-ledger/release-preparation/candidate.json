@@ -1,6 +1,6 @@
 {
   "files": {
-    ".github/workflows/pr-gates.yml": "79e1f2038b1db0ff3ffab6eb0614df6cf96befeaa43f08eebb78491d2c120402",
+    ".github/workflows/pr-gates.yml": "28f7802a210417611c1a28be31d8b2491becee1a9386b9595639f7ba49c31878",
     "acceptance/__init__.py": "adbb769f003c08d46e26ff769de38c76f15e3e09b1bee8cb53e3c3886f8aa91d",
     "acceptance/arithmetic.py": "0958fd3aff008ba15b309bd7f4e037bb4e139672f85b51807bfacc562a0528cd",
     "acceptance/authority_cli.py": "4132ae05df5601c4f0a0098b177291c3dc9b722d9250620de4247bbb763eb135",
@@ -1915,14 +1915,14 @@
     "memorii/memorii/core/harness_state/service.py": "a4463bc0f3897b8012f183b5518f27714484cc92d09e55c05b0f2301072f1939",
     "memorii/memorii/core/harness_state/sidecar.py": "edf3922cd3d7281af7e0f882fb045939cd476116e1acf48614a62dff211eba64",
     "memorii/memorii/core/memory_evolution/revocation_tombstones.py": "5f0c4b6bff0803f46a551697fdf51fc6246dc69727752531a16aa63ff25ac77c",
-    "memorii/memorii/core/persistence/contracts.py": "0bc8681e007ca861c64982f3543a5d92d4a960826c93a0cc5b8ccbd78ab33d8b",
+    "memorii/memorii/core/persistence/contracts.py": "0d410f8d5d5bd011c8dee52f87611346ef2aa189547bf98e31a05738ccdb7c9c",
     "memorii/memorii/core/persistence/runtime_checkpoint.py": "877d871fd495191cccff156bbbe563723bc0c1fae5271377a37a5a6cf932abc4",
     "memorii/memorii/core/persistence/runtime_repository.py": "9caf27d24812a84c0403482c997620b728a28de58dbfe2943368569e37cc4bd2",
     "memorii/memorii/core/semantic_ingestion/structured_fact_read.py": "e8b911f854549767ee0d673782c4006daa4009eaf6ba52433506d97580381b17",
-    "memorii/memorii/core/storage_administration/operator.py": "addd1b5484665e89faa0177ed3f42af54bfdb4ed78fea69205f13a9d0469e189",
+    "memorii/memorii/core/storage_administration/operator.py": "6ec39b6cb129c3418fea8574b3f603f14dd037222868b75e6499cf6c50871f49",
     "memorii/memorii/core/storage_administration/operator_governance.py": "04f252328873be5690998f7d436add9370ea2eface771f6160b0460f93e4aeea",
     "memorii/memorii/core/storage_administration/revoked_identity_view.py": "7106d12c5fc21d9a73294aa784b22a620a5d504c0dc822a98ab1a4afce5cdabb",
-    "memorii/memorii/core/storage_administration/service.py": "73c0692623d1dc1bf8633ae17069dde186cb7cbf6db63c59e35e1409d5d9ce1b",
+    "memorii/memorii/core/storage_administration/service.py": "6005a19204065b5797d10ff86d15759e0b508ea882d7b7f435a1c54fede30f46",
     "memorii/memorii/core/storage_administration/suppression_journal.py": "0c2cb33f207a0029150126ccf0e67e17bf4260fbfa8b475e2434081cf4d8267f",
     "memorii/memorii/stores/sqlite/control.py": "2035591d8f86905b07324f1e6527dfafbef955daebb099b4327a43dd9be98e1f",
     "memorii/memorii/tools/runtime_operator.py": "ed37523ab471338907342c56a1cc1c430d4094c954b78b003aecd78206617333",
@@ -1960,12 +1960,13 @@
     "memorii/memorii/core/storage_administration/control_recovery_export.py": "3915be7861efbcfaaf37d06cd438f5f77a2c649bb5eb6f5fb3b0619f7eba5b88",
     "memorii/memorii/core/storage_administration/managed_spool_selection.py": "cd27d2e28b728e8a7d43f32305faa32cfa645bd3ae61732965e3d2431c9d10e6",
     "memorii/memorii/core/storage_administration/operational_status.py": "0ae504f91530ae7747cd9223375284e06e6e8a539c3ae268911d954bc207b345",
-    "memorii/memorii/core/storage_administration/read_grant_recovery.py": "1be3cfdb014c0cfb8323008c4fbc9e5566cd3b6b25dfd853c9b03625bd153ec0",
+    "memorii/memorii/core/storage_administration/read_grant_recovery.py": "72df2934e7acbfc5c4907dc24272784ebc47e8d13d5757c880ed2f915a80156d",
     "memorii/memorii/core/storage_administration/recovery_authority.py": "2d6440ce16995b319aae76ff603a2913b76cfbb73dd9e2cb72122bfda0ca6503",
     "memorii/memorii/core/storage_administration/recovery_bundle.py": "6ce6f560e9f135666f5c20c6f0cf8cd1a346ee871fd7d0a4d3f65fb48ad6b86d",
     "memorii/memorii/core/storage_administration/replacement_restore.py": "ab5b411b6c2cfe02839a6afdfdde20e38f6dc9ef01cdf95e93906bb4f8f98608",
     "memorii/memorii/stores/sqlite/catalog_selection.py": "8528868638e5ef30dbc3b3358f42f331844755195ecb0316728587bee7809b97",
-    "memorii/memorii/stores/sqlite/native_receipts.py": "507179c3090ec47f7315db3a2d7030625b1c300e0819efd1dcbe8146029e8634"
+    "memorii/memorii/stores/sqlite/native_receipts.py": "507179c3090ec47f7315db3a2d7030625b1c300e0819efd1dcbe8146029e8634",
+    "memorii/memorii/core/storage_administration/mode_recovery.py": "48707166ad87d17dd4631a30e32bea03cda8227b5fe58541377b3f930381d6e5"
   },
   "head": "c62def7f9cf9a0c965bba856002dc8c1dec9ff9f",
   "scope": "offline deployment and target preparation only; no CAS, M5 or whole branch approval"

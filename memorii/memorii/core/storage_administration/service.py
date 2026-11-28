@@ -72,6 +72,9 @@ from memorii.stores.sqlite.private_storage import (
 _CONTROL_FORMAT_VERSION = 1
 DEFAULT_SIGNER_KEY_ID = "installation-control"
 REPLACEMENT_RECOVERY_QUARANTINE = "replacement recovery pending independent seal"
+MODE_RECOVERY_QUARANTINE = "mode recovery pending independent seal"
+MODE_RECOVERY_DIRECTORY = "mode-recovery"
+MODE_RECOVERY_PENDING = "pending.json"
 _UNINITIALIZED = "uninitialized"
 _KNOWN_LAYOUT = frozenset(
     {"control", "partition", ".init.lock", ".publication.lock"}
@@ -354,6 +357,8 @@ class StorageAdministrationService:
         try:
             current = self._control.read_control_state()
             if current is not None:
+                if current.quarantined_reason == MODE_RECOVERY_QUARANTINE:
+                    raise InstallationQuarantinedError(MODE_RECOVERY_QUARANTINE)
                 change = self._control.read_generation_change(f"{current.installation_id}:default-partition")
                 if change is not None and change.phase == "prepared":
                     raise InstallationIntegrityError("partition generation change requires recovery")
@@ -428,6 +433,7 @@ class StorageAdministrationService:
         return state
 
     def _require_operational(self) -> InstallationControlState:
+        self._require_replacement_activation()
         state = self._control_state()
         if state.quarantined_reason is not None:
             raise InstallationQuarantinedError(state.quarantined_reason)
@@ -438,6 +444,21 @@ class StorageAdministrationService:
         # access closed as well as normal verified factory and serving reads.
         if self._replacement_activation_pending:
             raise InstallationQuarantinedError(REPLACEMENT_RECOVERY_QUARANTINE)
+        if self.mode_recovery_pending():
+            raise InstallationQuarantinedError(MODE_RECOVERY_QUARANTINE)
+
+    def mode_recovery_pending(self, state: InstallationControlState | None = None) -> bool:
+        """Check the pre-effect guard and the persisted local quarantine."""
+        if state is not None and state.quarantined_reason == MODE_RECOVERY_QUARANTINE:
+            return True
+        mode_recovery = self._root / "control" / MODE_RECOVERY_DIRECTORY
+        if mode_recovery.exists() or mode_recovery.is_symlink():
+            pending = mode_recovery / MODE_RECOVERY_PENDING
+            if pending.exists() or pending.is_symlink():
+                return True
+            current = self._control.read_control_state() if state is None else state
+            return current is not None and current.quarantined_reason == MODE_RECOVERY_QUARANTINE
+        return False
 
     def _repository_id(self) -> str:
         return f"{self._control_state().installation_id}:default-partition"
@@ -1424,8 +1445,9 @@ class StorageAdministrationService:
         operation: str,
         before_digest: str | None = None,
         after_digest: str | None = None,
+        position: tuple[int, str] | None = None,
     ) -> InstallationControlJournalEntry:
-        revision, prior_digest = self._control.next_journal_position()
+        revision, prior_digest = self._control.next_journal_position() if position is None else position
         unsigned = InstallationControlJournalEntry(
             revision=revision,
             prior_digest=prior_digest,

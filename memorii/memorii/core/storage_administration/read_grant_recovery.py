@@ -13,7 +13,12 @@ from typing import Annotated, Literal, NamedTuple
 from pydantic import BaseModel, ConfigDict, Field
 
 from memorii.core.harness_state.grant_registry import GrantDenial, GrantDenialSnapshot, GrantEpochRegistry
-from memorii.core.persistence.contracts import InstallationControlState, RuntimePublicationState, canonical_json_digest
+from memorii.core.persistence.contracts import (
+    InstallationControlJournalEntry,
+    InstallationControlState,
+    RuntimePublicationState,
+    canonical_json_digest,
+)
 from memorii.core.storage_administration.control_recovery_export import (
     export_control_recovery,
     read_recovery_suppressions,
@@ -40,6 +45,7 @@ from memorii.core.storage_administration.recovery_authority import (
 from memorii.core.storage_administration.recovery_bundle import open_recovery_bundle, seal_recovery_bundle
 from memorii.core.storage_administration.service import StorageAdministrationService
 from memorii.core.storage_administration.suppression_journal import SuppressionRecord
+from memorii.stores.sqlite.control import ControlDatabase
 from memorii.stores.sqlite.private_storage import ensure_private_directory, read_private_file, write_private_file
 
 _READ_GRANTS = "read-grants"
@@ -61,6 +67,13 @@ class _Watermark(NamedTuple):
             "journal": self.position,
             "suppressions": [[record.model_dump(mode="json") for record in owner] for owner in self.suppressions],
         })
+
+
+class _RetainedGrantProof(NamedTuple):
+    anchor: InstallationRecoveryAnchor
+    denial_digest: str
+    suppression_digests: tuple[str, str]
+    control: InstallationControlState
 
 
 class ReadGrantRecoveryRevocation(BaseModel):
@@ -133,11 +146,15 @@ class ReadGrantRecoveryOwner:
 
     def _retain_bundle(
         self, workspace: Path, pinned: sqlite3.Connection, watermark: _Watermark, denials: GrantDenialSnapshot,
+        *, activation: InstallationControlJournalEntry | None = None,
     ) -> InstallationRecoveryAnchor:
         snapshot = workspace / "control.sqlite3"
         _sqlite_backup(pinned, snapshot)
-        _snapshot_digest(snapshot)
         state, publication, _, suppressions = watermark
+        if activation is not None:
+            with ControlDatabase(snapshot, journal_verifier=self._service._verify_journal_signature) as control:
+                control.write_control_state(state, activation)
+        _snapshot_digest(snapshot)
         manifest, paths = export_control_recovery(
             self._service, snapshot=snapshot, state=state, publication=publication, output=workspace,
             custody_id=self._custody._identity[0], suppressions=suppressions, grant_denials=denials,
@@ -167,17 +184,19 @@ class ReadGrantRecoveryOwner:
                 existing = custody._read()
                 if not isinstance(existing.payload, SealedRecoveryHead):
                     raise RecoveryAuthorityError("needs_reconciliation: independent authority is pending")
-                retained, proof, suppressions = self._retained_grant_proof(workspace, existing)
+                retained = self._retained_grant_proof(workspace, existing)
                 with service._publication_fence(), registry.recovery_lease():
                     registry.require_recovery_custody(custody._identity[0])
-                    self._require_retained_watermark(retained, suppressions, self._maintenance_watermark(capability))
-                    if registry.recovery_snapshot().digest() != proof:
+                    self._require_retained_watermark(retained, self._maintenance_watermark(capability))
+                    if registry.recovery_snapshot().digest() != retained.denial_digest:
                         raise RecoveryAuthorityError("needs_reconciliation: live read grants differ from retained state")
                 return existing
             with service.verified_operation_context(), registry.recovery_lease():
                 watermark = self._maintenance_watermark(capability)
                 denials = registry.recovery_snapshot()
                 registry.register_recovery_custody(custody._identity[0])
+                self._register_mode_owner(watermark)
+                watermark = self._maintenance_watermark(capability)
                 pinned = self._pin_control(stack)
             anchor = self._retain_bundle(workspace, pinned, watermark, denials)
             head = self._sign(SealedRecoveryHead(anchor=anchor, outcome="registered"))
@@ -186,6 +205,25 @@ class ReadGrantRecoveryOwner:
                     raise RecoveryAuthorityError("conflict: authority changed during read-grant recovery registration")
                 custody._register_locked(head)
             return head
+
+    def _register_mode_owner(self, watermark: _Watermark) -> None:
+        service = self._service
+        state, publication = watermark.state, watermark.publication
+        binding = canonical_json_digest({
+            "installation_id": state.installation_id, "repository_id": publication.repository_id,
+            "custody_id": self._custody._identity[0], "signer_fingerprint": hashlib.sha256(self._public_key).hexdigest(),
+        })
+        registrations = [
+            entry for entry in service._control.read_journal() if entry.operation == "mode_recovery_registered"
+        ]
+        if registrations:
+            if len(registrations) != 1 or registrations[0].after_digest != binding:
+                raise RecoveryAuthorityError("conflict: installation mode is registered to another recovery custodian")
+            return
+        service._control.write_control_state(
+            state.model_copy(update={"control_revision": state.control_revision + 1}),
+            service._journal_entry(operation="mode_recovery_registered", before_digest=watermark.digest(), after_digest=binding),
+        )
 
     def _make_plan(
         self, predecessor: InstallationRecoveryHead, before: GrantDenialSnapshot, watermark: _Watermark,
@@ -201,7 +239,7 @@ class ReadGrantRecoveryOwner:
 
     def _retained_grant_proof(
         self, workspace: Path, head: InstallationRecoveryHead,
-    ) -> tuple[InstallationRecoveryAnchor, str, tuple[str, str]]:
+    ) -> _RetainedGrantProof:
         anchor = head.payload.anchor if isinstance(head.payload, SealedRecoveryHead) else head.payload.prior_anchor
         if hashlib.sha256(self._public_key).hexdigest() != anchor.signer_fingerprint:
             raise RecoveryAuthorityError("denied: historical signer continuity is not established")
@@ -213,21 +251,35 @@ class ReadGrantRecoveryOwner:
         grant_member = members.get((_READ_GRANTS, "deny_state"))
         active = members.get(("active", "suppression"))
         archived = members.get(("archived", "suppression"))
-        if grant_member is None or active is None or archived is None or any(
-            member.schema_version != 1 for member in (grant_member, active, archived)
+        snapshot = members.get(("storage-owner", "control_snapshot"))
+        if grant_member is None or active is None or archived is None or snapshot is None or any(
+            member.schema_version != 1 for member in (grant_member, active, archived, snapshot)
         ):
             raise RecoveryAuthorityError("unsupported_configuration: retained authority lacks read-grant denial state")
-        return anchor, grant_member.source_coordinate, (active.digest, archived.digest)
+        position = manifest.members.index(snapshot)
+        with ControlDatabase(
+            workspace / "previous" / f"member-{position:03d}.snapshot", journal_verifier=self._service._verify_journal_signature,
+        ) as control:
+            state = control.read_control_state()
+            if (
+                state is None or state.installation_id != anchor.installation_id
+                or state.quarantined_reason is not None or state.eligibility_epoch != anchor.eligibility_epoch
+                or state.control_revision != anchor.control_revision
+            ):
+                raise RecoveryAuthorityError("integrity_error: retained control state differs from independent anchor")
+        return _RetainedGrantProof(anchor, grant_member.source_coordinate, (active.digest, archived.digest), state)
 
     @staticmethod
     def _require_retained_watermark(
-        retained: InstallationRecoveryAnchor, suppressions: tuple[str, str], watermark: _Watermark,
+        retained: _RetainedGrantProof, watermark: _Watermark,
     ) -> None:
+        anchor = retained.anchor
         if (
-            (retained.control_revision, retained.journal_ordinal + 1, retained.journal_tip)
+            (anchor.control_revision, anchor.journal_ordinal + 1, anchor.journal_tip)
             != (watermark.state.control_revision, *watermark.position)
-            or retained.publication_digest != watermark.publication.payload_digest()
-            or suppressions != recovery_suppression_digests(watermark.suppressions)
+            or anchor.publication_digest != watermark.publication.payload_digest()
+            or retained.suppression_digests != recovery_suppression_digests(watermark.suppressions)
+            or retained.control != watermark.state
         ):
             raise RecoveryAuthorityError("needs_reconciliation: live authority differs from retained control and suppressions")
 
@@ -244,11 +296,12 @@ class ReadGrantRecoveryOwner:
         ):
             workspace = Path(scratch)
             current = custody._read()
-            retained, proof, suppressions = self._retained_grant_proof(workspace, current)
+            retained = self._retained_grant_proof(workspace, current)
+            proof = retained.denial_digest
             with service._publication_fence(), registry.recovery_lease():
                 watermark = self._maintenance_watermark(capability)
                 registry.require_recovery_custody(custody._identity[0])
-                self._require_retained_watermark(retained, suppressions, watermark)
+                self._require_retained_watermark(retained, watermark)
                 operations = self._control / "read-grant-recovery"
                 ensure_private_directory(operations)
                 operation_path = operations / f"{hashlib.sha256(operation_id.encode()).hexdigest()}.json"

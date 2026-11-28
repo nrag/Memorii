@@ -470,6 +470,7 @@ jobs:
           tests/integration/test_partition_generation_selection.py
           tests/integration/test_older_restore_generation.py
           tests/integration/test_managed_replacement_restore.py
+          tests/integration/test_installation_mode_recovery.py
           tests/integration/test_shared_sqlite_provider_paths.py
           tests/integration/test_shared_sqlite_semantic_owners.py
           tests/integration/test_memory_plane_migration_recovery.py

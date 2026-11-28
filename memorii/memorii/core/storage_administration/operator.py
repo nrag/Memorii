@@ -32,6 +32,7 @@ from memorii.core.storage_administration.operational_status import (
     installed_artifact_status,
 )
 from memorii.core.storage_administration.service import (
+    MODE_RECOVERY_DIRECTORY,
     REPLACEMENT_RECOVERY_QUARANTINE,
     InstallationIntegrityError,
     InstallationQuarantinedError,
@@ -139,7 +140,7 @@ class StorageAdministrationOperator:
                 pending_epoch_increments=state.pending_epoch_increments,
                 quarantined=state.quarantined_reason is not None,
             )
-            if state.quarantined_reason == REPLACEMENT_RECOVERY_QUARANTINE:
+            if state.quarantined_reason == REPLACEMENT_RECOVERY_QUARANTINE or service.mode_recovery_pending(state):
                 return initial.model_copy(update={"readiness": "pending_recovery", "custody_state": "pending"})
             if state.quarantined_reason is not None:
                 return initial.model_copy(update={"readiness": "quarantined"})
@@ -242,6 +243,12 @@ class StorageAdministrationOperator:
         # The transition takes the publication fence so an in-flight
         # publisher cannot commit across the mode change boundary.
         with service._publication_fence():
+            recovery = service.installation_root / "control" / MODE_RECOVERY_DIRECTORY
+            if recovery.exists() or recovery.is_symlink() or any(
+                entry.operation in ("mode_recovery_registered", "mode_recovery_applied", "mode_recovery_activated")
+                for entry in service._control.read_journal()
+            ):
+                raise OperatorError("unavailable: registered installation mode changes require independent custody")
             service.resolve_pending_publication()
             state = service._control_state()
             if state.quarantined_reason is not None:
