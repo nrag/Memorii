@@ -365,19 +365,21 @@ def test_schema2_catalog_read_releases_verified_persisted_version_after_jsonl_re
     assert tuple(item.record_id for item in result.mandatory_items) == (projection.memory_id,)
 
 
-@pytest.mark.parametrize("version_mode", ("missing", "substituted"))
-def test_schema2_catalog_read_denies_missing_or_substituted_persisted_version_after_jsonl_reopen(
+@pytest.mark.parametrize("version_mode", ("missing", "substituted", "foreign_agent"))
+def test_schema2_catalog_read_denies_invalid_version_or_foreign_projection_after_jsonl_reopen(
     tmp_path, version_mode: str,
 ) -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     projection, binding, states, pin, version, read_authority = _schema2_structured_projection_records()
-    records = [projection, binding, *states, pin]
     if version_mode == "substituted":
         version = version.model_copy(update={"content": {"catalog_version": {
             **version.content["catalog_version"], "version_digest": "0" * 64,
         }}})
+    elif version_mode == "foreign_agent":
+        projection = projection.model_copy(update={"agent_id": "peer"})
     elif version_mode != "missing":
         raise AssertionError("test version mode is invalid")
+    records = [projection, binding, *states, pin]
     if version_mode != "missing":
         records.append(version)
     store = JsonlMemoryPlaneStore(tmp_path / version_mode)
@@ -391,7 +393,10 @@ def test_schema2_catalog_read_denies_missing_or_substituted_persisted_version_af
     result = ProviderMemoryService(memory_plane=reopened, scoped_read_authority=authority).retrieve_context(
         _request(), opaque_host_ingress=handle,
     )
-    assert result.status is ScopedContextStatus.DENIED
+    expected = (
+        ScopedContextStatus.MANDATORY_UNRESOLVED if version_mode == "foreign_agent" else ScopedContextStatus.DENIED
+    )
+    assert result.status is expected
     assert result.mandatory_items == ()
     assert result.optional_items == ()
     assert result.omissions == ()

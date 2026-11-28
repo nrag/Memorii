@@ -5,10 +5,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from hashlib import sha256
+from typing import TYPE_CHECKING, Literal
 
 from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedHostIngress
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.integrations.catalog_read_binding import CatalogReadBinding
+
+if TYPE_CHECKING:
+    from memorii.core.semantic_ingestion.learned_relation import OntologyCandidateReceipt, OntologyCandidateReview
 
 
 @dataclass(frozen=True)
@@ -132,7 +136,7 @@ class HermesProviderRuntimeBinding:
     absent_author_id: str = "memorii.hermes.author.absent.v1"
     revoke_structured_submission_grant: Callable[[str], None] | None = None
     activate_learned_candidate: Callable[[str], object] | None = None
-    approve_learned_candidate: Callable[[str], object] | None = None
+    approve_learned_candidate: Callable[[str], OntologyCandidateReceipt] | None = None
     select_prior_learned_version: Callable[[str], object] | None = None
     learned_ontology_runtime: object | None = None
     learned_ontology_status: Callable[[], object] | None = None
@@ -143,6 +147,10 @@ class HermesProviderRuntimeBinding:
         [HermesAuthenticatedOriginReceipt, str, str],
         HermesAuthenticatedForwardingReceipt,
     ] | None = None
+    review_learned_candidate: Callable[[str], OntologyCandidateReview] | None = None
+    reject_learned_candidate: Callable[[str], Literal["rejected"]] | None = None
+    prepare_learned_rebase: Callable[[], OntologyCandidateReceipt] | None = None
+    retry_learned_catalog_refresh: Callable[[], bool] | None = None
 
 
 __all__ = [

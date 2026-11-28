@@ -1494,10 +1494,12 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
     """The replay control must retain the binding selected for the replay."""
     from memorii.core.semantic_ingestion.learned_relation import (
         AgentLocalCatalogScope,
+        LearnedRelationError,
         OntologyChangeProposal,
         OntologyEvidenceReference,
         PairedEvaluation,
         RelationDeclaration,
+        learned_catalog_version_memory_id,
     )
     from memorii.core.semantic_ingestion.structured_fact_read import StructuredFactReadRequest
     from memorii.integrations.hermes_factory import (
@@ -1505,6 +1507,7 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
         build_local_level2_runtime_binding,
     )
     from memorii.integrations.hermes_local_authority import (
+        LocalLevel2AuthorityError,
         authorize_local_level2,
         authorize_local_structured_tool,
     )
@@ -1564,7 +1567,11 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
         proposal_id=candidate.proposal_id,
         principal_id=scope.principal_id, agent_id=scope.agent_id,
     )
-    first_activation = provider.activate_learned_candidate(candidate.proposal_id)
+    # Recreate a prior writer that recorded an exact parent on the
+    # proposal but left the immutable selected version parentless.
+    with monkeypatch.context() as earlier_release:
+        earlier_release.setattr(learned, "_base_parent_locator", None)
+        legacy_activation = provider.activate_learned_candidate(candidate.proposal_id)
     status = provider.lookup_learned_ontology_status()
     assert status["replay_outcomes"] == {"committed": 1}
     records = tuple(provider._provider._service._memory_plane.list_records())
@@ -1592,6 +1599,25 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
     )
     assert first_read.status == "ok"
     assert len(first_read.items) == 1
+    legacy_version_id = learned_catalog_version_memory_id(legacy_activation.target_version_digest)
+    legacy_record = next(record for record in records if record.memory_id == legacy_version_id)
+    assert legacy_record.content["version"]["parent_version_digest"] is None
+    rebased = provider.prepare_learned_rebase()
+    assert rebased.proposal_id != candidate.proposal_id
+    assert rebased.lifecycle == "awaiting_decision"
+    assert set(rebased.model_dump()) == {"proposal_id", "lifecycle"}
+    rebase_review = provider.review_learned_candidate(rebased.proposal_id)
+    assert rebase_review.evaluation is not None and rebase_review.evaluation.passes
+    assert len(rebase_review.evaluation.case_outcomes) == 8
+    assert provider.prepare_learned_rebase() == rebased
+    assert provider.lookup_learned_ontology_status()["active_version_digest"] == legacy_activation.target_version_digest
+    provider.approve_learned_candidate(rebased.proposal_id)
+    first_activation = provider.activate_learned_candidate(rebased.proposal_id)
+    assert first_activation.target_version_digest != legacy_activation.target_version_digest
+    assert provider.lookup_learned_ontology_status()["replay_outcomes"] == {"committed": 1}
+    assert provider._provider._service._memory_plane.get_record(legacy_version_id) == legacy_record
+    plane = provider._provider._service._memory_plane
+    assert tuple(plane.get_record(claim.memory_id) for claim in claims) == claims
     # Select a later generation through the same public candidate lifecycle,
     # then roll back through the installed owner root. Rollback moves only the
     # pointer; the first fact keeps its original pinned catalog authority.
@@ -1623,7 +1649,7 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
     assert successor_activation.status == "selected"
     before_rollback = provider.lookup_learned_ontology_status()
     assert before_rollback["active_version_digest"] == successor_activation.target_version_digest
-    assert before_rollback["candidate_count"] == 2
+    assert before_rollback["candidate_count"] == 3
     rollback = provider.select_prior_learned_version(first_activation.target_version_digest)
     assert rollback.status == "selected"
     after_rollback = provider.lookup_learned_ontology_status()
@@ -1648,6 +1674,22 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
 
     def current_opt_in() -> CatalogReadOptIn:
         return active_opt_in
+
+    def verify_scope_denials(host) -> None:
+        nonlocal active_opt_in
+        for invalid_opt_in in (
+            replace(read_opt_in, grant_references=tuple(ref for ref in selected_grants if ref.catalog_scope != scope)),
+            replace(read_opt_in, user_id="raw:user:another-account"),
+            replace(read_opt_in, agent_id="profile:peer"),
+        ):
+            active_opt_in = invalid_opt_in
+            assert host.handle_read_tool_call(
+                "memorii_inspect_catalog_relation", {"kind": "name", "name": "mentors"},
+            ) == {"status": "denied"}
+            assert host.handle_read_tool_call("memorii_diagnose_structured_recall", {
+                "kind": "exact", "predicate_id": "mentors", "subject_entity_id": subject_entity_id,
+            }) == {"status": "denied"}
+        active_opt_in = read_opt_in
 
     def verify_catalog_and_recall(host) -> None:
         assert host.handle_read_tool_call("memorii_browse_catalog", {})["status"] == "listed"
@@ -1734,13 +1776,7 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
     )
     assert reopened_read == first_read
     verify_catalog_and_recall(reopened)
-    active_opt_in = replace(read_opt_in, grant_references=tuple(
-        ref for ref in selected_grants if ref.catalog_scope != scope
-    ))
-    assert reopened.inspect_catalog_relation({"kind": "name", "name": "mentors"}).status == "denied"
-    assert reopened.diagnose_structured_recall({
-        "kind": "exact", "predicate_id": "mentors", "subject_entity_id": subject_entity_id,
-    }).status == "denied"
+    verify_scope_denials(reopened)
     reopened.shutdown()
 
     active_opt_in = read_opt_in
@@ -1752,15 +1788,46 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
     ))
     try:
         verify_catalog_and_recall(generic)
-        active_opt_in = replace(read_opt_in, grant_references=tuple(
-            ref for ref in selected_grants if ref.catalog_scope != scope
-        ))
-        assert generic.inspect_catalog_relation({"kind": "name", "name": "mentors"}).status == "denied"
-        assert generic.diagnose_structured_recall({
-            "kind": "exact", "predicate_id": "mentors", "subject_entity_id": subject_entity_id,
-        }).status == "denied"
+        verify_scope_denials(generic)
     finally:
         generic.close()
+
+    # Scope isolation uses the independent catalog read binding. The peer
+    # opens without the installation's optional structured writer sidecar.
+    (tmp_path / "memorii" / "local-structured-tool.json").unlink()
+    peer_context = {
+        "hermes_home": tmp_path, "user_id": "raw:user:one",
+        "agent_identity": "profile:peer", "platform": "cli", "agent_context": "primary",
+        "agent_workspace": "hermes", "catalog_read_opt_in": current_opt_in,
+    }
+    peer_hermes = bridge_module.MemoriiHermesMemoryProvider()
+    peer_hermes.initialize("session:replay", **peer_context)
+    try:
+        verify_scope_denials(peer_hermes)
+        assert peer_hermes.inspect_catalog_relation({"kind": "name", "name": "mentors"}).status == "denied"
+        with pytest.raises(LearnedRelationError, match="owner authorization"):
+            peer_hermes.review_learned_candidate(rebased.proposal_id)
+    finally:
+        peer_hermes.shutdown()
+    peer_generic = build_local_level2_authenticated_source_runtime(SimpleNamespace(
+        storage_root=tmp_path / "memorii", session_id="session:replay", parent_session_id=None,
+        **peer_context,
+    ))
+    try:
+        verify_scope_denials(peer_generic)
+        assert peer_generic.inspect_catalog_relation({"kind": "name", "name": "mentors"}).status == "denied"
+        with pytest.raises(LearnedRelationError, match="owner authorization"):
+            peer_generic.approve_learned_candidate(rebased.proposal_id)
+    finally:
+        peer_generic.close()
+    foreign = peer_context | {"user_id": "raw:user:another-account", "agent_identity": "profile:primary"}
+    with pytest.raises(LocalLevel2AuthorityError, match="already bound"):
+        bridge_module.MemoriiHermesMemoryProvider().initialize("session:replay", **foreign)
+    with pytest.raises(LocalLevel2AuthorityError, match="already bound"):
+        build_local_level2_authenticated_source_runtime(SimpleNamespace(
+            storage_root=tmp_path / "memorii", session_id="session:replay", parent_session_id=None,
+            **foreign,
+        ))
 
 
 @pytest.mark.parametrize("outcome", ["deleted", "revoked"])
@@ -1961,6 +2028,11 @@ def test_installed_learned_overlay_preserves_default_entity_relation_lifecycle(
     with monkeypatch.context() as earlier_release:
         earlier_release.setattr(learned, "_base_parent_locator", None)
         activation = provider.activate_learned_candidate(candidate.proposal_id)
+    plane = provider._provider._service._memory_plane
+    before_failed_rebase = plane.read_snapshot()
+    with pytest.raises(LearnedRelationError, match="exact packaged parent"):
+        provider.prepare_learned_rebase()
+    assert plane.read_snapshot() == before_failed_rebase
     row = next(
         row for row in load_default_catalog_acceptance_corpus().rows
         if row.relation_id == "project_owned_by"

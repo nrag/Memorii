@@ -1003,6 +1003,7 @@ def test_status_is_scope_bounded_and_exposes_only_closed_operational_values() ->
         "active_catalog_digest": runtime._require_version(selected.target_version_digest).catalog_digest,
         "active_version_digest": selected.target_version_digest,
         "activation_sequence": 1,
+        "selected_attempt_id": selected.attempt_id,
         "candidate_count": 1,
         "candidate_ids": (_proposal_from_parent(
             parent_catalog_digest="a" * 64,

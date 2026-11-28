@@ -35,8 +35,12 @@ from memorii.core.memory_evolution.ingestion_contracts import (
 )
 from memorii.core.memory_evolution.models import EntityType
 from memorii.core.memory_plane import MemoryPlaneService
-from memorii.core.memory_plane.store import RecordDigestPrecondition
-from memorii.core.persistence.factory import select_persistent_memory_plane
+from memorii.core.memory_plane.store import (
+    MemoryPlaneCorruptionError,
+    MemoryPlaneRevisionConflictError,
+    RecordDigestPrecondition,
+)
+from memorii.core.persistence.factory import ManagedPartitionError, select_persistent_memory_plane
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.learned_replay import LearnedRetainedSourceReplayService
 from memorii.core.scoped_context.authority import InProcessScopedReadAuthority, ScopedNamespaceGrantRow
@@ -84,6 +88,8 @@ from memorii.core.semantic_ingestion.learned_relation import (
     LearnedRelationCandidateService,
     LearnedRelationRuntime,
     OntologyActivation,
+    OntologyCandidateReceipt,
+    OntologyCandidateReview,
     OntologyCatalogVersion,
     OntologyChangeProposal,
     PairedEvaluationCaseOutcome,
@@ -91,6 +97,7 @@ from memorii.core.semantic_ingestion.learned_relation import (
     learned_catalog_pointer_memory_id,
 )
 from memorii.core.semantic_ingestion.project_assertions_profile import load_project_assertions_bundle
+from memorii.core.storage_administration.service import StorageAdministrationError
 from memorii.core.user_context.preference_delegations import PreferenceDelegationRepository
 from memorii.core.user_context.preferences import (
     PreferenceAccessPolicy,
@@ -242,10 +249,6 @@ def _isolated_mentors_evaluation_cases(
         # directory gives each arm its own memory plane, grant records, pin
         # records, writer state, and protected-reader snapshot.
         isolated_context = SimpleNamespace(**(vars(context) | {"storage_root": path}))
-        if not candidate:
-            return _build_local_level2_runtime_binding(
-                isolated_context, _enable_ontology_observer=False,
-            )
         # The private root derives its account identity through ordinary
         # factory composition, then reopens the same isolated store with the
         # exact inert bundle authority.  Nothing is selected or activated.
@@ -262,8 +265,20 @@ def _isolated_mentors_evaluation_cases(
                 or identity_runtime._authenticated_agent_id != scope.agent_id
             ):
                 raise ValueError("paired evaluation proposal is outside the isolated owner scope")
-        finally:
+            if proposal.rebase is not None:
+                service = identity_root.service
+                parent, _ = service._catalog_bundle_locator.locate_selected(
+                    service._memory_plane.read_snapshot()[1],
+                    scope=CatalogAuthorityScope(schema_version=1, kind="base"),
+                )
+                if parent.version.version_digest != proposal.parent_catalog_digest:
+                    raise ValueError("paired evaluation cannot execute the exact rebase parent")
+        except ValueError:
             identity_runtime.close()
+            raise
+        if not candidate:
+            return identity_root
+        identity_runtime.close()
         bundle = PairedEvaluationCatalogBundle.from_proposal(proposal=proposal)
         authority = PairedEvaluationAuthority.create(
             proposal_id=proposal.proposal_id,
@@ -494,6 +509,11 @@ def build_local_level2_authenticated_source_runtime(context: object) -> object:
                 authenticated_author_id=binding.absent_author_id, now=datetime.now(UTC),
             ),
             close=completed_runtime.close,
+            review_candidate=binding.review_learned_candidate,
+            reject_candidate=binding.reject_learned_candidate,
+            select_prior_version=binding.select_prior_learned_version,
+            prepare_rebase=binding.prepare_learned_rebase,
+            retry_refresh=binding.retry_learned_catalog_refresh,
         ),
     )
 
@@ -696,7 +716,8 @@ def _build_local_level2_runtime_binding(
         ),
         delegation_repository=delegation_repository,
     )
-    if structured_resolver is not None and _provision_structured_authority:
+    selected_learned_on_open = memory_plane.get_record(learned_catalog_pointer_memory_id(learned_scope)) is not None
+    if structured_resolver is not None and _provision_structured_authority and not selected_learned_on_open:
         # The local tool cannot be advertised until its complete, factory-bound
         # authority tuple is durably active in the semantic writer's store.
         service.provision_structured_submission_authority(
@@ -864,6 +885,7 @@ def _build_local_level2_runtime_binding(
         ),
         management_fence_for_scope=current_catalog_management_fence,
         validate_management_host=validate_catalog_management_host,
+        bound_scope=learned_scope,
         base_parent_locator=service._catalog_bundle_locator,
     )
     paired_evaluator = FrozenMentorsPairedEvaluator()
@@ -908,7 +930,8 @@ def _build_local_level2_runtime_binding(
         authenticated_agent_id=agent_id,
         authenticated_author_id=operator_id,
         structured_authority_request=(
-            structured_resolver.issued_authority_request() if structured_resolver is not None else None
+            structured_resolver.issued_authority_request()
+            if structured_resolver is not None and not selected_learned_on_open else None
         ),
         structured_tool_is_current=(
             (lambda: authority_is_current() and _structured_tool_is_current(hermes_home))
@@ -928,37 +951,98 @@ def _build_local_level2_runtime_binding(
             )
         ),
     ))
-    # Startup owns the two selection crash windows.  Recovery only retries
+    refreshed_attempt_id: str | None = None
+
+    def require_current_catalog_management() -> None:
+        if current_catalog_management_fence(learned_scope) is None:
+            raise CatalogManagementUnavailable("local catalog management is unavailable")
+
+    def refresh_learned_catalog() -> bool:
+        nonlocal refreshed_attempt_id
+        pointer = learned_runtime._load_pointer(learned_scope)
+        if pointer is None or structured_resolver is None:
+            return False
+        refreshed_attempt_id = None
+        try:
+            require_current_catalog_management()
+            authority = structured_resolver.issued_authority()
+            service.provision_structured_submission_authority(authority=authority)
+            request = structured_resolver.issued_authority_request()
+        except (OSError, ValueError, ManagedPartitionError, MemoryPlaneCorruptionError,
+                MemoryPlaneRevisionConflictError, StorageAdministrationError):
+            return False
+        if learned_runtime._load_pointer(learned_scope) != pointer:
+            return False
+        completed_runtime._structured_authority_request = request
+        refreshed_attempt_id = pointer.selected_attempt_id
+        return True
+
+    def retry_learned_catalog_refresh() -> bool:
+        require_current_catalog_management()
+        return refresh_learned_catalog()
+
+    def learned_ontology_status() -> dict[str, object]:
+        validate_catalog_management_host()
+        result = {
+            **learned_runtime.status(learned_scope),
+            "catalog_management": catalog_management.status(),
+        }
+        selected_attempt_id = result.get("selected_attempt_id")
+        if isinstance(selected_attempt_id, str):
+            result["refresh_pending"] = (
+                selected_attempt_id != refreshed_attempt_id or not _structured_tool_is_current(hermes_home)
+            )
+        return result
+
+    # Startup owns the two selection crash windows. Recovery retries only
     # immutable retained evidence through the same installed writer root.
     learned_runtime.recover(learned_scope)
+    if _provision_structured_authority:
+        refresh_learned_catalog()
 
     def activate_learned_candidate(proposal_id: str) -> OntologyActivation:
+        require_current_catalog_management()
         activation = learned_runtime.activate_candidate(
             proposal_id=proposal_id, principal_id=operator_id, agent_id=agent_id,
         )
-        if structured_resolver is None:
-            raise LocalLevel2AuthorityError("local structured tool authority is unavailable")
-        completed_runtime._structured_authority_request = structured_resolver.issued_authority_request()
+        refresh_learned_catalog()
         return activation
 
-    def approve_learned_candidate(proposal_id: str) -> OntologyChangeProposal:
-        return learned_runtime.approve_candidate(
+    def approve_learned_candidate(proposal_id: str) -> OntologyCandidateReceipt:
+        approved = learned_runtime.approve_candidate(
             proposal_id=proposal_id, principal_id=operator_id, agent_id=agent_id,
         )
+        return OntologyCandidateReceipt(proposal_id=approved.proposal_id, lifecycle=approved.lifecycle)
+
+    def review_learned_candidate(proposal_id: str) -> OntologyCandidateReview:
+        return learned_runtime.review_candidate(
+            proposal_id=proposal_id, principal_id=operator_id, agent_id=agent_id,
+            suppression_view=revoked_view.sample_snapshot,
+        )
+
+    def reject_learned_candidate(proposal_id: str) -> Literal["rejected"]:
+        learned_runtime.reject_candidate(
+            proposal_id=proposal_id, principal_id=operator_id, agent_id=agent_id,
+        )
+        return "rejected"
+
+    def prepare_learned_rebase() -> OntologyCandidateReceipt:
+        candidate = learned_runtime.prepare_rebase(
+            catalog_scope=learned_scope, principal_id=operator_id, agent_id=agent_id,
+            evaluator=paired_evaluator,
+        )
+        return OntologyCandidateReceipt(proposal_id=candidate.proposal_id, lifecycle=candidate.lifecycle)
 
     def select_prior_learned_version(target_version_digest: str) -> OntologyActivation:
         """Select a prior version through the installed owner authority."""
+        require_current_catalog_management()
         activation = learned_runtime.select_prior_version(
             catalog_scope=learned_scope,
             target_version_digest=target_version_digest,
             principal_id=operator_id,
             agent_id=agent_id,
         )
-        if structured_resolver is None:
-            raise LocalLevel2AuthorityError("local structured tool authority is unavailable")
-        authority = structured_resolver.issued_authority()
-        service.provision_structured_submission_authority(authority=authority)
-        completed_runtime._structured_authority_request = structured_resolver.issued_authority_request()
+        refresh_learned_catalog()
         return activation
 
     raw_user_id = getattr(context, "user_id", None)
@@ -1043,12 +1127,13 @@ def _build_local_level2_runtime_binding(
         approve_learned_candidate=approve_learned_candidate,
         select_prior_learned_version=select_prior_learned_version,
         learned_ontology_runtime=learned_runtime,
-        learned_ontology_status=lambda: {
-            **learned_runtime.status(learned_scope),
-            "catalog_management": catalog_management.status(),
-        },
+        learned_ontology_status=learned_ontology_status,
         issue_origin_receipt=ingress_resolver.issue_origin_receipt,
         issue_forwarding_receipt=ingress_resolver.issue_forwarding_receipt,
+        review_learned_candidate=review_learned_candidate,
+        reject_learned_candidate=reject_learned_candidate,
+        prepare_learned_rebase=prepare_learned_rebase,
+        retry_learned_catalog_refresh=retry_learned_catalog_refresh,
     )
 
 

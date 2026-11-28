@@ -156,6 +156,71 @@ content digest, then verifies that an early parentless overlay remains
 unavailable through the combined workflow after reopen and retains
 authorized direct current and historical reads.
 
+## Owner operations and rebase checkpoint
+
+Baseline `f2b1e25a` on `codex/durable-delivery-implementation`, Level 2.
+The sole owner operations worker maps existing approval and refresh into
+both installed bindings. The coordinator takes over the shared runtime
+after those core edits freeze and owns the rebase and scope witnesses.
+The independent rebase mapper confirmed that the existing selection
+operations and grant CAS suffice when the proposal binds the exact
+superseded pointer and the independently verified packaged version.
+
+The rebase port accepts no caller-supplied parent or evaluation. It
+requires the selected parentless version, its selected attempt and its
+original active proposal to agree. The packaged selector must resolve
+the exact version named in that proposal. A matching content digest is
+insufficient. A fresh versioned proposal keys on the prior pointer and
+exact package, repeats paired evaluation, and requires owner approval
+and activation. The new version retains the exact semantic parent.
+The prior overlay remains historical and the pointer CAS does not replay
+or rewrite its facts.
+
+The acceptance matrix uses the no-key learned work witness through
+both installed bindings and the earlier household bill baseline. It
+checks owner evidence and terminal rejection across reopen, durable
+selection under ordinary refresh failure, exact-parent rebase and
+idempotent prepare, same-scope rollback, unchanged historical claims,
+and denial for ambiguous legacy parent, stale or withdrawn authority,
+and cross-account or peer-agent read configurations. Existing sealed
+unbound and seed-bound read fixtures check carrier-specific denial.
+
+Owner review returns the closed declaration, current retained evidence,
+paired outcomes, verified parent and selected version, and recorded
+decision. The owner approval and rebase responses are typed receipts
+with the proposal ID and lifecycle. Receipt callers can obtain evidence
+through the separately guarded review call. A candidate whose historical
+parent cannot be verified reports unavailable parent status without a
+version ID. Terminal rejection survives reopen.
+
+Independent review found three issues and confirmed the fixes. The
+receipt removes raw evidence from action responses, startup preserves
+the durable selection even while grant publication remains unavailable,
+and status derives selected version and attempt from the same pointer.
+`remaining_validated_p1_p2: []` for the reviewed owner/rebase paths.
+The owner fixture reopens the generic binding while publication still
+fails, reports the same attempt as pending, and retries without changing
+the selection identity.
+
+Local Python 3.12.16 passed 74 focused owner, learner, catalog and
+scope tests after correcting the seed-bound foreign-agent expectation:
+the required reference is unresolved and returns no rows or identifiers.
+The separate sealed genuinely unbound restart proof passed with the
+scoped suite. The legacy overlay fixture also passed, rejecting an
+ambiguous parent before changing any record. The peer read-only witness
+uses the separate catalog opt-in and deliberately opens without the
+optional structured writer sidecar. Fresh peer writer enrollment
+against an already active observation ledger is outside this read proof.
+The 19 local Package Smoke bootstrap/release tools, scoped Ruff, Pyright
+and identity hygiene passed. All 1,968 source-manifest hashes match.
+
+A published unavailable evaluation still needs the durable retry path
+planned in the linked design. Recovering a partially published result
+works already. Retrying unavailable isolated execution requires
+persisting and revalidating the exact registered executor, parent,
+corpus and budget. Keep this M2 criterion open and leave calibrated
+automatic promotion deferred as designed.
+
 ## Acceptance and verification
 
 - The local owner enables once and reopens or pauses the same agent

@@ -15,7 +15,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from agent.memory_provider import MemoryProvider  # pyright: ignore[reportMissingImports]
 
@@ -45,6 +45,9 @@ from memorii.integrations.hermes_runtime_binding import (
     HermesOriginReceipt,
     HermesProviderRuntimeBinding,
 )
+
+if TYPE_CHECKING:
+    from memorii.core.semantic_ingestion.learned_relation import OntologyCandidateReceipt, OntologyCandidateReview
 
 _SERVICE_FACTORY_ENTRY_POINT_GROUP = "memorii.hermes.provider_service"
 _FIRST_PARTY_FACTORY_VALUE = "memorii.integrations.hermes_factory:build_local_level2_runtime_binding"
@@ -97,7 +100,11 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         self._absent_author_id = "memorii.hermes.author.absent.v1"
         self._revoke_structured_submission_grant: Callable[[str], None] | None = None
         self._activate_learned_candidate: Callable[[str], object] | None = None
-        self._approve_learned_candidate: Callable[[str], object] | None = None
+        self._approve_learned_candidate: Callable[[str], OntologyCandidateReceipt] | None = None
+        self._review_learned_candidate: Callable[[str], OntologyCandidateReview] | None = None
+        self._reject_learned_candidate: Callable[[str], Literal["rejected"]] | None = None
+        self._prepare_learned_rebase: Callable[[], OntologyCandidateReceipt] | None = None
+        self._retry_learned_catalog_refresh: Callable[[], bool] | None = None
         self._select_prior_learned_version: Callable[[str], object] | None = None
         self._learned_ontology_runtime: object | None = None
         self._learned_ontology_status: Callable[[], object] | None = None
@@ -180,6 +187,10 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         self._revoke_structured_submission_grant = binding.revoke_structured_submission_grant
         self._activate_learned_candidate = binding.activate_learned_candidate
         self._approve_learned_candidate = binding.approve_learned_candidate
+        self._review_learned_candidate = binding.review_learned_candidate
+        self._reject_learned_candidate = binding.reject_learned_candidate
+        self._prepare_learned_rebase = binding.prepare_learned_rebase
+        self._retry_learned_catalog_refresh = binding.retry_learned_catalog_refresh
         self._select_prior_learned_version = binding.select_prior_learned_version
         self._learned_ontology_runtime = binding.learned_ontology_runtime
         self._learned_ontology_status = binding.learned_ontology_status
@@ -215,12 +226,36 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
             raise RuntimeError("learned ontology activation is unavailable")
         return action(proposal_id)
 
-    def approve_learned_candidate(self, proposal_id: str) -> object:
+    def approve_learned_candidate(self, proposal_id: str) -> OntologyCandidateReceipt:
         """Record the signed-in owner's candidate decision."""
         action = self._approve_learned_candidate
         if action is None:
             raise RuntimeError("learned ontology approval is unavailable")
         return action(proposal_id)
+
+    def review_learned_candidate(self, proposal_id: str) -> OntologyCandidateReview:
+        action = self._review_learned_candidate
+        if action is None:
+            raise RuntimeError("learned ontology review is unavailable")
+        return action(proposal_id)
+
+    def reject_learned_candidate(self, proposal_id: str) -> Literal["rejected"]:
+        action = self._reject_learned_candidate
+        if action is None:
+            raise RuntimeError("learned ontology rejection is unavailable")
+        return action(proposal_id)
+
+    def prepare_learned_rebase(self) -> OntologyCandidateReceipt:
+        action = self._prepare_learned_rebase
+        if action is None:
+            raise RuntimeError("learned ontology rebase is unavailable")
+        return action()
+
+    def retry_learned_catalog_refresh(self) -> bool:
+        action = self._retry_learned_catalog_refresh
+        if action is None:
+            raise RuntimeError("learned ontology refresh is unavailable")
+        return action()
 
     def select_prior_learned_version(self, target_version_digest: str) -> object:
         """Roll back through the factory-bound owner and refresh reader authority."""
@@ -548,6 +583,15 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
             self._catalog_read = None
             self._absent_author_id = "memorii.hermes.author.absent.v1"
             self._revoke_structured_submission_grant = None
+            self._activate_learned_candidate = None
+            self._approve_learned_candidate = None
+            self._review_learned_candidate = None
+            self._reject_learned_candidate = None
+            self._prepare_learned_rebase = None
+            self._retry_learned_catalog_refresh = None
+            self._select_prior_learned_version = None
+            self._learned_ontology_runtime = None
+            self._learned_ontology_status = None
             self._origin_receipts.clear()
             self._pending_forwarding_receipts.clear()
             self._issue_origin_receipt = None

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -35,6 +36,9 @@ from memorii.integrations.catalog_read_binding import (
     catalog_read_tool_schemas,
     dispatch_catalog_read,
 )
+
+if TYPE_CHECKING:
+    from memorii.core.semantic_ingestion.learned_relation import OntologyCandidateReceipt, OntologyCandidateReview
 
 
 class AuthenticatedSourceSubmission(BaseModel):
@@ -89,15 +93,19 @@ class AuthenticatedSourceAdapter:
 class AuthenticatedSourceLearnedOntologyBinding:
     """Host-issued operations for the core-owned learned ontology journey.
 
-    The source adapter receives no scope, proposal, catalog, or evaluator
-    coordinate.  Those values stay behind the verified composition boundary.
+    The source adapter never supplies the owner scope, parent or evaluator.
     """
 
     activate_candidate: Callable[[str], object]
-    approve_candidate: Callable[[str], object]
+    approve_candidate: Callable[[str], OntologyCandidateReceipt]
     status: Callable[[], object]
     read_structured_facts: Callable[[StructuredFactReadRequest], StructuredFactReadResponse]
     close: Callable[[], None] | None = None
+    review_candidate: Callable[[str], OntologyCandidateReview] | None = None
+    reject_candidate: Callable[[str], Literal["rejected"]] | None = None
+    select_prior_version: Callable[[str], object] | None = None
+    prepare_rebase: Callable[[], OntologyCandidateReceipt] | None = None
+    retry_refresh: Callable[[], bool] | None = None
 
 
 class AuthenticatedSourceRuntime:
@@ -131,11 +139,36 @@ class AuthenticatedSourceRuntime:
             raise RuntimeError("learned ontology activation is unavailable")
         return self._learned_ontology.activate_candidate(proposal_id)
 
-    def approve_learned_candidate(self, proposal_id: str) -> object:
+    def approve_learned_candidate(self, proposal_id: str) -> OntologyCandidateReceipt:
         """Record the signed-in owner's decision before activation."""
         if self._learned_ontology is None:
             raise RuntimeError("learned ontology approval is unavailable")
         return self._learned_ontology.approve_candidate(proposal_id)
+
+    def review_learned_candidate(self, proposal_id: str) -> OntologyCandidateReview:
+        if self._learned_ontology is None or self._learned_ontology.review_candidate is None:
+            raise RuntimeError("learned ontology review is unavailable")
+        return self._learned_ontology.review_candidate(proposal_id)
+
+    def reject_learned_candidate(self, proposal_id: str) -> Literal["rejected"]:
+        if self._learned_ontology is None or self._learned_ontology.reject_candidate is None:
+            raise RuntimeError("learned ontology rejection is unavailable")
+        return self._learned_ontology.reject_candidate(proposal_id)
+
+    def select_prior_learned_version(self, target_version_digest: str) -> object:
+        if self._learned_ontology is None or self._learned_ontology.select_prior_version is None:
+            raise RuntimeError("learned ontology rollback is unavailable")
+        return self._learned_ontology.select_prior_version(target_version_digest)
+
+    def prepare_learned_rebase(self) -> OntologyCandidateReceipt:
+        if self._learned_ontology is None or self._learned_ontology.prepare_rebase is None:
+            raise RuntimeError("learned ontology rebase is unavailable")
+        return self._learned_ontology.prepare_rebase()
+
+    def retry_learned_catalog_refresh(self) -> bool:
+        if self._learned_ontology is None or self._learned_ontology.retry_refresh is None:
+            raise RuntimeError("learned ontology refresh is unavailable")
+        return self._learned_ontology.retry_refresh()
 
     def lookup_learned_ontology_status(self) -> object:
         """Return source-text-free learner status from the installed root."""
@@ -176,8 +209,11 @@ class AuthenticatedSourceRuntime:
 
     def close(self) -> None:
         """Release resources owned by the installed learned runtime."""
-        if self._learned_ontology is not None and self._learned_ontology.close is not None:
-            self._learned_ontology.close()
+        learned = self._learned_ontology
+        self._learned_ontology = None
+        self._catalog_read = None
+        if learned is not None and learned.close is not None:
+            learned.close()
 
 
 def build_authenticated_source_runtime(
