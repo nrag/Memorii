@@ -13,7 +13,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from datetime import UTC, datetime
 from hashlib import sha256
-from typing import Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -28,6 +28,10 @@ from memorii.core.memory_plane.store import (
 from memorii.core.semantic_ingestion.catalog_authority import (
     AgentLocalCatalogAuthorityScope,
     AuthenticatedPrincipalAgent,
+    CatalogAuthorityError,
+    CatalogAuthorityScope,
+    catalog_selection_pointer_memory_id,
+    catalog_version_memory_id,
 )
 from memorii.core.semantic_ingestion.contracts import contract_digest
 from memorii.core.semantic_ingestion.coverage_observation import CoverageObservationRepository
@@ -38,6 +42,9 @@ from memorii.core.semantic_ingestion.coverage_recurrence import (
     recurrence_owner_scope_digest,
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
+
+if TYPE_CHECKING:
+    from memorii.core.memory_evolution.writer_admission import CatalogBundleLocator
 
 _DIGEST = r"^[0-9a-f]{64}$"
 _RELATION_ID = "mentors"
@@ -292,6 +299,11 @@ class OntologyCatalogVersion(BaseModel):
     version_digest: str = Field(pattern=_DIGEST)
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @property
+    def predicate_ids(self) -> tuple[str, ...]:
+        """Expose the verified relation inventory to shared catalog readers."""
+        return self.relation_ids
 
     @classmethod
     def create(cls, *, catalog_scope: AgentLocalCatalogScope, catalog_digest: str,
@@ -687,13 +699,38 @@ class LearnedRelationRuntime:
                      [AgentLocalCatalogScope], RecordDigestPrecondition | None
                  ] | None = None,
                  validate_management_host: Callable[[], None] | None = None,
-                 bound_scope: AgentLocalCatalogScope | None = None) -> None:
+                 bound_scope: AgentLocalCatalogScope | None = None,
+                 base_parent_locator: CatalogBundleLocator | None = None) -> None:
         self._plane = memory_plane
         self._replay_writer = replay_writer
         self._policy_for_scope = policy_for_scope
         self._management_fence_for_scope = management_fence_for_scope
         self._validate_management_host = validate_management_host
         self._bound_scope = bound_scope
+        self._base_parent_locator = base_parent_locator
+
+    def _verified_base_parent(self, expected_digest: str) -> tuple[RecordDigestPrecondition, ...]:
+        if self._base_parent_locator is None:
+            return ()
+        base = CatalogAuthorityScope(schema_version=1, kind="base")
+        _, records = self._plane.read_snapshot()
+        try:
+            parent, _ = self._base_parent_locator.locate_selected(records, scope=base)
+        except CatalogAuthorityError as exc:
+            raise LearnedRelationError("the selected packaged parent is unavailable") from exc
+        if (
+            isinstance(parent.version, OntologyCatalogVersion)
+            or parent.version.version_digest != expected_digest
+            or tuple(sorted((*parent.version.predicate_ids, _RELATION_ID))) != learned_overlay_relation_ids()
+        ):
+            raise LearnedRelationError("candidate does not name the exact packaged parent")
+        guards = []
+        for memory_id in (catalog_selection_pointer_memory_id(base), catalog_version_memory_id(expected_digest)):
+            parent_record = _record_for(records, memory_id)
+            if parent_record is None:
+                raise LearnedRelationError("the selected packaged parent is unavailable")
+            guards.append(RecordDigestPrecondition(memory_id=memory_id, expected_digest=record_digest(parent_record)))
+        return tuple(guards)
 
     def _require_bound_scope(self, scope: AgentLocalCatalogScope) -> None:
         if self._bound_scope is not None and self._bound_scope != scope:
@@ -819,11 +856,15 @@ class LearnedRelationRuntime:
             conflicted = proposal.model_copy(update={"lifecycle": "activation_conflict"})
             self._replace_proposal(proposal, conflicted, *fence)
             raise LearnedRelationError("candidate parent is no longer selected")
+        parent_digest = pointer.selected_version_digest if pointer is not None else None
+        if pointer is None and self._base_parent_locator is not None:
+            self._verified_base_parent(proposal.parent_catalog_digest)
+            parent_digest = proposal.parent_catalog_digest
         version = OntologyCatalogVersion.create(
             catalog_scope=proposal.catalog_scope,
             catalog_digest=_digest(b"memorii.learned-ontology.catalog-content.v1", {
                 "parent": proposal.parent_catalog_digest, "relation": proposal.relation.model_dump(mode="json")}),
-            parent_version_digest=(pointer.selected_version_digest if pointer else None),
+            parent_version_digest=parent_digest,
             relation_ids=learned_overlay_relation_ids(),
             introduced_proposal_id=proposal.proposal_id,
         )
@@ -1018,9 +1059,15 @@ class LearnedRelationRuntime:
             if expected_pointer is None or persisted is None
             else RecordDigestPrecondition(memory_id=record.memory_id, expected_digest=record_digest(persisted))
         )
+        parent_guards = ()
+        if expected_pointer is None and self._base_parent_locator is not None:
+            version = self._require_version(attempt.target_version_digest)
+            if version.parent_version_digest is None:
+                raise LearnedRelationError("candidate lacks an exact packaged parent")
+            parent_guards = self._verified_base_parent(version.parent_version_digest)
         try:
             self._plane.conditionally_write_records(
-                (record,), preconditions=(condition, *management_fence),
+                (record,), preconditions=(condition, *management_fence, *parent_guards),
                 transaction_precondition=self._validate_management_host if management_fence else None,
             )
         except MemoryPlaneRevisionConflictError as exc:

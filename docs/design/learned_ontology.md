@@ -772,16 +772,16 @@ projection applies.
 
 The standalone historical four-relation artifact has no selectable capability
 closure and is not an inspection source. The default package's own
-`reports_to` row is covered by its verified package. Inspection initially
-serves the verified seed and default package only. An early learned catalog
-without an exact parent closure returns `unavailable` for both inspection and
-exact diagnosis. Diagnosis can use a verified learned closure as specified
-in Section 12. Serving learned descriptions in inspection also needs a
-separately verified projection of its added declarations, their authority
-and whether any description relies on suppressed evidence. Until that path
-is defined and configured, inspection returns `unavailable` for a selected
-learned catalog. No inactive, paired-evaluation or broader catalog can be
-substituted. Historical fact recall follows its existing contract.
+`reports_to` row is covered by its verified package. The installed learned
+projection inherits descriptors from its exact verified packaged parent and
+adds the closed `mentors(Person, Person)` declaration. Its forward set
+descriptor uses fixed runtime-owned text and carries no proposal prose or
+source evidence. Future evidence-dependent descriptors need a separately
+verified projection and suppression checks. An early learned catalog without
+an exact parent closure returns `unavailable` for inspection and exact
+diagnosis. Diagnosis uses the verified closure as specified in Section 12.
+No inactive, paired-evaluation or broader catalog can be substituted.
+Historical fact recall follows its existing contract.
 
 ### Read binding and verification
 

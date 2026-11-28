@@ -27,3 +27,12 @@ including externally invoked factory entrypoints. Refresh exact callsites,
 arguments, and caller counts for every changed trigger, and attach runtime
 path proof to its milestone rather than counting test construction as a
 production caller.
+
+## Learned-read checkpoint at `e49b6445`
+
+| Trigger | Verified owner chain | Baseline gap and discriminator |
+| --- | --- | --- |
+| Hermes browse, exact inspect, and diagnose | `hermes_memory_provider.py` dispatches registered public tool names to the first-party factory's `CatalogReadBinding`. The binding derives authenticated local installation, principal, agent, session, fact scope and current catalog visibility references. | Stock opt-in supplies base visibility. The learned witness uses explicit trusted host configuration with the exact child reference. |
+| Authenticated-source browse, exact inspect, and diagnose | `build_local_level2_authenticated_source_runtime` forwards the same read binding to `AuthenticatedSourceRuntime.handle_read_tool_call`. The source envelope carries no read or catalog-owner grant. | Same verified protected workflow and exact grant check through the independent adapter after reopen. |
+| Selected closure and fact release | `ProviderMemoryService` delegates to `CatalogReadWorkflow`. Metadata uses the selected pointer, immutable version and attempt from the linearized metadata lookup. Diagnosis adds the authorized semantic snapshot and release check. | Both callers reached a deliberate learned-catalog denial. Existing typed legacy recall does not establish the exact read workflow. Positive proof requires an exact immutable packaged parent and a vetted projection of the closed `mentors` declaration. Negative proof preserves denial without that parent or a valid grant. |
+| Installed selection and durable parent proof | The first-party factory binds owner activation to `LearnedRelationRuntime.activate_candidate`. Retained observation evidence already carries the selected version identity from provider ingestion or completed-turn observation. | First activation had no persisted exact parent version. The new installed write must verify that parent and condition selection on its current authority. Legacy rows must retain their recorded meaning. |

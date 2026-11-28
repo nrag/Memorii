@@ -27,6 +27,7 @@ from memorii.core.semantic_ingestion.default_catalog_corpus import (
     load_default_catalog_acceptance_corpus,
 )
 from memorii.core.semantic_ingestion.default_catalog_package import load_packaged_default_catalog_release
+from memorii.core.semantic_ingestion.learned_relation import OntologyCatalogVersion
 from memorii.core.semantic_ingestion.structured_fact_read import StructuredFactReadItem
 
 _PredicateId = Annotated[str, Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$")]
@@ -338,4 +339,26 @@ def project_catalog_relations(bundle: VerifiedCatalogBundle) -> tuple[CatalogRel
     ids = tuple(relation.predicate_id for relation in ordered)
     if ids != tuple(sorted(set(ids))) or ids != getattr(bundle.version, "predicate_ids", ()):
         raise CatalogAuthorityError("catalog declaration projection is incomplete")
+    return ordered
+
+
+def project_learned_catalog_relations(
+    *, version: OntologyCatalogVersion, packaged_parent: VerifiedCatalogBundle,
+) -> tuple[CatalogRelationDescriptor, ...]:
+    """Project the closed installed learned grammar without candidate prose."""
+    mentors = CatalogRelationDescriptor(
+        predicate_id="mentors",
+        label="mentors",
+        lookup_aliases=(),
+        definition="A person mentors another person.",
+        subject_type_ids=("Person",),
+        object_endpoint=_EntityEndpoint(type_ids=("Person",)),
+        read_direction=CatalogReadDirection.FORWARD_ONLY,
+        read_form=CatalogReadForm.SET,
+    )
+    ordered = tuple(
+        sorted((*project_catalog_relations(packaged_parent), mentors), key=lambda relation: relation.predicate_id)
+    )
+    if tuple(relation.predicate_id for relation in ordered) != version.relation_ids:
+        raise CatalogAuthorityError("learned declaration projection is incomplete")
     return ordered

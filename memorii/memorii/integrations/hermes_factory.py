@@ -864,6 +864,7 @@ def _build_local_level2_runtime_binding(
         ),
         management_fence_for_scope=current_catalog_management_fence,
         validate_management_host=validate_catalog_management_host,
+        base_parent_locator=service._catalog_bundle_locator,
     )
     paired_evaluator = FrozenMentorsPairedEvaluator()
     candidate_service = LearnedRelationCandidateService(

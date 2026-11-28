@@ -33,12 +33,14 @@ from memorii.core.semantic_ingestion.catalog_inspection import (
     CatalogBrowseResponse,
     CatalogReadDirection,
     CatalogReadStatus,
+    CatalogRelationDescriptor,
     CatalogRelationInspectionRequest,
     CatalogRelationInspectionResponse,
     StructuredRecallDiagnosisRequest,
     StructuredRecallDiagnosisResponse,
     normalize_relation_name,
     project_catalog_relations,
+    project_learned_catalog_relations,
 )
 from memorii.core.semantic_ingestion.learned_relation import (
     CatalogPointer,
@@ -130,6 +132,42 @@ def _selected_metadata_records(
     selection = CatalogSelectionPointer.model_validate(base_pointer.content.get("catalog_selection_pointer"))
     version = snapshot.record(catalog_version_memory_id(selection.selected_version_digest))
     return (base_pointer,) if version is None else (base_pointer, version)
+
+
+def _project_selected_learned_relations(
+    version: OntologyCatalogVersion,
+    *,
+    record_at: Callable[[str], CanonicalMemoryRecord | None],
+    locator: CatalogBundleLocator,
+    authenticated: AuthenticatedPrincipalAgent,
+) -> tuple[CatalogRelationDescriptor, ...]:
+    """Follow immutable learned parents to one exact package-indexed base."""
+    visited = {version.version_digest}
+    digest = version.parent_version_digest
+    while digest is not None and digest not in visited:
+        visited.add(digest)
+        learned = record_at(learned_catalog_version_memory_id(digest))
+        packaged = record_at(catalog_version_memory_id(digest))
+        if learned is not None and packaged is None:
+            parent = locator.locate_historical(
+                (learned,), version_id=f"ontology-catalog:{digest}", version_digest=digest,
+                scope=version.catalog_scope, authenticated=authenticated,
+            ).version
+            if not isinstance(parent, OntologyCatalogVersion) or parent.relation_ids != version.relation_ids:
+                break
+            digest = parent.parent_version_digest
+            continue
+        if learned is None and packaged is not None:
+            serialized = packaged.content.get("catalog_version")
+            version_id = serialized.get("version_id") if isinstance(serialized, dict) else None
+            if isinstance(version_id, str):
+                parent_bundle = locator.locate_historical(
+                    (packaged,), version_id=version_id, version_digest=digest,
+                    scope=CatalogAuthorityScope(schema_version=1, kind="base"),
+                )
+                return project_learned_catalog_relations(version=version, packaged_parent=parent_bundle)
+        break
+    raise CatalogAuthorityError("the exact learned catalog parent is unavailable")
 
 
 @overload
@@ -280,18 +318,22 @@ def read_catalog_workflow(
         try:
             selected_records = records if metadata is None else _selected_metadata_records(metadata, scope)
             bundle, _ = locator.locate_selected(selected_records, scope=scope, authenticated=authenticated)
-            # Early learned versions identify a parent catalog digest, which
-            # cannot distinguish the seed from the packaged child version.
             if isinstance(bundle.version, OntologyCatalogVersion):
-                return finish(CatalogReadStatus.UNAVAILABLE)
+                descriptors = _project_selected_learned_relations(
+                    bundle.version,
+                    record_at=by_id.get if metadata is None else metadata.record,
+                    locator=locator,
+                    authenticated=authenticated,
+                )
+            else:
+                descriptors = project_catalog_relations(bundle)
             if (
                 exact is not None and exact.expected_catalog_version_digest is not None
                 and exact.expected_catalog_version_digest != bundle.version.version_digest
             ):
                 return finish(CatalogReadStatus.CATALOG_CHANGED)
-            if exact is not None and exact.predicate_id not in bundle.version.predicate_ids:
+            if exact is not None and not any(item.predicate_id == exact.predicate_id for item in descriptors):
                 return finish(CatalogReadStatus.UNSUPPORTED_PREDICATE)
-            descriptors = project_catalog_relations(bundle)
         except (CatalogAuthorityError, OSError, ValidationError):
             return finish(CatalogReadStatus.UNAVAILABLE)
         if browse is not None:

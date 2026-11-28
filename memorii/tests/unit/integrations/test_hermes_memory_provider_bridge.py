@@ -8,6 +8,7 @@ import socket
 import sys
 import tomllib
 from abc import ABC, abstractmethod
+from dataclasses import replace
 from datetime import UTC, datetime
 from importlib.metadata import EntryPoint
 from pathlib import Path
@@ -30,6 +31,7 @@ from memorii.core.semantic_ingestion.default_catalog_corpus import (
     DefaultCatalogCorpusRow,
     load_default_catalog_acceptance_corpus,
 )
+from memorii.core.semantic_ingestion.default_catalog_package import load_packaged_default_catalog_release
 from memorii.domain.enums import MemoryDomain
 from memorii.integrations.catalog_read_binding import CatalogReadGrantReference, CatalogReadOptIn
 from memorii.integrations.hermes_local_authority import (
@@ -1158,7 +1160,8 @@ def test_installed_no_key_bridge_reaches_learned_mentors_submission_without_mode
         agent_id=active_runtime._authenticated_agent_id,
     )
     draft = OntologyChangeProposal.create(
-        catalog_scope=scope, parent_catalog_digest="a" * 64,
+        catalog_scope=scope,
+        parent_catalog_digest=load_packaged_default_catalog_release().child_version.version_digest,
         relation=RelationDeclaration(description="A person mentors another person."),
         evidence=(OntologyEvidenceReference(
             source_id="activation:evidence", source_digest="1" * 64,
@@ -1497,13 +1500,24 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
         RelationDeclaration,
     )
     from memorii.core.semantic_ingestion.structured_fact_read import StructuredFactReadRequest
-    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_factory import (
+        build_local_level2_authenticated_source_runtime,
+        build_local_level2_runtime_binding,
+    )
     from memorii.integrations.hermes_local_authority import (
         authorize_local_level2,
         authorize_local_structured_tool,
     )
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    def forbid_network(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("learned catalog replay and recall must not use the network")
+
+    monkeypatch.setattr(socket, "getaddrinfo", forbid_network)
+    monkeypatch.setattr(socket, "create_connection", forbid_network)
+    monkeypatch.setattr(socket.socket, "connect", forbid_network)
+    monkeypatch.setattr(socket.socket, "connect_ex", forbid_network)
     authorize_local_level2(hermes_home=tmp_path)
     authorize_local_structured_tool(hermes_home=tmp_path)
     monkeypatch.setattr(
@@ -1529,8 +1543,9 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
         agent_id=runtime._authenticated_agent_id,
     )
     candidate = learned.prepare_candidate(OntologyChangeProposal.create(
-        catalog_scope=scope, parent_catalog_digest="a" * 64,
-        relation=RelationDeclaration(description="A person mentors another person."),
+        catalog_scope=scope,
+        parent_catalog_digest=load_packaged_default_catalog_release().child_version.version_digest,
+        relation=RelationDeclaration(description="Private evidence prose must stay out of inspection."),
         evidence=(OntologyEvidenceReference(
             source_id=active.ledger.source_id, source_digest=active.ledger.source_digest,
             origin_lineage_digest="2" * 64, source_scope_digest="3" * 64,
@@ -1624,11 +1639,68 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
     ) == first_read
     provider.shutdown()
 
+    read_opt_in = _catalog_read_opt_in(
+        tmp_path, user_id="raw:user:one", projection=claims[0], records=records,
+    )
+    selected_grants = read_opt_in.grant_references
+    assert any(ref.catalog_scope == scope for ref in selected_grants)
+    active_opt_in = read_opt_in
+
+    def current_opt_in() -> CatalogReadOptIn:
+        return active_opt_in
+
+    def verify_catalog_and_recall(host) -> None:
+        assert host.handle_read_tool_call("memorii_browse_catalog", {})["status"] == "listed"
+        relations = []
+        browse = host.browse_catalog({})
+        while browse.status == "listed":
+            page = browse.root
+            assert page.catalog_version_digest == first_activation.target_version_digest
+            relations.extend(item.predicate_id for item in page.relations)
+            if page.next_after_predicate_id is None:
+                break
+            browse = host.browse_catalog({
+                "after_predicate_id": page.next_after_predicate_id,
+                "expected_catalog_version_digest": first_activation.target_version_digest,
+            })
+        assert browse.status == "listed"
+        assert tuple(relations) == tuple(sorted({
+            "project_deadline", "project_owner", "project_status", "mentors", *EXPECTED_DEFAULT_RELATION_IDS,
+        }))
+        inspection = host.inspect_catalog_relation({"kind": "predicate_id", "predicate_id": "mentors"})
+        assert inspection.status == "matched"
+        assert inspection.catalog_version_digest == first_activation.target_version_digest
+        relation, = inspection.relations
+        assert (relation.predicate_id, relation.read_direction, relation.read_form) == ("mentors", "forward_only", "set")
+        assert relation.definition == "A person mentors another person."
+        assert host.handle_read_tool_call(
+            "memorii_inspect_catalog_relation", {"kind": "predicate_id", "predicate_id": "mentors"},
+        ) == inspection.model_dump(mode="json")
+        inherited = host.inspect_catalog_relation({"kind": "name", "name": "bill due date"})
+        assert inherited.status == "matched" and inherited.relations[0].predicate_id == "obligation_due_on"
+        assert host.inspect_catalog_relation({"kind": "name", "name": "project owner"}).status == "ambiguous"
+        exact = {
+            "kind": "exact", "predicate_id": "mentors", "subject_entity_id": subject_entity_id,
+            "expected_catalog_version_digest": first_activation.target_version_digest,
+        }
+        diagnosis = host.diagnose_structured_recall(exact)
+        assert diagnosis.status == "found"
+        assert diagnosis.items == first_read.items
+        assert host.handle_read_tool_call(
+            "memorii_diagnose_structured_recall", exact,
+        ) == diagnosis.model_dump(mode="json")
+        assert host.diagnose_structured_recall(
+            exact | {"expected_catalog_version_digest": successor_activation.target_version_digest},
+        ).status == "catalog_changed"
+        assert host.read_structured_facts(StructuredFactReadRequest(
+            predicate_id="mentors", subject_entity_id=subject_entity_id,
+        )).items == first_read.items
+
     reopened = bridge_module.MemoriiHermesMemoryProvider()
     reopened.initialize(
         "session:replay", hermes_home=tmp_path, user_id="raw:user:one",
         agent_identity="profile:primary", platform="cli", agent_context="primary",
-        agent_workspace="hermes",
+        agent_workspace="hermes", catalog_read_opt_in=current_opt_in,
     )
     assert (
         reopened.lookup_learned_ontology_status()["replay_outcomes"]
@@ -1661,7 +1733,34 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
         now=datetime.now(UTC),
     )
     assert reopened_read == first_read
+    verify_catalog_and_recall(reopened)
+    active_opt_in = replace(read_opt_in, grant_references=tuple(
+        ref for ref in selected_grants if ref.catalog_scope != scope
+    ))
+    assert reopened.inspect_catalog_relation({"kind": "name", "name": "mentors"}).status == "denied"
+    assert reopened.diagnose_structured_recall({
+        "kind": "exact", "predicate_id": "mentors", "subject_entity_id": subject_entity_id,
+    }).status == "denied"
     reopened.shutdown()
+
+    active_opt_in = read_opt_in
+    generic = build_local_level2_authenticated_source_runtime(SimpleNamespace(
+        hermes_home=tmp_path, storage_root=tmp_path / "memorii",
+        session_id="session:replay", user_id="raw:user:one", agent_identity="profile:primary",
+        platform="cli", agent_context="primary", agent_workspace="hermes", parent_session_id=None,
+        catalog_read_opt_in=current_opt_in,
+    ))
+    try:
+        verify_catalog_and_recall(generic)
+        active_opt_in = replace(read_opt_in, grant_references=tuple(
+            ref for ref in selected_grants if ref.catalog_scope != scope
+        ))
+        assert generic.inspect_catalog_relation({"kind": "name", "name": "mentors"}).status == "denied"
+        assert generic.diagnose_structured_recall({
+            "kind": "exact", "predicate_id": "mentors", "subject_entity_id": subject_entity_id,
+        }).status == "denied"
+    finally:
+        generic.close()
 
 
 @pytest.mark.parametrize("outcome", ["deleted", "revoked"])
@@ -1717,7 +1816,8 @@ def test_installed_learned_replay_skip_receipt_is_durable_and_idempotent(
             # or semantic submission and must leave no fact behind.
             runtime._structured_tool_is_current = lambda: False
         candidate = learned.prepare_candidate(OntologyChangeProposal.create(
-            catalog_scope=scope, parent_catalog_digest="a" * 64,
+            catalog_scope=scope,
+            parent_catalog_digest=load_packaged_default_catalog_release().child_version.version_digest,
             relation=RelationDeclaration(description="A person mentors another person."),
             evidence=(OntologyEvidenceReference(
                 source_id=source_id, source_digest=source_digest,
@@ -1779,7 +1879,7 @@ def test_installed_learned_replay_skip_receipt_is_durable_and_idempotent(
 def test_installed_learned_overlay_preserves_default_entity_relation_lifecycle(
     bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An additive learned overlay preserves default correction/read behavior."""
+    """An early overlay preserves fact lifecycle without exposing unverified metadata."""
     from memorii.core.semantic_ingestion.openai_responses_project_assertions import OpenAIResponsesApiClient
     from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
     from memorii.integrations.hermes_local_authority import (
@@ -1808,6 +1908,7 @@ def test_installed_learned_overlay_preserves_default_entity_relation_lifecycle(
     )
     from memorii.core.semantic_ingestion.learned_relation import (
         AgentLocalCatalogScope,
+        LearnedRelationError,
         OntologyChangeProposal,
         OntologyEvidenceReference,
         PairedEvaluation,
@@ -1824,7 +1925,7 @@ def test_installed_learned_overlay_preserves_default_entity_relation_lifecycle(
     )
     candidate = learned.prepare_candidate(OntologyChangeProposal.create(
         catalog_scope=scope,
-        parent_catalog_digest="a" * 64,
+        parent_catalog_digest=load_packaged_default_catalog_release().catalog_digest,
         relation=RelationDeclaration(
             description="A person mentors another person."
         ),
@@ -1852,7 +1953,14 @@ def test_installed_learned_overlay_preserves_default_entity_relation_lifecycle(
         principal_id=scope.principal_id,
         agent_id=scope.agent_id,
     )
-    activation = provider.activate_learned_candidate(candidate.proposal_id)
+    with pytest.raises(LearnedRelationError, match="exact packaged parent"):
+        provider.activate_learned_candidate(candidate.proposal_id)
+    assert provider.lookup_learned_ontology_status()["active_version_digest"] is None
+    # Reproduce the earlier writer that stored content identity without the
+    # exact packaged parent version. Reopen with the current installed root.
+    with monkeypatch.context() as earlier_release:
+        earlier_release.setattr(learned, "_base_parent_locator", None)
+        activation = provider.activate_learned_candidate(candidate.proposal_id)
     row = next(
         row for row in load_default_catalog_acceptance_corpus().rows
         if row.relation_id == "project_owned_by"
@@ -1997,12 +2105,10 @@ def test_installed_learned_overlay_preserves_default_entity_relation_lifecycle(
         agent_identity="profile:primary", platform="cli", agent_context="primary",
         agent_workspace="hermes", catalog_read_opt_in=read_opt_in,
     )
-    assert reopened.inspect_catalog_relation({"kind": "name", "name": "project owner"}).model_dump(mode="json") == {
-        "status": "unavailable",
-    }
+    assert reopened.inspect_catalog_relation({"kind": "name", "name": "project owner"}).status == "unavailable"
     assert reopened.diagnose_structured_recall({
         "kind": "exact", "predicate_id": "project_owned_by", "subject_entity_id": subject_entity_id,
-    }).model_dump(mode="json") == {"status": "unavailable"}
+    }).status == "unavailable"
     reopened.on_turn_start(3, f"Recall who owns {subject_quote}.")
     assert reopened.get_tool_schemas()[1]["function"]["name"] == "memorii_read_fact"
     reopened_current = reopened.handle_tool_call(
